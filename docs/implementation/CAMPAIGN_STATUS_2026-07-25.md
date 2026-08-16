@@ -5,7 +5,7 @@
 **FlexAIDdS HEAD (doc snapshot):** `99d17e4f` (`main`) · pipeline branch `feat/comparative-p0-p5-pipeline`  
 **Goal design (phases G1–G9):** [`COMPARATIVE_GOAL_METHODOLOGY.md`](COMPARATIVE_GOAL_METHODOLOGY.md)  
 **Arm specs:** [`COMPARATIVE_BENCHMARK_METHODOLOGY.md`](COMPARATIVE_BENCHMARK_METHODOLOGY.md) · pins [`arm_pins.json`](arm_pins.json)  
-**Clean genuine baseline:** [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) — **25.3%** (20/79), BCR 27.8%, seed-echo 0  
+**Clean genuine baseline (OPS session, not publishable):** [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) — 25.3% (20/79); **unverified / no receipt — not current docking power**  
 **Post-merge re-agg:** [`BASELINE_GENUINE_POSTMERGE_ATTEMPT.md`](BASELINE_GENUINE_POSTMERGE_ATTEMPT.md) — procedure-only (`data_missing=true`)  
 **Parents:** `3dsig_red_pair_protocol.md`, `METHODOLOGY.md`, Claude Science audit stack, `docs/ICLOUD_BENCHMARK_STORAGE.md`
 

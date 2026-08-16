@@ -148,13 +148,12 @@ Run all discovered datasets with `--all`; the packaged dataset runner uses
 - **285 complexes** from PDBbind Core Set 2016
 - Four evaluation powers: scoring, ranking, docking, screening
 - Download: [pdbbind.org.cn/casf.asp](http://www.pdbbind.org.cn/casf.asp)
-- FlexAIDdS targets: r = 0.88, docking power = 82%, EF1% = 12.5
+- FlexAIDdS rates: unverified / pending receipt — not a published docking-power or scoring-power figure.
 
 ### ITC-187
 - **187 complexes** with full ITC thermodynamic decomposition (ΔG, ΔH, −TΔS)
 - Primary validation for entropy-aware scoring
-- FlexAIDdS targets: r = 0.93, RMSE = 1.4 kcal/mol
-- **Entropy rescue rate target: 72%**
+- FlexAIDdS affinity / rescue rates: unverified / pending receipt — not a published Pearson r, RMSE, or rescue %.
 
 ### DUD-E 37
 - **37 targets** × 3 receptor states (holo / apo / AlphaFold2)
@@ -169,7 +168,7 @@ Run all discovered datasets with `--all`; the packaged dataset runner uses
 ### NRGlab Psychopharmacology 23-Target
 - **23 CNS targets**: GPCRs, monoamine transporters, ion channels
 - Internal NRGlab dataset — set `FLEXAIDDS_BENCHMARK_DATA` to data root
-- FlexAIDdS target: **92% entropy rescue rate**
+- FlexAIDdS entropy-rescue rate: unverified / pending receipt — not a published success rate.
 
 ### MUV
 - **17 targets** from Maximum Unbiased Validation

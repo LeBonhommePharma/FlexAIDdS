@@ -215,7 +215,8 @@ def main():
     print(f"  PROJECTED 85-target UNION: {projected_total}/{projected_denom} = "
           f"{projected_total/max(projected_denom,1):.1%}")
     target_met = "✓ ACCEPTANCE GATE MET" if projected_total >= 75 else "✗ NOT MET YET"
-    print(f"  Target 75/85 = 88.2%:      {target_met}")
+    # 88.2% (75/85) is a withdrawn FlexAID 2015 S1 misquote — not current docking power.
+    print(f"  Historical 75/85 gate (withdrawn 88.2% misquote, not docking power): {target_met}")
     print()
 
     # ── Policy split analysis ─────────────────────────────────────────────

@@ -27,7 +27,7 @@ Treat this skill as the shared benchmark contract. Any agent can work the benchm
 
 ### Metrics (be precise)
 
-- **3Dsig red-bar success:** **S_top10** (any of ranks 0..9 RMSD ≤ 2.0 Å), 10 sims × 2e6 evals, 10k bootstrap median. Deck Astex Diverse: FlexAID **~0.66**, FlexAIDdS **~0.69**.
+- **3Dsig red-bar success:** **S_top10** (any of ranks 0..9 RMSD ≤ 2.0 Å), 10 sims × 2e6 evals, 10k bootstrap median. Historical 2017 3Dsig presentation medians (~0.66 / ~0.69) are **not** a current receipted FlexAIDdS success rate. Benchmarking not closed.
 - **S1** = rank-0 only; **BCR** = min RMSD over cluster heads (diagnostic sampling ceiling). Softβ/FO election cannot raise S1 if BCR>2.
 - Modern packages: success for claims may also require PoseBusters — RMSD-only is not enough for PB claim tables.
 

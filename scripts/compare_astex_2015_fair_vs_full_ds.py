@@ -197,7 +197,8 @@ def print_comparison_table(fair: Dict, full: Dict):
         print(f"| {k:<19} | {str(fv):<18} | {str(uv):<18} | {ds:<14} |")
     print("\n## Reproducibility notes")
     print("- Both runs should use identical input manifest (oracle binding sites).")
-    print("- full-dS enables entropy/thermo/restarts/elitism as in REPRODUCIBILITY.md (94.1% claimed).")
+    print("- full-dS enables entropy/thermo/restarts/elitism as in REPRODUCIBILITY.md.")
+    print("- Former 94.1% (80/85) is a withdrawn oracle ceiling, not docking power.")
     print("- 2015-fair disables them for closer match to original JCIM 2015 FlexAID (no entropy).")
     print("- Run with same binary, same data checkout, capture git SHA + binary SHA.")
     print("- For maximum objectivity, also run the exact reproduce_astex85.sh for full-dS reference.")
@@ -396,9 +397,9 @@ def main():
             delta_str = "N/A"
         print(f"| {key:23} | {fmt(f):18} | {fmt(fu):18} | {delta_str:19} |")
 
-    print("\nReference (from repo REPRODUCIBILITY.md for full-dS enhanced):")
-    print("  Published (with all dS): 80/85 = 94.1%, mean RMSD 0.81, median 0.33")
-    print("  (This used 7 restarts, THERMO=1, seed elitism, etc.)")
+    print("\nReference (REPRODUCIBILITY.md): this repository publishes no Astex-85 success rate.")
+    print("  Former 80/85 = 94.1% is a withdrawn oracle ceiling, not docking power.")
+    print("  (That arm used seed elitism / _INI.pdb injection.) Do not cite it as current.")
 
     print("\nOriginal 2015 paper context (from repo docs):")
     print("  FlexAID (no entropy) baseline ~55-62% on Astex Diverse.")

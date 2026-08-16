@@ -39,7 +39,7 @@ Live FlexAIDdS / classic three-engine **claim** rates require on-disk `result.cs
 
 ### ITC-187 Calorimetry Benchmark — **PRELIMINARY / TARGET**
 
-Design target for entropy-aware affinity correlation (see `benchmarks/datasets/itc187.yaml` comments). **Not** repository-reproducible from a full claim receipt in this tree as of the 2026-07 skill audit.
+Design target for entropy-aware affinity correlation (see `benchmarks/datasets/itc187.yaml` comments). **Not** a published FlexAIDdS Pearson *r*, RMSE, or ranking-power rate — unverified / pending receipt.
 
 | Metric | FlexAID∆S (target / preliminary) | Notes |
 |:-------|:--------------------------------:|:------|
@@ -53,7 +53,7 @@ Do **not** say “FlexAID∆S achieves 0.93 Pearson” in claim language until a
 
 ### CASF-2016 — **PRELIMINARY / TARGET**
 
-Scoring / docking / screening powers in older drafts (r≈0.88, docking ~81%, EF1% ~15) are **preliminary targets**, not repository-reproducible FlexAIDdS claim packages. CASF YAML is `docking_mode: affinity_scoring` for scoring-power framing; pose success still needs RMSD+PoseBusters when pose claims are made.
+Scoring / docking / screening powers in older drafts (r≈0.88, docking ~81%, EF1% ~15) are **not published FlexAIDdS rates** — unverified / pending receipt, not repository-reproducible claim packages. CASF YAML is `docking_mode: affinity_scoring` for scoring-power framing; pose success still needs RMSD+PoseBusters when pose claims are made.
 
 ### DUD-E / neurological vignettes — **PRELIMINARY**
 

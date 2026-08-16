@@ -3,16 +3,31 @@
 # reproduce_astex85.sh — One-command Astex Diverse 85 benchmark reproduction
 #
 # PURPOSE
-#   Lets any reviewer clone this repo and reproduce the published Astex Diverse
-#   85 self-docking benchmark from scratch with a single command:
+#   Lets any reviewer clone this repo and run a BLIND Astex Diverse 85
+#   self-docking campaign from scratch:
 #
 #       bash scripts/reproduce_astex85.sh
 #
-#   The script builds the LTO-optimised FlexAIDdS binary and benchmark runner
-#   from the current git HEAD, writes a machine-stamped provenance.json, runs
-#   all 85 targets, and prints a summary table with a diff command so the
-#   reviewer can compare against our published results.
+#   Default arm = METHODOLOGY.md §3 autonomous / docking power:
+#     FLEXAIDDS_SEED_ELITISM=0
+#     FLEXAIDDS_NATIVE_SEED_FRAC=0
+#   NATIVE_SEED_FRAC is a dead knob on today's DatasetRunner path (always emits
+#   seed_fraction: 0.0). The live oracle lever is SEED_ELITISM=1 (_INI.pdb).
+#   The default path kills both.
 #
+#   Optional:
+#       bash scripts/reproduce_astex85.sh --oracle-ceiling
+#     Sets SEED_ELITISM=1 and NATIVE_SEED_FRAC=0.90 and prints
+#     "ORACLE CEILING — not docking power". Do not cite that arm as S1.
+#
+#   This repository publishes no Astex-85 success rate. The former 94.1%
+#   (80/85) target was a seeded oracle ceiling; this script does not compare
+#   against it. Observed S1 is printed with the RMSD instrument name and
+#   N_denominator=85.
+#
+#   The script builds the LTO-optimised FlexAIDdS binary and benchmark runner
+#   from the current git HEAD, writes a machine-stamped provenance.json that
+#   matches the arm actually run, and prints a summary table.
 # SUPPORTED PLATFORMS
 #   macOS 13+  (Apple Silicon or Intel, AppleClang ≥ 16 / Xcode 16)
 #   Linux      (GCC ≥ 14 or Clang ≥ 18, x86-64 or aarch64)
@@ -46,10 +61,12 @@
 #   NOTE: Active writes target working/ subdir; finalize to archived/ via safe_archive_to_icoud.py
 #   (protects against iCloud Drive sync risks: delays, placeholders, conflicted copies).
 #
-# PUBLISHED REFERENCE (commit 8196829)
-#   Success rate (RMSD_hungarian < 2.0 Å): 80/85  (94.1 %)
-#   Mean RMSD:   0.81 Å   |   Median RMSD: 0.33 Å
-#   Ref binary SHA256 (Apple M-series):
+# HISTORICAL REFERENCE (commit 8196829) — WITHDRAWN, not a script target
+#   Former 94.1% (80/85) was produced with SEED_ELITISM=1 and
+#   NATIVE_SEED_FRAC=0.90 = an ORACLE CEILING. METHODOLOGY.md §0 forbids
+#   reporting it as docking power. Do not cite it. This script does not
+#   compare against 80/85.
+#   Ref binary SHA256 (Apple M-series, withdrawn run):
 #     6d899e6351e347abf97f2e5b664ffd2cba853c599a561f5213ccf2777df47d5c
 # =============================================================================
 set -euo pipefail
@@ -94,20 +111,46 @@ OMP_PER_WORKER="${FLEXAIDDS_OMP_THREADS:-2}"
 # ── Parse flags ───────────────────────────────────────────────────────────────
 FORCE=0
 SKIP_BUILD=0
+ORACLE_CEILING=0
 for arg in "$@"; do
     case "$arg" in
-        --force)       FORCE=1 ;;
-        --skip-build)  SKIP_BUILD=1 ;;
+        --force)            FORCE=1 ;;
+        --skip-build)       SKIP_BUILD=1 ;;
+        --oracle-ceiling)   ORACLE_CEILING=1 ;;
         -h|--help)
-            head -60 "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \?//'
+            head -70 "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \?//'
             exit 0 ;;
+        *)
+            die "Unknown flag: ${arg} (supported: --force --skip-build --oracle-ceiling)"
+            ;;
     esac
 done
+
+# Default = METHODOLOGY.md §3 autonomous / blind. Comments-only is not enough:
+# these assignments are what get exported and written to provenance.json.
+SEED_ELITISM=0
+NATIVE_SEED_FRAC=0
+ARM_LABEL=blind
+CLAIM_VALIDITY=blind
+if [[ "${ORACLE_CEILING}" -eq 1 ]]; then
+    SEED_ELITISM=1
+    NATIVE_SEED_FRAC=0.90
+    ARM_LABEL=oracle_ceiling
+    CLAIM_VALIDITY=oracle_ceiling_not_docking_power
+fi
 
 # =============================================================================
 # STEP 0 — Platform check
 # =============================================================================
 banner "FlexAIDdS Astex 85 Benchmark Reproducer"
+
+if [[ "${ORACLE_CEILING}" -eq 1 ]]; then
+    warn "ORACLE CEILING — not docking power"
+    warn "SEED_ELITISM=1 injects _INI.pdb. NATIVE_SEED_FRAC=${NATIVE_SEED_FRAC} is a dead knob on DatasetRunner (seed_fraction is always 0.0)."
+    warn "Do not cite this arm as S1 / docking power."
+else
+    info "Arm: blind (SEED_ELITISM=0 NATIVE_SEED_FRAC=0). METHODOLOGY.md §3 autonomous."
+fi
 
 if [[ "$(uname)" == "MINGW"* ]] || [[ "$(uname)" == "CYGWIN"* ]] || \
    [[ "${OS:-}" == "Windows_NT" ]]; then
@@ -404,6 +447,8 @@ prov = {
         "-DCMAKE_BUILD_TYPE=Release -DBUILD_FLEXAIDDS_FAST=ON "
         "-DFLEXAIDS_USE_AVX2=ON -DFLEXAIDS_USE_OPENMP=ON -DFLEXAIDS_USE_CUDA=OFF"
     ),
+    "arm": "${ARM_LABEL}",
+    "claim_validity": "${CLAIM_VALIDITY}",
     "docking_config": {
         "FLEXAIDDS_THERMO":             "1",
         "FLEXAIDDS_T_EFF":              "0.596",
@@ -411,13 +456,13 @@ prov = {
         "FLEXAIDDS_RESTARTS":           "7",
         "FLEXAIDDS_PARALLEL_RESTARTS":  "1",
         "FLEXAIDDS_CONSENSUS_SCORER":   "1",
-        "FLEXAIDDS_SEED_ELITISM":       "1",
+        "FLEXAIDDS_SEED_ELITISM":       "${SEED_ELITISM}",
         "FLEXAIDDS_N_ELITE":            "1",
         "FLEXAIDDS_BUDGET_SCALE":       "1",
         "FLEXAIDDS_SOFTCORE_WAL":       "1",
         "FLEXAIDDS_SOFTCORE_FLOOR":     "0.5",
         "FLEXAIDDS_T_HOT":              "500",
-        "FLEXAIDDS_NATIVE_SEED_FRAC":   "0.90",
+        "FLEXAIDDS_NATIVE_SEED_FRAC":   "${NATIVE_SEED_FRAC}",
         "FLEXAIDDS_RECEPTOR_ROTAMER_PREP": "1",
         "FLEXAIDDS_EVAL_SCALE_DIHEDRAL":   "1",
     },
@@ -437,8 +482,13 @@ ok "Provenance written: ${PROV_FILE}"
 banner "Step 6 — Running Astex 85 benchmark (${BENCH_THREADS} workers)"
 
 printf "  Docking config:\n"
-printf "    FLEXAIDDS_THERMO=1  T_EFF=0.596  TENCOM_SCALE=1.0\n"
-printf "    7 restarts, consensus+oracle elitism, rotamer relaxation\n"
+printf "    arm=%s  FLEXAIDDS_THERMO=1  T_EFF=0.596  TENCOM_SCALE=1.0\n" "${ARM_LABEL}"
+printf "    7 restarts, SEED_ELITISM=%s  NATIVE_SEED_FRAC=%s\n" "${SEED_ELITISM}" "${NATIVE_SEED_FRAC}"
+if [[ "${ORACLE_CEILING}" -eq 1 ]]; then
+    printf "    ${YLW}ORACLE CEILING — not docking power${RST}\n"
+else
+    printf "    blind / METHODOLOGY.md §3 autonomous (not an oracle ceiling)\n"
+fi
 printf "    %s workers × %s OMP threads\n" "${BENCH_THREADS}" "${OMP_PER_WORKER}"
 printf "\n  This will take approximately 45–60 minutes on Apple M-series.\n"
 printf "  Streaming output to:\n"
@@ -454,18 +504,19 @@ export FLEXAIDDS_THERMO=1
 export FLEXAIDDS_T_EFF=0.596
 export FLEXAIDDS_TENCOM_SCALE=1.0
 
-# Search configuration (exact match to published v89 run)
+# Search configuration. Default = blind (METHODOLOGY.md §3). Oracle knobs are
+# variables set at flag-parse time — not hardcoded 1 / 0.90 on the default path.
 export FLEXAIDDS_RESTARTS=7
 export FLEXAIDDS_PARALLEL_RESTARTS=1
 export FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1
 export FLEXAIDDS_CONSENSUS_SCORER=1
-export FLEXAIDDS_SEED_ELITISM=1
+export FLEXAIDDS_SEED_ELITISM="${SEED_ELITISM}"
 export FLEXAIDDS_N_ELITE=1
 export FLEXAIDDS_BUDGET_SCALE=1
 export FLEXAIDDS_SOFTCORE_WAL=1
 export FLEXAIDDS_SOFTCORE_FLOOR=0.5
 export FLEXAIDDS_T_HOT=500
-export FLEXAIDDS_NATIVE_SEED_FRAC=0.90
+export FLEXAIDDS_NATIVE_SEED_FRAC="${NATIVE_SEED_FRAC}"
 export FLEXAIDDS_RECEPTOR_ROTAMER_PREP=1
 
 # Priority targets (known hard cases — run first to surface failures early)
@@ -500,29 +551,43 @@ Benchmark may have crashed. Check ${OUTPUT_DIR}/stderr.log"
 fi
 
 python3 - "${RESULTS_CSV}" "${PROV_FILE}" \
-    "${PUBLISHED_COMMIT}" "${PUBLISHED_BINARY_SHA256}" "${OUTPUT_DIR}" <<'PYEOF'
-import csv, json, sys
+    "${OUTPUT_DIR}" "${ARM_LABEL}" <<'PYEOF'
+import csv, sys
 from pathlib import Path
 
-results_csv   = Path(sys.argv[1])
-prov_file     = Path(sys.argv[2])
-pub_commit    = sys.argv[3]
-pub_sha256    = sys.argv[4]
-output_dir    = sys.argv[5]
+results_csv = Path(sys.argv[1])
+prov_file   = Path(sys.argv[2])
+output_dir  = sys.argv[3]
+arm_label   = sys.argv[4]
+N_DENOM = 85
 
 rows = list(csv.DictReader(results_csv.open()))
 
-def rmsd(r): return float(r.get("rmsd_hungarian") or r.get("rmsd_to_crystal") or "9999")
-def succ(r): return r.get("success","0") == "1" or rmsd(r) < 2.0
+def pick_rmsd(r):
+    hung = (r.get("rmsd_hungarian") or "").strip()
+    xtal = (r.get("rmsd_to_crystal") or "").strip()
+    if hung:
+        return float(hung), "rmsd_hungarian"
+    if xtal:
+        return float(xtal), "rmsd_to_crystal"
+    return 9999.0, "missing"
 
-success  = [r for r in rows if succ(r)]
-near     = [r for r in rows if not succ(r) and rmsd(r) < 2.5]
-failures = [r for r in rows if not succ(r) and rmsd(r) >= 2.5]
-total    = len(rows)
+picked = [pick_rmsd(r) for r in rows]
+instruments = sorted({name for _, name in picked})
+instrument = ",".join(instruments) if instruments else "missing"
+
+def succ_pair(pair):
+    value, name = pair
+    return name != "missing" and value <= 2.0
+
+success  = [r for r, p in zip(rows, picked) if succ_pair(p)]
+near     = [r for r, p in zip(rows, picked) if not succ_pair(p) and p[0] < 2.5]
+failures = [r for r, p in zip(rows, picked) if not succ_pair(p) and p[0] >= 2.5]
+n_rows   = len(rows)
 n_ok     = len(success)
-rate     = 100.0 * n_ok / total if total else 0.0
+rate     = 100.0 * n_ok / N_DENOM
 
-rmsds    = [rmsd(r) for r in rows]
+rmsds    = [p[0] for p in picked if p[1] != "missing"]
 mean_r   = sum(rmsds) / len(rmsds) if rmsds else 0.0
 srt      = sorted(rmsds)
 median_r = srt[len(srt)//2] if srt else 0.0
@@ -530,56 +595,51 @@ median_r = srt[len(srt)//2] if srt else 0.0
 wall_times = []
 for r in rows:
     t = r.get("wall_time_s","") or r.get("time_s","") or r.get("wall_s","")
-    try: wall_times.append(float(t))
-    except: pass
+    try:
+        wall_times.append(float(t))
+    except ValueError:
+        pass
 
-BOLD = '\033[1m'; GRN = '\033[0;32m'; YLW = '\033[0;33m'
-RED  = '\033[0;31m'; CYN = '\033[0;36m'; RST = '\033[0m'
+BOLD = '\033[1m'; YLW = '\033[0;33m'
+CYN  = '\033[0;36m'; RST = '\033[0m'
 
 print(f"\n{BOLD}{CYN}{'═'*60}{RST}")
 print(f"{BOLD}  FlexAIDdS  Astex Diverse 85  —  Reproduction Results{RST}")
 print(f"{BOLD}{CYN}{'═'*60}{RST}")
-print(f"\n  {'Metric':<35} {'Reviewer':>12}  {'Published':>12}")
-print(f"  {'─'*35} {'─'*12}  {'─'*12}")
-print(f"  {'Total targets':<35} {total:>12}  {'85':>12}")
-print(f"  {'Successful (RMSD_H < 2.0 Å)':<35} {n_ok:>12}  {'80':>12}")
-print(f"  {'Success rate':<35} {rate:>11.1f}%  {'94.1%':>12}")
-print(f"  {'Mean RMSD (Å)':<35} {mean_r:>12.2f}  {'0.81':>12}")
-print(f"  {'Median RMSD (Å)':<35} {median_r:>12.2f}  {'0.33':>12}")
+if arm_label == "oracle_ceiling":
+    print(f"\n  {YLW}ORACLE CEILING — not docking power{RST}")
+    print(f"  {YLW}SEED_ELITISM=1 injects _INI.pdb. Do not cite this arm as S1.{RST}")
+else:
+    print(f"\n  Arm: {arm_label} (METHODOLOGY.md §3 autonomous). Not compared to 80/85.")
+
+print(f"\n  {'Metric':<40} {'Observed':>12}")
+print(f"  {'─'*40} {'─'*12}")
+print(f"  {'Rows in CSV':<40} {n_rows:>12}")
+print(f"  {'N_denominator':<40} {N_DENOM:>12}")
+print(f"  {'RMSD instrument':<40} {instrument:>12}")
+print(f"  {'Successful (rank-0 RMSD <= 2.0 Å)':<40} {n_ok:>12}")
+print(f"  {'Observed S1 (n_ok / 85)':<40} {rate:>11.1f}%")
+print(f"  {'Mean RMSD (Å)':<40} {mean_r:>12.2f}")
+print(f"  {'Median RMSD (Å)':<40} {median_r:>12.2f}")
 if wall_times:
     total_seq = sum(wall_times)
-    print(f"  {'Total sequential docking time':<35} {total_seq/3600:>11.1f}h  {'~1.8h':>12}")
-print(f"\n  {'Near-misses (2.0–2.5 Å)':<35}", end="")
+    print(f"  {'Total sequential docking time':<40} {total_seq/3600:>11.1f}h")
+print(f"\n  {'Near-misses (>2.0–2.5 Å)':<40}", end="")
 if near:
     print(f"  {', '.join(r['pdb_id'] for r in near)}")
 else:
     print("  none")
-print(f"  {'Failures (≥ 2.5 Å)':<35}", end="")
+print(f"  {'Failures (≥ 2.5 Å)':<40}", end="")
 if failures:
     print(f"  {', '.join(r['pdb_id'] for r in failures)}")
 else:
     print("  none")
 
 print(f"\n{BOLD}{CYN}{'═'*60}{RST}")
-if abs(rate - 94.1) < 3.0:
-    print(f"\n  {GRN}✓  Success rate {rate:.1f}% agrees with published 94.1%{RST}")
-else:
-    print(f"\n  {YLW}!  Success rate {rate:.1f}% differs from published 94.1%{RST}")
-
-print(f"""
-  {BOLD}Verify reproducibility:{RST}
-    diff <(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); \\
-        [print(r['pdb_id'],r.get('rmsd_hungarian','?')) \\
-        for r in sorted(d['pairs'], key=lambda x: x['receptor_id'])]" \\
-        {output_dir}/provenance.json) \\
-         <(python3 -c "import csv; \\
-        [print(r['pdb_id'],r['rmsd_hungarian']) \\
-        for r in sorted(csv.DictReader(open('{output_dir}/astex_crossdock_85_results.csv')), \\
-        key=lambda x: x['pdb_id'])]")
-
-  {BOLD}Compare against published commit {pub_commit[:7]}:{RST}
-    git diff {pub_commit} -- benchmarks/
-""")
+print(f"\n  {YLW}No published comparator. Former 94.1% (80/85) is a withdrawn{RST}")
+print(f"  {YLW}oracle ceiling, not docking power. Observed S1 is not a claim.{RST}")
+print(f"  Provenance: {prov_file}")
+print(f"  Results:    {output_dir}")
 PYEOF
 
 info "Elapsed wall time: ${ELAPSED_MIN}m ${ELAPSED_SEC}s"
