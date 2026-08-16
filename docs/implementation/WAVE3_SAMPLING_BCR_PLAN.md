@@ -1,6 +1,6 @@
 # Wave 3 — Sampling / BCR-raiser implementation plan
 
-**TL;DR:** On the pre-merge genuine baseline (**20/79 = 25.3%**, BCR **27.8%**, election gap ~2), scoring/election is no longer the wall — **sampling is**. Wave 3 raises **BCR** first (near-natives among heads), then genuine S1, via flag-gated search levers (BOOM/share, coarse-init, niche metric). Softβ S1 is not a sampling fix. Hub: [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md).
+**TL;DR:** On the pre-merge OPS session record (**20/79 = 25.3%**, BCR **27.8%**, election gap ~2; **unverified / no receipt — not a published success rate**), scoring/election is no longer the wall — **sampling is**. Wave 3 raises **BCR** first (near-natives among heads), then genuine S1, via flag-gated search levers (BOOM/share, coarse-init, niche metric). Softβ S1 is not a sampling fix. Hub: [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md).
 
 **Status:** concrete engineering plan (no multi-hour GA claim run required to accept this doc).  
 **Date:** 2026-07-25  

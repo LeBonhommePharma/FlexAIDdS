@@ -2,8 +2,9 @@
 
 **Status:** normative sequencing for OPS / Grok / Claude Code (analysis + next implementation order).  
 **Does not claim restored rates.** Incomplete runs are mechanism evidence only when labeled incomplete.  
+**Not a published FlexAIDdS success rate** — unverified / no METHODOLOGY.md §0 receipt. Do not cite 25.3% as current docking power.  
 **Hub (start here):** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md).  
-**Authoritative genuine baseline:** [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) — **20/79 = 25.3%**, BCR 27.8%, seed_echo 0.  
+**OPS session baseline (not publishable):** [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) — 20/79 = 25.3% (no receipt).  
 **Parents:** `METHODOLOGY.md`; [`COMPARATIVE_BENCHMARK_METHODOLOGY.md`](COMPARATIVE_BENCHMARK_METHODOLOGY.md);  
 `$FLEXAIDDS_LOCAL_ROOT/workorders/SYNTHESIS_opus5_audit_and_comcap_verdict_2026-07-24.md` (when present);  
 `CAUSAL_ANALYSIS_rate_regression_2026-07-24.md`; `ROOTCAUSE_CORRECTED_2026-07-24.md`; Opus/Science handoffs.
@@ -14,7 +15,7 @@
 
 | Tree | Genuine (seed_echo=0, rank-0 ≤2 Å) | Label |
 |------|----------------------------------|--------|
-| **`v_autonomous_20260724_160919` (80/85 scored)** | **20/79 = 25.3%** | **Best clean full-ish baseline** — seed-echo **0**; BCR 22/79=27.8%; election gap **2** targets. Pre-merge vs later PRs. See [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) · hub [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md) |
+| **`v_autonomous_20260724_160919` (80/85 scored)** | **20/79 = 25.3%** | OPS session record — **not publishable**; seed-echo **0**; BCR 22/79=27.8%. See [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) |
 | C0@9dc9 v4 (partial ~17) | **6/17 (~35%)** | Best partial **defined-cleft** signal; **not** full-85 |
 | C0@9dc9 v6 (partial ~11) | 3/11 (~27%) | Same binary as v4 on overlap — **sampling artifact**, not regression |
 | control noentropy (partial 17) | 4/17 (~24%) | 9dc9 |
@@ -30,7 +31,7 @@
 
 **Published anchors (do not mix):**  
 - JCIM 2015 Table 2 Astex native FLRP: **top-1 = 45.2%**, **top-10 = 66.7%**.  
-- 3Dsig 2017 red medians: FlexAID **~0.66** / FlexAIDdS **~0.69** (S_top10-style).  
+- 3Dsig 2017 presentation red medians (historical, not a current receipted campaign): FlexAID **~0.66** / FlexAIDdS **~0.69** (S_top10-style).  
 - Production matrix: **`MC_st0r5.2_6.dat` MD5 `9dc93717dfed0698006d88dd6a9627bc`**.  
 - Claim budget: **pop×gen = 1000×2000**, **R=10**, **seed-off**.
 

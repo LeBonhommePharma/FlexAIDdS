@@ -2,7 +2,7 @@
 
 > **Landed on `main` 2026-07-25** from OPS handoff `CAMPAIGN_METHODOLOGY_for_Grok.md`.
 > Companion hub: [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md).
-> **Critical correction:** the 25.3% baseline **does not** prove `free_energy_strict` worked — that run predated the measured product default; see STEP 1 E10.
+> **Critical correction:** the 25.3% OPS session record **does not** prove `free_energy_strict` worked — that run predated the measured product default; see STEP 1 E10. **Not a published FlexAIDdS success rate** — unverified / no METHODOLOGY.md §0 receipt.
 
 For Grok Build 4.5 (/loop + /goal). OPS-authored 2026-07-25. Follow in order; do not skip.
 Repo: $FLEXAIDDS_ROOT (or git root)

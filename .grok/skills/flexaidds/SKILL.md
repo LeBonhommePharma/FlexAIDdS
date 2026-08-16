@@ -84,7 +84,7 @@ bash scripts/run_pilot8_canary_gates.sh --arm B0 --pdb 1P62,1T40 ...
 ```
 
 - **Native CF oracle:** FAIL (exit 1) when `CF_native > best_ga_cf + tol` → **ranking / Softβ / entropy claims forbidden**. Softβ does not repair a CF landscape that rejects the crystal.
-- **3Dsig success metric (red bars):** **S_top10** = any of ranks 0..9 RMSD ≤ 2.0 Å; median over 10k bootstrap; 10 sims × 2e6 evals. Deck targets ~**0.66 / 0.69** (FlexAID / FlexAIDdS) on Astex Diverse N=85 — **not** pilot8 rates.
+- **3Dsig success metric (red bars):** **S_top10** = any of ranks 0..9 RMSD ≤ 2.0 Å; median over 10k bootstrap; 10 sims × 2e6 evals. Historical 2017 3Dsig presentation medians (~0.66 / ~0.69) are **not** a current receipted FlexAIDdS success rate — **not** pilot8 rates. Benchmarking not closed.
 - Modern claim packages still need PoseBusters (+ tENCoM where required by benchmarking skill). RMSD-only is not full claim success.
 
 ### Deception-proof claim contract (normative — refuse without evidence)

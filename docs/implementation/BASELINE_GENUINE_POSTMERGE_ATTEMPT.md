@@ -4,7 +4,7 @@
 > `data_missing=true` · `reaggregate_ran=false` · Do **not** invent N / genuine % / BCR from this file.
 
 **Hub:** [`COMPARATIVE_SCIENCE_README.md`](COMPARATIVE_SCIENCE_README.md)  
-**Compared against:** pre-merge genuine baseline in [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md)  
+**Compared against:** pre-merge OPS session record in [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) (not a published success rate)  
 **Campaign baseline id:** `v_autonomous_20260724_160919`  
 **Matrix pin (claim comparisons):** **`9dc93717dfed0698006d88dd6a9627bc`** (9dc9)
 

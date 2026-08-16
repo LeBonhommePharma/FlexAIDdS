@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|--------|
-| **Status** | Operator hub (docs only; no invented rates) |
+| **Status** | Operator hub (docs only). Not a published success rate — unverified / no METHODOLOGY.md §0 receipt |
 | **Last science snapshot** | 2026-07-25 |
 | **Branch for pipeline work** | `feat/comparative-p0-p5-pipeline` |
 | **Machine pins** | [`arm_pins.json`](arm_pins.json) |
@@ -34,13 +34,13 @@ Pins: [`arm_pins.json`](arm_pins.json).
 
 ## 2. Where we are (honest snapshot)
 
-### 2.1 Pre-merge genuine baseline (authoritative measured rates)
+### 2.1 Pre-merge genuine baseline (OPS session record — not publishable)
 
-Campaign **`v_autonomous_20260724_160919`** — recorded in [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md).
+Campaign **`v_autonomous_20260724_160919`** — recorded in [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md). **Unverified / no receipt. Not a current docking-power rate.**
 
 | Metric | Value | Role |
 |--------|------:|------|
-| **Genuine top-1 ≤2 Å** | **20 / 79 = 25.3%** | Clean product KPI (seed_echo=0, rank-0) |
+| **Genuine top-1 ≤2 Å** | **20 / 79 = 25.3%** | OPS session record — not a published rate |
 | **BCR** (best-cluster ≤2 Å) | **22 / 79 = 27.8%** | Sampling ceiling |
 | Election gap (BCR − genuine) | **~2 targets** | Election wall essentially closed |
 | Seed-echo | **0** | Clean multi-target number |
@@ -48,7 +48,7 @@ Campaign **`v_autonomous_20260724_160919`** — recorded in [`BASELINE_GENUINE_2
 
 **Science conclusion (2026-07-25):** election / `free_energy_strict` gap is closed on this baseline. **Sampling is the bottleneck** (BCR ~28%). Route: **Wave 3** BCR raisers — see [`WAVE3_SAMPLING_BCR_PLAN.md`](WAVE3_SAMPLING_BCR_PLAN.md). Softβ S1 reorders heads; it cannot invent near-natives when BCR = 0.
 
-This 25.3% figure is **genuine S1-style autonomous** — **not** JCIM top-10, **not** 3Dsig S_top10, **not** a substitute for the three-arm comparative table.
+This 25.3% figure is an **OPS session record**, not a published rate — **not** JCIM top-10, **not** 3Dsig S_top10, **not** a substitute for the three-arm comparative table.
 
 ### 2.2 Post-merge re-aggregation
 
@@ -90,7 +90,7 @@ MD5 9dc93717dfed0698006d88dd6a9627bc   # "9dc9"
 | [`COMPARATIVE_GOAL_METHODOLOGY.md`](COMPARATIVE_GOAL_METHODOLOGY.md) | G1–G9 acceptance, layer model, fairness axes |
 | [`COMPARATIVE_BENCHMARK_METHODOLOGY.md`](COMPARATIVE_BENCHMARK_METHODOLOGY.md) | Arm A/B/C protocol detail, frozen axes |
 | [`arm_pins.json`](arm_pins.json) | Machine-readable commits, matrix, paths |
-| [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) | **Authoritative** 25.3% / 27.8% / seed_echo=0 record |
+| [`BASELINE_GENUINE_2026-07-24.md`](BASELINE_GENUINE_2026-07-24.md) | OPS session 25.3% / 27.8% / seed_echo=0 — **not publishable** |
 | [`BASELINE_GENUINE_POSTMERGE_ATTEMPT.md`](BASELINE_GENUINE_POSTMERGE_ATTEMPT.md) | Procedure-only re-agg (no numbers yet) |
 | [`CAMPAIGN_STATUS_2026-07-25.md`](CAMPAIGN_STATUS_2026-07-25.md) | Live ops: bins, iCloud, next steps, blockers |
 | [`FORWARD_SUCCESS_RATE_PLAN.md`](FORWARD_SUCCESS_RATE_PLAN.md) | Normative KEEP/DEFER/REJECT sequencing |
@@ -183,7 +183,7 @@ Full materialize procedure: [`BASELINE_GENUINE_POSTMERGE_ATTEMPT.md`](BASELINE_G
 
 | Label | Definition | Use as |
 |-------|------------|--------|
-| **Genuine / S1** | Rank-0 ordered RMSD ≤ 2.0 Å **and** `seed_echo=0` | Modern product KPI; baseline 25.3% |
+| **Genuine / S1** | Rank-0 ordered RMSD ≤ 2.0 Å **and** `seed_echo=0` | Modern product KPI; OPS 25.3% is not a published rate |
 | **Top-1** | Elected first pose ≤ 2.0 Å (publish/JCIM style) | Published anchors; label mode |
 | **Top-10** | Any of ranks 0..9 ≤ 2.0 Å (case success) | JCIM Table 2 style |
 | **S_top10** | Case success (top-10 style) → **median** of 10k bootstrap resamples | **Comparative headline** (3Dsig family) |

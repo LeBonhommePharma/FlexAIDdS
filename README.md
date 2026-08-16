@@ -97,7 +97,7 @@ flag therefore does not currently enforce a physics filter on the elected pose.
 | Atom type: I (iodine) | → type-26 (3 live entries) | → BR/type-25 (full halogen row) |
 | WAL repulsion | Unbounded (SIGSEGV on extreme clashes) | ✓ Capped at 50 CF units per contact |
 | Vibrational diagnostic (tENCoM) | ✗ | ✓ torsional elastic-network model scale |
-| Astex-85 success rate | See claim receipt | See fixed-denominator claim receipt |
+| Astex-85 success rate | unverified / pending receipt | unverified / pending receipt |
 
 ---
 

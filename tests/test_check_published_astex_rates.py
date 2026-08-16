@@ -5,8 +5,9 @@ Extends the claim-firewall policy in ``tests/test_thermo_claim_firewall.py``
 (provenance for entropy.help) and the JCIM label pin in
 ``tests/test_comparative_benchmark_methodology.py`` (top-1 45.2% / top-10 66.7%).
 
-This module watches README.md, docs/BENCHMARK.md, REPRODUCIBILITY.md, and
-scripts/reproduce_astex85.sh. Hits are allowed only with an adjacent
+This module watches README.md, docs/BENCHMARK.md, REPRODUCIBILITY.md,
+scripts/reproduce_astex85.sh, scripts/compare_astex_2015_fair_vs_full_ds.py,
+and in-repo site pages. Hits are allowed only with an adjacent
 withdrawal / oracle / not-docking-power qualifier.
 """
 
@@ -22,13 +23,18 @@ SURFACES = (
     ROOT / "docs" / "BENCHMARK.md",
     ROOT / "REPRODUCIBILITY.md",
     ROOT / "scripts" / "reproduce_astex85.sh",
+    ROOT / "scripts" / "compare_astex_2015_fair_vs_full_ds.py",
+    ROOT / "site" / "FlexAIDdS" / "index.html",
+    ROOT / "site" / "FlexAIDdS" / "sections.jsx",
+    ROOT / "site" / "entropy-driven" / "index.html",
 )
 
-# Tokens that must not appear as current FlexAID(∆S) docking power.
+# Tokens that must not appear as current FlexAID(∆S) docking power / affinity.
 CLAIM_TOKEN_RE = re.compile(
-    r"(?<!\d)(?:91\.8|94\.1|88\.2)(?!\d)"
+    r"(?<!\d)(?:91\.8|94\.1|88\.2|24\.1|48\.8|25\.3)(?!\d)"
     r"|78/85|80/85"
     r"|r\s*=\s*0\.93"
+    r"|92%"
     r"|SEED_ELITISM=1(?!\d)"
     r"|NATIVE_SEED_FRAC=0\.90"
     r"|run_dataset\.py"
@@ -43,9 +49,10 @@ QUALIFIER_RE = re.compile(
     r"unverified|misquote|disqualifying|former|formerly|"
     r"previously|historical|"
     r"not docking power|not a published|not the default|not current|"
+    r"not publishable|benchmarking not closed|no validated|"
     r"do not cite|do not export|do not invoke|do not document|do not treat|"
     r"does not exist|do not exist|"
-    r"no receipt|pending receipt|forbids reporting|"
+    r"no receipt|pending receipt|forbids reporting|publishes no|"
     r"live oracle lever|dead knob|not_docking_power"
     r")",
     re.I,
@@ -78,8 +85,9 @@ def test_primary_surfaces_do_not_reassert_withdrawn_astex_rates() -> None:
     failures: list[str] = []
     for path in SURFACES:
         assert path.is_file(), f"missing claim surface {path}"
+        rel = str(path.relative_to(ROOT))
         failures.extend(
-            unqualified_claim_hits(path.read_text(encoding="utf-8"), source=path.name)
+            unqualified_claim_hits(path.read_text(encoding="utf-8"), source=rel)
         )
     assert failures == [], "unqualified Astex docking-power claims:\n" + "\n".join(
         failures
@@ -156,3 +164,47 @@ def test_readme_does_not_publish_unreceipted_session_rates() -> None:
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     for token in ("24.1%", "48.8%", "25.3%", "91.8%", "94.1%", "88.2%"):
         assert token not in text, f"README.md must not publish {token}"
+
+
+def test_scanner_rejects_unqualified_binding_mode_and_pearson() -> None:
+    text = (
+        "FlexAID∆S recovers the correct binding mode 92% of the time "
+        "(Pearson r = 0.93).\n"
+    )
+    hits = unqualified_claim_hits(text, source="fixture")
+    assert hits, "scanner must fail unqualified 92% / r = 0.93 as current rates"
+
+
+def test_scanner_allows_withdrawn_pearson_and_binding_mode() -> None:
+    text = (
+        "The Pearson r = 0.93 and CNS 92% figures previously stated here "
+        "are withdrawn.\n"
+    )
+    assert unqualified_claim_hits(text, source="fixture") == []
+
+
+def test_scanner_allows_jcim_table2_literature_comparator() -> None:
+    text = (
+        "Gaudreault & Najmanovich 2015 JCIM Table 2 is top-1 45.2% / "
+        "top-10 66.7% (literature comparator, not ours).\n"
+    )
+    assert unqualified_claim_hits(text, source="fixture") == []
+
+
+def test_site_does_not_headline_live_affinity_or_binding_mode_rates() -> None:
+    banned = (
+        "Pearson r = 0.93",
+        "92% correct",
+        "92% of the time",
+        "to={0.93}",
+        "to={92}",
+    )
+    for path in (
+        ROOT / "site" / "FlexAIDdS" / "index.html",
+        ROOT / "site" / "FlexAIDdS" / "sections.jsx",
+        ROOT / "site" / "entropy-driven" / "index.html",
+    ):
+        text = path.read_text(encoding="utf-8")
+        rel = str(path.relative_to(ROOT))
+        for token in banned:
+            assert token not in text, f"{rel} still headlines {token!r}"
