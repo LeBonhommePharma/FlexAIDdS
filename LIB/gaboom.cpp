@@ -13,6 +13,7 @@
 #include "niche_distance.h"
 #include "niche_hash.h"
 #include "new_search_arch.h"
+#include "EnvFlags.h"
 
 #include <random>
 #include <functional>
@@ -4211,13 +4212,18 @@ int cmp_chrom2rotlist(psFlexDEE_Node psFlexDEE_INI_Node, const chromosome* chrom
 /***********************************************************************/
 int cmp_chrom2pop(const chromosome* chrom,const gene* genes, int num_genes,int start, int last){
 	int i,j,flag;
+	const bool use_stdabs = flexaids::dedup_stdabs_enabled();
 
 	for(i=start;i<last;i++){
 		flag=0;
 		for(j=0;j<num_genes;j++){
 			//printf("individuals[%d][%d].gene[%d]=%.3f\t%.3f\n", start-1, i, j,
 			//       genes[j].to_ic, chrom[i].genes[j].to_ic);
-			flag += abs(genes[j].to_ic - chrom[i].genes[j].to_ic) < GA_GENE_MATCH_TOLERANCE;
+			const double d = genes[j].to_ic - chrom[i].genes[j].to_ic;
+			const double ad = use_stdabs
+				? std::abs(d)
+				: static_cast<double>(std::abs(static_cast<int>(d)));
+			flag += ad < GA_GENE_MATCH_TOLERANCE;
 		}
 
 		//printf("flag=%d\n",flag);
@@ -4805,12 +4811,17 @@ int remove_dups(chromosome* chrom, int num_chrom, int num_genes){
 	int i=0;
 	int j;
 	if (num_chrom<=1) return num_chrom;
+	const bool use_stdabs = flexaids::dedup_stdabs_enabled();
 
 	for (j=1;j<num_chrom;j++)
 	{
 		int flag = 0;
 		for(int l=0;l<num_genes;l++){
-			flag += abs(chrom[j].genes[l].to_ic - chrom[i].genes[l].to_ic) < 0.1;
+			const double d = chrom[j].genes[l].to_ic - chrom[i].genes[l].to_ic;
+			const double ad = use_stdabs
+				? std::abs(d)
+				: static_cast<double>(std::abs(static_cast<int>(d)));
+			flag += ad < 0.1;
 		}
 		if(flag != num_genes)
 		{

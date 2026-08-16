@@ -452,6 +452,70 @@ TEST(RemoveDups, WithinTolerance) {
     EXPECT_EQ(result, 1);
 }
 
+namespace {
+
+void set_dedup_env(const char* val) {
+#if defined(_WIN32)
+    if (val) _putenv_s("FLEXAIDDS_DEDUP_STDABS", val);
+    else _putenv_s("FLEXAIDDS_DEDUP_STDABS", "");
+#else
+    if (val) setenv("FLEXAIDDS_DEDUP_STDABS", val, 1);
+    else unsetenv("FLEXAIDDS_DEDUP_STDABS");
+#endif
+}
+
+struct DedupAbsGuard {
+    DedupAbsGuard(const char* val) {
+        const char* prev = std::getenv("FLEXAIDDS_DEDUP_STDABS");
+        had_ = prev != nullptr;
+        if (had_) prev_ = prev;
+        set_dedup_env(val);
+    }
+    ~DedupAbsGuard() {
+        if (had_) set_dedup_env(prev_.c_str());
+        else set_dedup_env(nullptr);
+    }
+    bool had_ = false;
+    std::string prev_;
+};
+
+}  // namespace
+
+// Δ=0.5 would false-match under abs(int) truncation (abs((int)0.5)==0 < 0.1).
+TEST(RemoveDups, HalfDeltaKeptWithStdAbsDefaultOn) {
+    DedupAbsGuard unset(nullptr);
+    ChromArray ca(2, 1);
+    ca[0].genes[0].to_ic = 1.0;
+    ca[1].genes[0].to_ic = 1.5;
+    EXPECT_EQ(remove_dups(ca.data(), 2, 1), 2);
+}
+
+TEST(RemoveDups, HalfDeltaFalseMatchWithAbsIntOffFlag) {
+    DedupAbsGuard off("0");
+    ChromArray ca(2, 1);
+    ca[0].genes[0].to_ic = 1.0;
+    ca[1].genes[0].to_ic = 1.5;
+    EXPECT_EQ(remove_dups(ca.data(), 2, 1), 1);
+}
+
+TEST(CmpChrom2Pop, HalfDeltaNotMatchWithStdAbsDefaultOn) {
+    DedupAbsGuard unset(nullptr);
+    ChromArray ca(1, 1);
+    ca[0].genes[0].to_ic = 1.0;
+    gene query{};
+    query.to_ic = 1.5;
+    EXPECT_EQ(cmp_chrom2pop(ca.data(), &query, 1, 0, 1), 0);
+}
+
+TEST(CmpChrom2Pop, HalfDeltaFalseMatchWithAbsIntOffFlag) {
+    DedupAbsGuard off("0");
+    ChromArray ca(1, 1);
+    ca[0].genes[0].to_ic = 1.0;
+    gene query{};
+    query.to_ic = 1.5;
+    EXPECT_EQ(cmp_chrom2pop(ca.data(), &query, 1, 0, 1), 1);
+}
+
 // ===========================================================================
 // FITNESS STATISTICS
 // ===========================================================================
