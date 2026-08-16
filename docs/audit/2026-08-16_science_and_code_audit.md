@@ -481,14 +481,24 @@ You **cannot** yet defend, from this tip alone:
 
 ## 8. Execution evidence (this session)
 
-**Inspected, not claimed as a campaign:**
+Host: Linux x86-64 cloud agent, GCC 14.2, CMake 4.4.2, Eigen 3.4.0, OpenMP 4.5.
+Configure: `-DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_CUDA=OFF -DFLEXAIDS_USE_METAL=OFF`.
+System CMake 3.28.3 **cannot** configure this tree (CXX26 + FindOpenMP `try_compile`); see M6.
 
-- `python3 scripts/check_repo_hygiene.py` → **OK** (no tracked `.env`; no hardcoded user paths in agent/skill files). Note: Darwin `/var/folders/…` in `tests/` and `scripts/patch_bcr_from_poses.py` is a machine path the hygiene script did not flag (not under `.agents/` / skills).
-- Configure: system CMake **3.28.3 + GCC 14.2 failed** (CXX26 dialect unknown to FindOpenMP). CMake **4.4.2 + gcc-14** configured `BUILD_TESTING=ON`, OpenMP 4.5, Eigen 3.4.0, AVX2/FMA, grand-canonical tests forced ON.
-- Python (venv): **96 passed, 1 skipped, 1 failed** on a science-gate subset. The failure is `tests/test_campaign_methodology_gates.py::test_g4_2_niche_distance_drives_shipped_cpp_binary` (`PermissionError` on `/var/folders`, finding M3). Passing files included `test_metrics_docking_power.py`, `test_audit_native_cf.py`, `test_check_run_receipt.py`, `test_ga_sharescl_default.py`, `test_bootstrap_3dsig_s_top10.py`, `test_aggregate_claim_metrics.py`.
-- Full `ctest` for this tip: see addendum below (build of ~1957 objects was started in-session).
+| Suite | Result |
+|-------|--------|
+| `ctest --test-dir build --output-on-failure` | **94/94 passed** (4.47 s). METHODOLOGY.md §4 still says expect 11/11. |
+| `test_classic_entropy_ranking --gtest_filter='SoftBeta*'` | **15/15 passed** (identity, strict duplicates, gated election, T resolve) |
+| `test_dataset_runner --gtest_filter='RmsdCrossCheck*'` | **3/3 passed** (type vs element partitions) |
+| `test_protocol_config` election/Softβ filter | **4/4 passed** including `ElectionShannonDefaultOffOptInAndLegacyZh` |
+| `FlexAID --help` | exit 0, usage text present |
+| Python science-gate subset (excluding Darwin-scratch test) | **79 passed, 1 skipped** |
+| Same subset **including** `test_g4_2_niche_distance_drives_shipped_cpp_binary` | **1 failed** — `PermissionError: '/var/folders'` (finding M3) |
+| `python3 scripts/check_repo_hygiene.py` | **OK** (does not flag the `/var/folders` path in `tests/`) |
 
 No Astex dock was run. No success rate is reported.
+
+Logs: `ctest_2026-08-16_science_audit.log`, `gtest_softbeta_identity.log`, `gtest_rmsd_crosscheck.log`, `pytest_science_gates.log`.
 
 ---
 
