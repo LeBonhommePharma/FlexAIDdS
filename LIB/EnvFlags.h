@@ -108,4 +108,12 @@ inline int get_yval_lut_bins_cached() noexcept
     return bins;
 }
 
+/// FLEXAIDDS_DEDUP_STDABS — DEFAULT ON.
+/// Use std::abs on gene `to_ic` deltas so |Δ|<1 is not truncated by abs(int).
+/// Set 0/false/off to restore historical abs(int) truncation for A/B.
+inline bool dedup_stdabs_enabled() noexcept
+{
+    return env_bool("FLEXAIDDS_DEDUP_STDABS", true);
+}
+
 }  // namespace flexaids
