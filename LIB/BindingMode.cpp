@@ -3,6 +3,7 @@
 #include "fast_optics.hpp"
 #include "SoftBetaFreeEnergy.h"
 #include "RngSeed.h"
+#include "tencom_ledger.h"
 
 // Build provenance, normally injected by CMakeLists.txt via
 // add_compile_definitions().  Defaulted here so a build outside CMake (or one
@@ -47,6 +48,23 @@ bool write_mcf_sidecar(const char* pdb_path,
 	std::fclose(mf);
 	return true;
 }
+
+namespace {
+
+// Ledger-only tENCoM λ REMARK. Must not be called from compute_energy().
+void append_tencom_lambda_ledger_remark(
+    char* remark, size_t* remark_len,
+    atom* atoms, resid* residue, int res_cnt)
+{
+    if (!flexaids::ledger_tencom_lambda_enabled()) return;
+    const flexaids::TencomLambdaLedger rec =
+        flexaids::collect_tencom_lambda_from_atoms(atoms, residue, res_cnt);
+    const std::string line = flexaids::format_tencom_lambda_remark(rec);
+    if (!line.empty())
+        safe_remark_cat(remark, line.c_str(), remark_len);
+}
+
+}  // namespace
 
 /*****************************************\\
 			BindingPopulation  
@@ -449,6 +467,7 @@ double BindingMode::compute_energy() const
 	{
 		rebuild_engine();
 		double nat_dg = (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
+		// tENCoM λ is ledger-only (FLEXAIDDS_LEDGER_TENCOM_LAMBDA); not added here.
 		return engine_.compute().free_energy + compute_vibrational_correction() + nat_dg;
 	}
 	// Ranking objective: G̃ = H̃ − T·S̃ over mode members (SoftBetaFreeEnergy.h).
@@ -462,6 +481,8 @@ double BindingMode::compute_energy() const
 	const auto fe = soft_beta_mode_free_energy(soft_beta_mode_energies(Poses, election_pb_scale(Population->FA)), T);
 	const double nat_dg =
 		(Population->FA) ? Population->FA->natural_deltaG : 0.0;
+	// Ranking stays bit-identical with FLEXAIDDS_LEDGER_TENCOM_LAMBDA on or off:
+	// tENCoM λ is REMARK/ledger only (tencom_ledger.h, inert_on_election=1).
 	return fe.G + compute_vibrational_correction() + nat_dg;
 }
 
@@ -841,6 +862,12 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = 1\n");
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		if (this->Population && this->Population->FA) {
+			append_tencom_lambda_ledger_remark(
+				remark, &remark_len,
+				this->Population->atoms, this->Population->residue,
+				this->Population->FA->res_cnt);
+		}
 	}
 	for (int j = 0; j < this->Population->FA->npar; ++j)
 	{
@@ -996,6 +1023,12 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = %d\n", nModel);
 			safe_remark_cat(remark, tmpremark, &remark_len);
+			if (this->Population && this->Population->FA) {
+				append_tencom_lambda_ledger_remark(
+					remark, &remark_len,
+					this->Population->atoms, this->Population->residue,
+					this->Population->FA->res_cnt);
+			}
 		}
 
 		for (int j = 0; j < this->Population->FA->npar; ++j)
@@ -1360,11 +1393,11 @@ double BindingMode::compute_vibrational_correction() const
 	// atom 0. Reinterpreting an eigenvector x-component as an eigenvalue would
 	// invent a vibrational entropy the model never computed.
 	//
-	// Until a real eigenvalue channel is wired (ENCoM/tENCoM exposing its
-	// spectrum directly, rather than the per-atom eigenvector grid), this
-	// correction is unavailable and must be zero. Returning zero preserves
-	// production behaviour exactly: the value it replaces was already 0.0 on
-	// every real path, so ranking, clustering, and output order are unchanged.
+	// Until a real eigenvalue channel is wired into *ranking*, this
+	// correction is unavailable and must be zero. The real tENCoM λ spectrum
+	// is written to the thermodynamic REMARK/ledger only, behind
+	// FLEXAIDDS_LEDGER_TENCOM_LAMBDA (default OFF), tagged inert_on_election.
+	// Do not feed that ledger into this function — ranking must stay 0.0 here.
 	this->vib_correction_cache_ = 0.0;
 	this->vib_cache_valid_ = true;
 	return 0.0;

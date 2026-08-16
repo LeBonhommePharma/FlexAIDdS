@@ -1273,6 +1273,18 @@ if(BUILD_TESTING)
         TEST_NAME ThermoLedgerTests
     )
 
+    # test_tencom_ledger — Wave 4 ledger-only tENCoM λ (inert on election)
+    flexaids_add_unit_test(test_tencom_ledger
+        SOURCES
+            tests/test_tencom_ledger.cpp
+            LIB/tENCoM/tencm.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME TencomLedgerTests
+    )
+
     # test_json_config — JSON parser & config defaults tests (zero dependencies)
     flexaids_add_unit_test(test_json_config
         SOURCES tests/test_json_config.cpp
