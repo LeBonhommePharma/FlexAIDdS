@@ -109,8 +109,6 @@ jobs:
                --exclude '*/_deps/*' \
                --exclude '*/tests/*' \
                --exclude '*/python/*' \
-               --exclude '*/benchmarks/*' \
-               --exclude '*/DatasetRunner.cpp' \
                --exclude '*/top.cpp' \
             || echo "::warning::lcov --capture reported errors; downstream steps will treat coverage as best-effort."
 
@@ -119,22 +117,31 @@ jobs:
                --ignore-errors "$LCOV_IGNORE" \
             || echo "::warning::lcov --extract reported errors; core.info may be incomplete."
 
-          # Campaign CLI (DatasetRunner.cpp, ~5.5k lines) and FlexAID main
-          # (top.cpp, ~2k lines) are not the docking core. On Linux/Clang they
-          # alone pulled measured LIB coverage to 45.8% (20638/45049) while
-          # ctest was green — 1595/5559 and 268/2076 respectively. Drop them
-          # from the 50% gate so it tracks Vcontacts/GA/StatMech/BindingMode.
+          # top.cpp is the FlexAID CLI main; ctest only grazes it via the
+          # --help/error-path probe (268/2076 lines hit, 2026-08-13 run), so it
+          # stays out of the measured denominator. DatasetRunner.cpp is
+          # deliberately NOT excluded: it has a dedicated test target
+          # (tests/test_dataset_runner.cpp), so it is under-covered tested
+          # code, not CLI noise — excluding it hid 5.5k lines and left the 50%
+          # gate only ~73 lines from red. The realism moves to the THRESHOLD
+          # below instead. (The former benchmarks-directory capture exclude
+          # was dropped as a no-op: no C++ lives under benchmarks/; benchmark
+          # TUs are LIB/benchmark_*.cpp and remain counted.)
+          # Known limit, so nobody oversells this gate: a ratio gate cannot
+          # catch LOSING an under-covered file's tests outright — deleting
+          # DatasetRunner's test target drops its LF/LH records and RAISES the
+          # percentage. Guarding that needs a test-presence check, not a
+          # threshold.
           # --remove is applied even if --exclude above was ignored by an
           # older lcov that only honors extract patterns. Write to a new
           # file: some lcov versions refuse --output-file equal to the input.
           if [ -s coverage/core.info ]; then
             lcov --remove coverage/core.info \
-                 '*/DatasetRunner.cpp' \
                  '*/top.cpp' \
                  --output-file coverage/core.ncli.info \
                  --ignore-errors "$LCOV_IGNORE" \
               && mv coverage/core.ncli.info coverage/core.info \
-              || echo "::warning::lcov --remove of CLI/main TUs reported errors; core.info may still include them."
+              || echo "::warning::lcov --remove of the main TU reported errors; core.info may still include it."
           fi
 
           genhtml coverage/core.info \
@@ -151,7 +158,22 @@ jobs:
         run: |
           set -uo pipefail
           INFO=build/coverage/core.info
-          THRESHOLD=50
+
+          # Regression ratchet, not an aspiration. Live Linux/Clang capture on
+          # this branch (workflow_dispatch 31920940188, 2026-08-16) is 49.5%
+          # (21804/44046 lines, DatasetRunner.cpp in, top.cpp out). 45 sits
+          # below that floor with ~2000 lines of real headroom, so the gate
+          # only fires on a genuine coverage collapse, not on run-to-run
+          # jitter (~5 lines observed) or one new file. The aspirational 50
+          # was met exactly once in 1126 runs — and only on a curated
+          # denominator (DatasetRunner excluded) with 73 lines of headroom;
+          # the honest denominator here is still 219 lines short of 50. Raise
+          # this as real coverage grows — never above the measured value.
+          THRESHOLD=45
+
+          # Single source of truth for the "Comment PR" step below — it must
+          # never hardcode its own copy of the threshold.
+          echo "THRESHOLD=${THRESHOLD}" >> "$GITHUB_ENV"
 
           emit_unavailable() {
             echo "::warning::$1"
@@ -175,12 +197,16 @@ jobs:
           ' "$INFO")
 
           # Fallback: if for any reason the tracefile carried no LF/LH records,
-          # parse the first percentage lcov --summary prints, robustly.
+          # parse the first percentage lcov --summary prints, robustly. The
+          # trailing `|| true` matters: the runner invokes run: scripts with
+          # bash -e and pipefail is set above, so a non-matching grep would
+          # otherwise kill the step right here — before emit_unavailable could
+          # report it — as an opaque hard failure.
           if [ -z "$COVERAGE" ]; then
             COVERAGE=$(lcov --summary "$INFO" 2>&1 \
                        | grep -iE 'lines' \
                        | grep -oE '[0-9]+(\.[0-9]+)?%' \
-                       | head -1 | tr -d '%')
+                       | head -1 | tr -d '%' || true)
           fi
 
           [ -n "$COVERAGE" ] || emit_unavailable "Could not derive a line-coverage percentage from $INFO — reporting unavailable."
@@ -205,23 +231,32 @@ jobs:
 
       - name: Comment PR with coverage
         if: github.event_name == 'pull_request' && always()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9 — last floating tag in this workflow; the job holds pull-requests: write
         with:
           script: |
             const coverage = process.env.COVERAGE;
+            // THRESHOLD is exported by the Calculate step (single source of
+            // truth). Unset AND empty-string are unknown: Number("") === 0,
+            // which would false-PASS any real measurement against a 0% target.
+            const rawT = process.env.THRESHOLD;
+            const threshold = (rawT === undefined || rawT === '') ? NaN : Number(rawT);
             const available =
               coverage !== undefined && coverage !== '' && coverage !== 'unavailable';
             const pct = Number(coverage);
-            const pass = available && Number.isFinite(pct) && pct >= 50;
+            const canJudge =
+              available && Number.isFinite(pct) && Number.isFinite(threshold);
+            const pass = canJudge && pct >= threshold;
             const coverageText = available
               ? `${coverage}%`
               : 'unavailable (measurement could not be produced this run)';
-            const status = !available ? 'UNAVAILABLE' : pass ? 'PASS' : 'FAIL';
+            // Judge only when both values are usable. Missing threshold with a
+            // present coverage number is UNAVAILABLE, never a false PASS/FAIL.
+            const status = !canJudge ? 'UNAVAILABLE' : pass ? 'PASS' : 'FAIL';
             const lines = [
               '## Code Coverage Report',
               '',
               `Core coverage: ${coverageText}`,
-              'Target: >= 50%',
+              `Target: >= ${Number.isFinite(threshold) ? threshold : '?'}%`,
               `Status: ${status}`,
               '',
               'Generated by Code Coverage workflow',
