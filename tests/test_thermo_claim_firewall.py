@@ -332,6 +332,15 @@ def test_primary_docs_do_not_claim_unwired_physical_election() -> None:
         for phrase in forbidden:
             assert phrase not in text, f"{name} retains unsupported claim: {phrase}"
 
+    ranking = (root / "docs" / "classic_entropy_ranking.md").read_text(
+        encoding="utf-8"
+    )
+    header = (root / "LIB" / "BindingMode.h").read_text(encoding="utf-8")
+    assert "Vibrational entropy stays." not in ranking
+    assert "fail-closed" in ranking
+    assert "Ranking F also adds ENCoM vib correction" not in header
+    assert "fail-closes to 0.0 and does not elect" in header
+
 
 def test_runtime_proxy_outputs_declare_their_domain() -> None:
     root = Path(__file__).resolve().parents[1]
@@ -347,3 +356,8 @@ def test_runtime_proxy_outputs_declare_their_domain() -> None:
     assert "enforced_in_final_election=0" in gaboom
     assert "Post-GA CF-proxy ensemble diagnostics" in top
     assert "Post-GA Ensemble Thermodynamics" not in top
+    assert "fail_closed: no eigenvalue channel" in binding_mode
+    assert "format_vibrational_diagnostic_remark" in binding_mode
+    assert "CF.elec_gist_con_status = gated_inert_on_claim_path" in binding_mode
+    assert "p_bind_like" in top
+    assert top.count("claim_validity=proxy_only") >= 4

@@ -44,7 +44,7 @@ class LigandRank:
     name: str
     log_Z: float          # intrinsic ln(Z_i)
     dG: float             # -kT * log_Z   (F_bound)
-    p_bound: float        # z_i Z_i / Ξ   (at registered concentrations)
+    p_bound: float        # z_i Z_i / Ξ  (p_bind_like; CF-proxy occupancy, not calibrated ΔG)
 
 
 def _logsumexp_with_anchor(log_zZ_values: List[float]) -> float:

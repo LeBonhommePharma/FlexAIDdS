@@ -533,6 +533,11 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK CF.elec=%8.5f\n",cf_ptr->elec);
 			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist_desolv=%8.5f\n",cf_ptr->gist_desolv);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK,
+				"REMARK CF.elec_gist_con_status = gated_inert_on_claim_path (use_elec default off; GIST hard-disabled; con constraints-only; CF.gist unused vs gist_desolv)\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n",cf_ptr->totsas);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}

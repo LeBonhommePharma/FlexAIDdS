@@ -2,9 +2,9 @@
 
 **Product:** When `temperature > 0`, rank-0 is elected by classic FlexAID **soft-β free energy** (ACF / BindingMode `H − T·S`), not by raw CF and not by physical kcal “binding affinity” ledgers.
 
-**Vibrational entropy stays.** FlexAIDdS still adds the ENCoM/tENCoM correction (`−T·S_vib`) on the BindingMode ranking energy. Classic soft-β configurational ranking is restored *and* vib remains an additive FlexAIDdS term — vib is not stripped for “classic purity.”
+**Vibrational correction is fail-closed.** `compute_vibrational_correction()` is still *called* from BindingMode ranking energy, but it returns `0.0` on every production path (no eigenvalue channel; `atom::eigen` stores eigenvectors, not eigenvalues). Emitting `REMARK Vibrational diagnostic = 0.0 (fail_closed…)` is surface honesty, not a live tENCoM election term. Do not claim tENCoM changed which pose was elected. The live objective is configurational (soft-β) only.
 
-**Search** still optimizes the CF/contact-function scoring proxy. **Election** is entropy-aware (configurational soft-β + optional vib).
+**Search** still optimizes the CF/contact-function scoring proxy. **Election** is configurational soft-β (when T>0); vib does not re-rank.
 
 ## Contract (original FlexAID)
 
@@ -12,7 +12,7 @@
 |--------|-----------------|---------------------------|
 | β | `1/T` (not `1/(kB T)`) | same for configurational weights |
 | Cluster free energy (ACF) | soft-β cluster free energy | same; elects CF-path emission |
-| BindingMode F | `G̃ = H̃ − T·S̃` over **mode members** (≡ ACF) | `G̃ + (−T·S_vib) [+ NATURaL]` |
+| BindingMode F | `G̃ = H̃ − T·S̃` over **mode members** (≡ ACF) | `G̃` (+ fail-closed vib `0.0`; optional pose-independent NATURaL) |
 | DatasetRunner S1 Softβ | — | same `G̃` over heads + `.mcf` **only if** `FLEXAIDDS_SOFTBETA_ELECTION=1` (**default OFF**) |
 | Shared math | — | `LIB/SoftBetaFreeEnergy.h` |
 | Rank-0 (engine) | lowest ACF / lowest F | same product role when T>0 |
@@ -22,10 +22,10 @@ See **`docs/implementation/softbeta_election_policy.md`** for Softβ vs sampling
 
 | Layer | Elects rank-0? |
 |-------|----------------|
-| Soft-β ACF / classic BindingMode F (+ vib) | **Yes** |
+| Soft-β ACF / classic BindingMode F | **Yes** (configurational; vib fail-closed `0.0`) |
 | Physical kB StatMech “affinity” / Shannon CSV / G_bind logs | **No** (diagnostic) |
 
-`compute_vibrational_correction()` is unchanged; classic ranking **calls it**. Disable vib via existing FA normal-modes / weight knobs, not by forcing CF emission.
+`compute_vibrational_correction()` fail-closes to `0.0`. Classic ranking still calls it; the call cannot change intra-receptor pose order. `FLEXAIDDS_NO_TENCOM` is a documented NULL ablation of that already-zero term.
 
 ## Config
 
@@ -71,7 +71,7 @@ Full code revert of this feature: revert the PR / branch that touches:
 |------|--------|
 | `LIB/SoftBetaFreeEnergy.h` | Shared `G̃ = H̃ − T·S̃ ≡ E_min − T ln Z` |
 | `LIB/cluster.cpp` | ACF via SoftBeta; skip post-ACF CF re-sort unless `force_cf` or `T==0` |
-| `LIB/BindingMode.cpp` | Classic SoftBeta G̃ over mode members (+ vib); physical ledger unchanged |
+| `LIB/BindingMode.cpp` | Classic SoftBeta G̃ over mode members; vib call fail-closes to 0.0 |
 | `LIB/DatasetRunner.cpp` | S1 elect min SoftBeta G̃ (dock T); `LEGACY_ZH` rollback |
 | `LIB/flexaid.h` | `force_cf_rank_emission` |
 

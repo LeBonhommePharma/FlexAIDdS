@@ -20,7 +20,7 @@
   - `Pose::receptor_strain`
   - `Pose::total_energy() = CF + receptor_strain`
   - `BindingMode::rebuild_engine()` populates `StatMechEngine` from `Pose::total_energy()`
-  - `BindingMode::compute_energy()` legacy ranking energy with vibrational/NATURaL corrections
+  - `BindingMode::compute_energy()` ranking energy; vibrational correction is called but fail-closes to 0.0 and does not elect
   - `BindingMode::get_thermodynamics()` legacy compatibility struct
   - `BindingMode::get_thermodynamic_breakdown()` explicit configurational/correction ledger
   - `BindingPopulation::EnergyComparator` sorts by cached legacy energy; unchanged by the ledger
@@ -35,7 +35,7 @@
   - `GrandPartitionFunction::selectivity()` apparent concentration-aware selectivity
   - `GrandPartitionFunction::log_intrinsic_selectivity()` concentration-independent selectivity
   - `TargetServer` / sessions carry conc_M (P3); per-receptor Ξ computation from ensemble log_Z
-- Emission (P3+): DatasetRunner emits `grand_summary` (dict) → `*_grand_summary.csv` (ligand,log_Z,conc_M,log_Xi,p_bind) + JSON; C++ --conc wires default_conc_M; competition_example.yaml provides per-ligand conc_M
+- Emission (P3+): DatasetRunner emits `grand_summary` (dict) → `*_grand_summary.csv` (ligand,log_Z,conc_M,log_Xi,p_bind,p_bind_like) + JSON; C++ --conc wires default_conc_M; competition_example.yaml provides per-ligand conc_M. `p_bind` is a legacy alias of **proxy_only** `p_bind_like` (CF-proxy Z, not calibrated occupancy).
 - Python: `flexaidds.grand_canonical.compute_grand_partition`, `_PyGrandPartitionFunction`, `LigandRank`; roundtrips in test_grand_canonical + grand_synthetic fixtures (exact 3L cases verified)
 - MultiSiteGPF: product of per-site GPFs + cooperativity (tested in test_multi_site_gpf.cpp); non-breaking, documented for future multi-cleft integration (no auto-wiring from CavityDetect yet)
 

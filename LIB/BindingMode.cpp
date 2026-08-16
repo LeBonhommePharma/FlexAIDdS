@@ -23,6 +23,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 
@@ -46,6 +47,34 @@ bool write_mcf_sidecar(const char* pdb_path,
 	}
 	std::fclose(mf);
 	return true;
+}
+
+void format_vibrational_diagnostic_remark(char* buf, size_t buflen, double vib_corr)
+{
+	if (buf == nullptr || buflen == 0) return;
+	// Always emit. Omitting 0.0 made the fail-closed channel look unwired.
+	if (std::abs(vib_corr) <= 1e-12) {
+		std::snprintf(buf, buflen,
+			"REMARK Vibrational diagnostic = %.4f (fail_closed: no eigenvalue channel; atom::eigen is eigenvectors; proxy_only; inert)\n",
+			0.0);
+		return;
+	}
+	std::snprintf(buf, buflen,
+		"REMARK Vibrational diagnostic = %.4f (ENCoM model scale; proxy_only; not used for election)\n",
+		vib_corr);
+}
+
+static void append_gated_cf_term_remarks(char* remark, size_t* remark_len,
+                                         char* tmpremark, const cfstr* pCF)
+{
+	if (pCF == nullptr) return;
+	std::snprintf(tmpremark, MAX_REMARK, "REMARK CF.elec=%8.5f\n", pCF->elec);
+	safe_remark_cat(remark, tmpremark, remark_len);
+	std::snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist_desolv=%8.5f\n", pCF->gist_desolv);
+	safe_remark_cat(remark, tmpremark, remark_len);
+	std::snprintf(tmpremark, MAX_REMARK,
+		"REMARK CF.elec_gist_con_status = gated_inert_on_claim_path (use_elec default off; GIST hard-disabled; con constraints-only; CF.gist unused vs gist_desolv)\n");
+	safe_remark_cat(remark, tmpremark, remark_len);
 }
 
 /*****************************************\\
@@ -453,9 +482,10 @@ double BindingMode::compute_energy() const
 	}
 	// Ranking objective: G̃ = H̃ − T·S̃ over mode members (SoftBetaFreeEnergy.h).
 	// Identity: G̃ ≡ ACF ≡ E_min − T ln Z_local. Same formula as cluster.cpp emission
-	// order and DatasetRunner S1 election. FlexAIDdS adds vib + optional NATURaL:
-	//   F_rank = G̃_conf + (−T·S_vib) + ΔG_NATURaL
-	// Vib is additive; it does not replace soft-β configurational ranking.
+	// order and DatasetRunner S1 election.
+	// compute_vibrational_correction() is still added, but fail-closes to 0.0
+	// (no eigenvalue channel; atom::eigen is eigenvectors). It does not elect.
+	// Optional NATURaL is pose-independent for a given receptor.
 	if (!Population)
 		return 0.0;
 	const double T = static_cast<double>(Population->Temperature);
@@ -786,6 +816,7 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		append_gated_cf_term_remarks(remark, &remark_len, tmpremark, pCF);
 		snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
@@ -795,10 +826,8 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	safe_remark_cat(remark, tmpremark, &remark_len);
 	{
 		double vib_corr = this->compute_vibrational_correction();
-		if (std::abs(vib_corr) > 1e-12) {
-			snprintf(tmpremark, MAX_REMARK, "REMARK Vibrational diagnostic (ENCoM model scale; proxy_only): %10.4f\n", vib_corr);
-			safe_remark_cat(remark, tmpremark, &remark_len);
-		}
+		format_vibrational_diagnostic_remark(tmpremark, MAX_REMARK, vib_corr);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 	// CF-proxy ensemble ledger for plugin / load_results. Legacy numeric field
 	// names are preserved for migration, but explicit domain metadata prevents
@@ -951,7 +980,14 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
 			safe_remark_cat(remark, tmpremark, &remark_len);
+			append_gated_cf_term_remarks(remark, &remark_len, tmpremark, pCF);
 			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+		}
+
+		{
+			double vib_corr = this->compute_vibrational_correction();
+			format_vibrational_diagnostic_remark(tmpremark, MAX_REMARK, vib_corr);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
@@ -1331,6 +1367,12 @@ BindingMode::EntropyDecomposition BindingMode::decompose_entropy() const
 
 double BindingMode::compute_vibrational_correction() const
 {
+	static std::once_flag vib_failclosed_logged;
+	std::call_once(vib_failclosed_logged, [] {
+		std::fprintf(stderr,
+			"[TENCOM] BindingMode vib correction disabled (fail_closed: no eigenvalue channel; atom::eigen is eigenvectors)\n");
+	});
+
 	// ── Entropy-ablation hook: FLEXAIDDS_NO_TENCOM ───────────────────────────
 	// Zeroes the tENCoM/ENCoM vibrational free-energy correction (-T·S_vib).
 	// NOTE: this correction is derived from the *receptor* elastic-network

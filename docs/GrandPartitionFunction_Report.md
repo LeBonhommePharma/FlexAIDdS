@@ -7,6 +7,8 @@
 **Date**: 2026-04-14
 **Document scope**: Analysis of features, novelties, and drug discovery applications of the `GrandPartitionFunction` module
 
+> **Claim validity:** GPF `p_bind` / occupancy outputs are **proxy_only** (`p_bind_like`). Canonical `Z` is CF-proxy ensemble energy (`pose.total_energy() = CF + strain`), not a calibrated physical occupancy or true ΔG. Ξ algebra is unchanged.
+
 ---
 
 ## 1. Executive Summary
@@ -309,7 +311,7 @@ The thread-safe `create_session()` / `register_result()` pattern supports parall
 ### P3+ Emission: CSV/JSON + --conc + Competition YAML
 
 - Python `DatasetRunner` (and CLI `--conc` / `default_conc_M`) + per-ligand `ligand_concs` from YAML emit:
-  - `*_grand_summary.csv` with columns: ligand, log_Z, conc_M, log_Xi, p_bind
+  - `*_grand_summary.csv` with columns: ligand, log_Z, conc_M, log_Xi, p_bind, p_bind_like (`p_bind` is a legacy alias; both are proxy_only CF-proxy occupancy)
   - grand_summary embedded in per-dataset JSON reports + markdown summary tables
 - C++ binary: `--conc` / `--concentration` sets default for TargetServer sessions; YAML competition_sets / ligands with `conc_M` parsed in runner.
 - `benchmarks/datasets/competition_example.yaml` provides per-ligand `conc_M` examples (nM-uM) + expected for validation harness.

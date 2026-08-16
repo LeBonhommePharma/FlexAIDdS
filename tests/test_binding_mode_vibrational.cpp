@@ -9,6 +9,7 @@
 #include "../LIB/encom.h"
 #include "../LIB/gaboom.h"
 #include <cmath>
+#include <string>
 #include <vector>
 
 // ===========================================================================
@@ -407,6 +408,29 @@ TEST_F(BindingModeVibrationalTest, ManyPosesVibrationalCorrectionFinite) {
     double correction = mode.compute_vibrational_correction();
     EXPECT_TRUE(std::isfinite(correction));
     EXPECT_NEAR(correction, 0.0, EPSILON);
+}
+
+TEST_F(BindingModeVibrationalTest, FailClosedRemarkAlwaysEmittedAtZero) {
+    char buf[512];
+    format_vibrational_diagnostic_remark(buf, sizeof(buf), 0.0);
+    const std::string line(buf);
+    EXPECT_NE(line.find("REMARK Vibrational diagnostic = 0.0000"), std::string::npos);
+    EXPECT_NE(line.find("fail_closed: no eigenvalue channel"), std::string::npos);
+    EXPECT_NE(line.find("atom::eigen is eigenvectors"), std::string::npos);
+    EXPECT_NE(line.find("proxy_only"), std::string::npos);
+    EXPECT_NE(line.find("inert"), std::string::npos);
+
+    format_vibrational_diagnostic_remark(buf, sizeof(buf), 1e-15);
+    EXPECT_NE(std::string(buf).find("fail_closed"), std::string::npos);
+}
+
+TEST_F(BindingModeVibrationalTest, NonzeroRemarkStillProxyOnlyNotElection) {
+    char buf[512];
+    format_vibrational_diagnostic_remark(buf, sizeof(buf), -1.25);
+    const std::string line(buf);
+    EXPECT_NE(line.find("REMARK Vibrational diagnostic = -1.2500"), std::string::npos);
+    EXPECT_NE(line.find("proxy_only"), std::string::npos);
+    EXPECT_NE(line.find("not used for election"), std::string::npos);
 }
 
 // ===========================================================================
