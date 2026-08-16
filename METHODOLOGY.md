@@ -34,7 +34,8 @@ numbers into other files — reference `METHODOLOGY.md §N`.
 - **Thread rule:** workers × omp-threads ≤ physical P-cores. On this host use `--threads 1
   --omp-threads 4` (or 6). Never oversubscribe.
 - **RMSD reporting:** report **rank-0 elected pose RMSD** (the elected `_0.pdb`), heavy-atom,
-  2.0 Å cutoff, **in-place in the receptor frame — never superposed**. NEVER report seed-elitism
+  2.0 Å cutoff, **in-place in the receptor frame — never superposed**. Success ⇔ rank-0 in-place
+  RMSD **`<= 2.0 Å`**. NEVER report seed-elitism
   / `_INI.pdb` RMSD as the result. In-place is what the engine does (`LIB/calc_rmsd.cpp:92-102`,
   and the same in the original FlexAID); a superposed value measures shape, not placement, and
   is not the quantity the 2.0 Å criterion is defined on.
@@ -180,7 +181,8 @@ Purpose: prove a determinism/perf change does not regress docking accuracy.
 - **Engine selection:** `FLEXAIDDS_BINARY=<engine>`; `benchmark_datasets --benchmark astex
   --only-codes <list>` subsets targets. (Direct-CLI per-target is acceptable when the harness's
   oracle-site guard blocks a blind run — document which was used.)
-- **Metric:** top-1 rank-0 RMSD, 2.0 Å, in-place. Name the instrument (§0: in-repo metric vs
+- **Metric:** top-1 rank-0 RMSD, 2.0 Å, in-place. Success ⇔ rank-0 in-place RMSD **`<= 2.0 Å`**.
+  Name the instrument (§0: in-repo metric vs
   `score_reference.py`) — an unlabelled RMSD is not reportable.
 - **Acceptance:** candidate within noise of baseline; **no target flips success→fail** attributable
   to the change. A full landing decision uses the full 85 × 10-restart protocol; a fast pre-check
