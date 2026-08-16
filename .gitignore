@@ -34,6 +34,34 @@ _deps/
 *~
 .DS_Store
 
+# Local IDE / coding-agent droppings — never FlexAIDdS source
+.cursor/
+.windsurf/
+.continue/
+.gemini/
+.kilocode/
+.kiro/
+.opencode/
+.qoder/
+.roo/
+.trae/
+.warp/
+.augment/
+.codebuddy/
+.codewhale/
+.factory/
+.github/prompts/
+
+# Third-party design/brand skills dumped under .agents/skills/
+# Do not ignore .agents/skills/flexaidds-benchmarking or shannon (tracked).
+.agents/skills/banner-design/
+.agents/skills/brand/
+.agents/skills/design-system/
+.agents/skills/design/
+.agents/skills/slides/
+.agents/skills/ui-styling/
+.agents/skills/ui-ux-pro-max/
+
 # Test / coverage artifacts
 .pytest_cache/
 .coverage
