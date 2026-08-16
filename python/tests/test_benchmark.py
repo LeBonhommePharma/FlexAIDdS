@@ -460,9 +460,9 @@ class TestBenchmarkResult:
     def test_summary(self, three_system_result):
         summary = three_system_result.summary()
         assert summary.n_systems == 3
-        # FlexAIDdS: rmsds [1.5, 3.0, 0.8], success (< 2.0) = 2/3
+        # FlexAIDdS: rmsds [1.5, 3.0, 0.8], success (<= 2.0) = 2/3
         assert summary.flexaidds_success_rate == pytest.approx(2 / 3)
-        # Boltz-2: rmsds [2.5, 1.0, 1.8], success (< 2.0) = 2/3
+        # Boltz-2: rmsds [2.5, 1.0, 1.8], success (<= 2.0) = 2/3
         assert summary.boltz2_success_rate == pytest.approx(2 / 3)
         # Both methods should have timing
         assert summary.flexaidds_mean_time_seconds == pytest.approx(10.0)
@@ -472,6 +472,26 @@ class TestBenchmarkResult:
         assert summary.rank_correlation_kendall is not None
         assert summary.flexaidds_dg_r_squared is not None
         assert summary.boltz2_dg_r_squared is not None
+
+    def test_rmsd_exactly_2_0_counts_as_success(self):
+        sys = BenchmarkSystem(
+            system_id="edge",
+            protein_pdb_path=Path("."),
+            protein_sequence="M",
+            ligand_mol2_path=Path("."),
+            ligand_smiles="C",
+            reference_pose_pdb_path=Path("."),
+        )
+        fa = MethodResult(
+            method="flexaidds",
+            system_id="edge",
+            best_pose_rmsd_angstrom=2.0,
+            wall_time_seconds=1.0,
+        )
+        result = BenchmarkResult(
+            systems=[SystemBenchmarkResult(system=sys, flexaidds_result=fa)]
+        )
+        assert result.summary().flexaidds_success_rate == pytest.approx(1.0)
 
 
 # ---------------------------------------------------------------------------
