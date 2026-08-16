@@ -40,24 +40,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Update site stats
+      # Refresh stats in this job workspace only. Do not commit them to main:
+      # the old git push origin HEAD:main advanced gated SHAs (dbd93169,
+      # c30e7747, de92241a) and retriggered full ci.yml on non-science commits.
+      # Live numbers go to gh-pages / the user-site repo in the sync steps below.
+      - name: Update site stats (workspace only)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/update_site_stats.py
-
-      - name: Commit updated stats (if changed)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add site/index.html site/FlexAIDdS/index.html site/assets/repo-stats.json site/FlexAIDdS/assets/repo-stats.json
-          if ! git diff --staged --quiet; then
-            git commit -m "Update: site stats (auto)"
-            # Do not fail the whole deploy on non-fast-forward (re-runs on old SHAs, concurrent runs, or races).
-            # The next scheduled or push-triggered run will pick up the latest stats.
-            git push origin HEAD:main || echo "::warning::git push for stats failed (non-fast-forward or race). Continuing with deploy."
-          else
-            echo "No stats changes to commit"
-          fi
 
       - name: Publish site to gh-pages branch
         run: bash scripts/sync_apex_to_ghpages.sh
