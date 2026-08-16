@@ -4577,13 +4577,15 @@ std::vector<DatasetEntry> DatasetRunner::fetch_posebusters() {
     // Clone or update the PoseBusters benchmark repo
     std::string repo_dir = pb_dir + "/PoseBusters-Benchmark";
     if (!fs::exists(repo_dir)) {
-        std::string cmd = "git clone --depth 1 https://github.com/maabuu/posebusters_benchmark.git \""
-                          + repo_dir + "\" 2>&1";
+        // cache_dir_ is user-controlled (--cache); quote for /bin/sh -c via exec_cmd.
+        const std::string quoted_repo = shell_quote(repo_dir);
+        std::string cmd = "git clone --depth 1 https://github.com/maabuu/posebusters_benchmark.git "
+                          + quoted_repo + " 2>&1";
         int ret = exec_cmd(cmd);
         if (ret != 0) {
             // Try alternate URL
-            cmd = "git clone --depth 1 https://github.com/degrado-lab/PoseBusters-Benchmark.git \""
-                  + repo_dir + "\" 2>&1";
+            cmd = "git clone --depth 1 https://github.com/degrado-lab/PoseBusters-Benchmark.git "
+                  + quoted_repo + " 2>&1";
             exec_cmd(cmd);
         }
     }
@@ -7741,6 +7743,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         // Publication gate: official PoseBusters and ligand tENCoM/Eigen must
         // all have consumed the exact elected pose represented by pose_sha256.
+        // Per-complex flag only. STRICT n/85 (numerator ∩ frozen Astex-85
+        // manifest) is aggregated in scripts/aggregate_claim_metrics.py.
         result.claim_ready =
             result.success_pb &&
             result.protocol_claim_eligible &&
@@ -7808,7 +7812,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     sess.log_Z = -static_cast<double>(result.predicted_dG) /
                                  (statmech::kB_kcal * static_cast<double>(config.temperature));
                 }
-                // TODO: best_center / conformer_populations from actual BindingMode data                ts_it2->second->register_result(sess);
+                // TODO: best_center / conformer_populations from actual BindingMode data.
+                // Live call — do not comment this out; GPF/TargetServer depends on it.
+                ts_it2->second->register_result(sess);
             }
         }
 
