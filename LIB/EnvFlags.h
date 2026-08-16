@@ -82,4 +82,30 @@ inline bool parallel_reproduce_enabled() noexcept
     return env_bool("FLEXAIDDS_PARALLEL_REPRODUCE", false);
 }
 
+/// FLEXAIDDS_GET_YVAL_LUT — DEFAULT OFF (METHODOLOGY.md §1).
+/// Snapshots getenv once (C++11 magic static) so the per-contact hot loop
+/// never calls std::getenv. Live re-read remains env_bool("FLEXAIDDS_GET_YVAL_LUT")
+/// / get_yval_lut_enabled() in get_yval.h. Do not default this ON without a
+/// §1 parity result that LUT-ON CF matches LUT-OFF (current default).
+inline bool get_yval_lut_enabled_cached() noexcept
+{
+    static const bool enabled = env_bool("FLEXAIDDS_GET_YVAL_LUT", false);
+    return enabled;
+}
+
+/// FLEXAIDDS_GET_YVAL_LUT_BINS — snapshotted with the LUT flag (default 256,
+/// clamp 16..1024). Live re-read: get_yval_lut_bins() in get_yval.h.
+inline int get_yval_lut_bins_cached() noexcept
+{
+    static const int bins = []() noexcept {
+        const char* s = std::getenv("FLEXAIDDS_GET_YVAL_LUT_BINS");
+        if (!s || !*s) return 256;
+        int n = std::atoi(s);
+        if (n < 16) n = 16;
+        if (n > 1024) n = 1024;
+        return n;
+    }();
+    return bins;
+}
+
 }  // namespace flexaids
