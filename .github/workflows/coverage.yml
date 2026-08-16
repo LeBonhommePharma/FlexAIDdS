@@ -151,12 +151,14 @@ jobs:
           set -uo pipefail
           INFO=build/coverage/core.info
 
-          # Regression ratchet, not an aspiration. Measured floor on Linux/Clang
-          # as of 2026-08-16 is 47.4% (20370/42973 lines with top.cpp excluded);
-          # 45 sits below that floor with ~1000 lines of real headroom, so the
-          # gate only fires on a genuine coverage collapse. The previous
-          # aspirational 50 had NEVER passed in 1125 runs. Raise this as real
-          # coverage grows — never above the currently measured value.
+          # Regression ratchet, not an aspiration. Live Linux/Clang capture on
+          # this branch (workflow_dispatch 31920940188, 2026-08-16) is 49.5%
+          # (21804/44046 lines, DatasetRunner.cpp in, top.cpp out). 45 sits
+          # below that floor with ~2000 lines of real headroom, so the gate
+          # only fires on a genuine coverage collapse. The previous
+          # aspirational 50 had NEVER passed in 1125 runs (and 49.5% is still
+          # 219 lines short of 50). Raise this as real coverage grows — never
+          # above the currently measured value.
           THRESHOLD=45
 
           # Single source of truth for the "Comment PR" step below — it must
@@ -220,18 +222,22 @@ jobs:
           script: |
             const coverage = process.env.COVERAGE;
             // THRESHOLD is exported by the Calculate step (single source of
-            // truth); if that step never ran it is undefined and we report the
-            // target as unknown rather than inventing a number here.
-            const threshold = Number(process.env.THRESHOLD);
+            // truth). Unset AND empty-string are unknown: Number("") === 0,
+            // which would false-PASS any real measurement against a 0% target.
+            const rawT = process.env.THRESHOLD;
+            const threshold = (rawT === undefined || rawT === '') ? NaN : Number(rawT);
             const available =
               coverage !== undefined && coverage !== '' && coverage !== 'unavailable';
             const pct = Number(coverage);
-            const pass =
-              available && Number.isFinite(pct) && Number.isFinite(threshold) && pct >= threshold;
+            const canJudge =
+              available && Number.isFinite(pct) && Number.isFinite(threshold);
+            const pass = canJudge && pct >= threshold;
             const coverageText = available
               ? `${coverage}%`
               : 'unavailable (measurement could not be produced this run)';
-            const status = !available ? 'UNAVAILABLE' : pass ? 'PASS' : 'FAIL';
+            // Judge only when both values are usable. Missing threshold with a
+            // present coverage number is UNAVAILABLE, never a false PASS/FAIL.
+            const status = !canJudge ? 'UNAVAILABLE' : pass ? 'PASS' : 'FAIL';
             const lines = [
               '## Code Coverage Report',
               '',
