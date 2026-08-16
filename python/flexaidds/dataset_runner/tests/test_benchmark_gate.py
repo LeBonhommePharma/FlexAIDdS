@@ -16,13 +16,15 @@ from flexaidds.dataset_runner.cli import _benchmark_inconclusive_reasons
 
 
 def _dr(slug, *, completed=(), failed=(), crashes=0, total_poses=0,
-        exit_codes=None, missing_metrics=(), newly_executed=None, resumed=0):
+        exit_codes=None, missing_metrics=(), newly_executed=None, resumed=0,
+        timeouts=None):
     """Build a minimal DatasetResult-shaped object for the gate helper.
 
     ``newly_executed`` defaults to attempted (a fresh run); pass 0 to model a
     run that ran nothing this session. ``resumed`` is the count of targets
     loaded from --resume checkpoints — the field that separates a legitimate
-    resume from a run that scheduled nothing at all.
+    resume from a run that scheduled nothing at all. ``timeouts`` mirrors
+    DatasetResult.entry_timeouts (entries killed at the wall-time cap).
     """
     completed = list(completed)
     failed = list(failed)
@@ -35,6 +37,7 @@ def _dr(slug, *, completed=(), failed=(), crashes=0, total_poses=0,
         flexaid_crashes=crashes,
         total_poses=total_poses,
         entry_exit_codes=exit_codes or {},
+        entry_timeouts=timeouts or {},
         inconclusive_metrics=list(missing_metrics),
         newly_executed=newly_executed,
         resumed=resumed,
@@ -136,3 +139,73 @@ def test_allowlist_bypasses_productivity(monkeypatch):
     # ...but a crash is never allowlistable.
     dr2 = _dr("hard_dataset", failed=["a"], crashes=1, total_poses=0)
     assert any("liveness" in r for r in _benchmark_inconclusive_reasons([dr2]))
+
+
+# --- WO-4: the liveness reason names the failure class ---------------------
+# A timeout and a crash are the SAME science verdict (both count as crashes —
+# that must not change), but different triage: a crash implicates the PR, a
+# timeout at the cap usually implicates the job budget. The reason string must
+# let a reader tell them apart without pulling the log blob.
+
+
+def test_timeout_reason_names_cap():
+    dr = _dr(
+        "astex_diverse",
+        failed=["2bys"],
+        crashes=1,
+        total_poses=0,
+        exit_codes={"2bys/lig": None},
+        timeouts={"2bys/lig": 3600},
+    )
+    (reason,) = [r for r in _benchmark_inconclusive_reasons([dr]) if "liveness" in r]
+    assert "TIMED OUT at 3600 s" in reason
+    assert "2bys/lig" in reason
+
+
+def test_crash_reason_names_exit_code():
+    dr = _dr(
+        "astex_diverse",
+        failed=["1gpk"],
+        crashes=1,
+        total_poses=0,
+        exit_codes={"1gpk/lig": 134},
+    )
+    (reason,) = [r for r in _benchmark_inconclusive_reasons([dr]) if "liveness" in r]
+    assert "CRASHED with code 134" in reason
+
+
+def test_exec_failure_reason_when_no_exit_code_and_no_timeout():
+    # None exit code WITHOUT a timeout record = the binary never executed.
+    dr = _dr(
+        "astex_diverse",
+        failed=["1mq6"],
+        crashes=1,
+        total_poses=0,
+        exit_codes={"1mq6/lig": None},
+        timeouts={},
+    )
+    (reason,) = [r for r in _benchmark_inconclusive_reasons([dr]) if "liveness" in r]
+    assert "EXEC FAILURE" in reason
+
+
+def test_timeout_still_counts_as_crash_for_the_verdict():
+    # The class distinction is triage-only: a timed-out entry keeps the run
+    # INCONCLUSIVE exactly like a crash. Exit 3 is the gate working.
+    dr = _dr(
+        "astex_diverse",
+        failed=["2bys"],
+        crashes=1,
+        exit_codes={"2bys/lig": None},
+        timeouts={"2bys/lig": 5400},
+    )
+    reasons = _benchmark_inconclusive_reasons([dr])
+    assert any("liveness" in r for r in reasons)
+
+
+def test_reason_survives_results_without_timeout_field():
+    # Back-compat: gate objects predating entry_timeouts (SimpleNamespace
+    # mocks, old pickles) must still classify via getattr default.
+    dr = _dr("astex_diverse", failed=["a"], crashes=1, exit_codes={"a/lig": -6})
+    del dr.entry_timeouts
+    (reason,) = [r for r in _benchmark_inconclusive_reasons([dr]) if "liveness" in r]
+    assert "CRASHED with code -6" in reason

@@ -1,7 +1,8 @@
 name: Benchmark Tier 1 (PR Sanity)
 
 # Lightweight benchmark gate on every PR to main.
-# Runs 5 Astex Diverse targets.
+# Runs 4 Astex Diverse targets (tier1_subset_size; anchors 1gpk+1mq6 pinned
+# into every draw, 2 slots drawn from the wall-time-vetted eligible pool).
 # Posts results as a PR comment via a workflow summary + comment action.
 #
 # Timeout budget: the original 10-minute job cap was set when every FlexAID
@@ -213,6 +214,22 @@ jobs:
           # makes G3' (a repeat is bit-identical) testable. FLEXAID_SEED is single-D
           # (RngSeed.h:28); empty => time(0) fallback (gaboom.cpp:337).
           FLEXAID_SEED: ${{ inputs.seed }}
+          # Tier-1 draw seed, PINNED (WO-3): without this the seed falls through
+          # to the UTC date, so every PR the same day draws the same 4 targets
+          # and the verdict rotates at midnight with no code change — the gate
+          # answers "today's dice", not "did this PR change anything". Pinned to
+          # 20260816 (the date this was traced): draws 1gpk 1mq6 1x8x 2c3i
+          # (anchors + 1x8x measured at 1219 s / 1619 s / 2455 s). Rotate the
+          # value deliberately via a direct commit or scheduled job — never
+          # per-PR — and only alongside a green run that establishes the new
+          # draw's expectations.
+          FLEXAIDDS_TIER1_SEED: "20260816"
+          # Per-entry FlexAID wall-time cap (WO-2). Library default is 3600 s;
+          # CI gets 5400 s headroom: the docking step cap is 105 min and 4
+          # targets on 4 workers is one batch, so a 90 min entry still fits.
+          # A target that still times out at 5400 s is a genuine outlier and
+          # belongs in tier1_wall_time_exclusions, NOT a further cap increase.
+          FLEXAIDDS_ENTRY_TIMEOUT_SECONDS: "5400"
           OMP_NUM_THREADS: "1"
           FLEXAIDDS_PARALLEL_RESTARTS: "0"
           FLEXAIDDS_SEED_ELITISM: "0"
@@ -230,6 +247,8 @@ jobs:
             "pb_pocket_weight": "${{ inputs.pb_pocket_w }}",
             "pb_clash_weight": "${{ inputs.pb_clash_w }}",
             "flexaid_seed": "${{ inputs.seed }}",
+            "tier1_seed": "20260816",
+            "entry_timeout_seconds": "5400",
             "omp_num_threads": "1",
             "parallel_restarts": "0",
             "seed_elitism": "0",
