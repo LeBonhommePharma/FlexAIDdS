@@ -184,6 +184,12 @@ Purpose: prove a determinism/perf change does not regress docking accuracy.
 - **Metric:** top-1 rank-0 RMSD, 2.0 Å, in-place. Success ⇔ rank-0 in-place RMSD **`<= 2.0 Å`**.
   Name the instrument (§0: in-repo metric vs
   `score_reference.py`) — an unlabelled RMSD is not reportable.
+- **Blind republish protocol (no % without a receipt):**
+  `scripts/blind_astex85_receipt_protocol.py`. Fixed 85, `native_pose_seeded=0`,
+  `seed_echo=0`, matrix MD5 `72d7c7396702331d96ff12d18f831796`. Default
+  `SEED_ELITISM=0` / `NATIVE_SEED_FRAC=0`. `claim` refuses to print a success %
+  without `RUN_RECEIPT.json`. Do not treat `--oracle-ceiling` as docking power.
+  `scripts/reproduce_astex85.sh --dry-run` writes a receipt and does not dock.
 - **Acceptance:** candidate within noise of baseline; **no target flips success→fail** attributable
   to the change. A full landing decision uses the full 85 × 10-restart protocol; a fast pre-check
   may use a documented subset.

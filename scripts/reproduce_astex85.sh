@@ -19,6 +19,11 @@
 #       bash scripts/reproduce_astex85.sh --oracle-ceiling
 #     Sets SEED_ELITISM=1 and NATIVE_SEED_FRAC=0.90 and prints
 #     "ORACLE CEILING — not docking power". Do not cite that arm as S1.
+#       bash scripts/reproduce_astex85.sh --dry-run
+#     Writes RUN_RECEIPT.json via scripts/blind_astex85_receipt_protocol.py
+#     and exits. Does not launch the 85-target dock.
+#     A success % is printed only by that protocol's `claim` subcommand,
+#     which refuses without a receipt.
 #
 #   This repository publishes no Astex-85 success rate. The former 94.1%
 #   (80/85) target was a seeded oracle ceiling; this script does not compare
@@ -112,16 +117,18 @@ OMP_PER_WORKER="${FLEXAIDDS_OMP_THREADS:-2}"
 FORCE=0
 SKIP_BUILD=0
 ORACLE_CEILING=0
+DRY_RUN=0
 for arg in "$@"; do
     case "$arg" in
         --force)            FORCE=1 ;;
         --skip-build)       SKIP_BUILD=1 ;;
         --oracle-ceiling)   ORACLE_CEILING=1 ;;
+        --dry-run)          DRY_RUN=1 ;;
         -h|--help)
-            head -70 "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \?//'
+            head -80 "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \?//'
             exit 0 ;;
         *)
-            die "Unknown flag: ${arg} (supported: --force --skip-build --oracle-ceiling)"
+            die "Unknown flag: ${arg} (supported: --force --skip-build --oracle-ceiling --dry-run)"
             ;;
     esac
 done
@@ -137,6 +144,20 @@ if [[ "${ORACLE_CEILING}" -eq 1 ]]; then
     NATIVE_SEED_FRAC=0.90
     ARM_LABEL=oracle_ceiling
     CLAIM_VALIDITY=oracle_ceiling_not_docking_power
+fi
+
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+    OUTPUT_DIR="${FLEXAIDDS_DRYRUN_OUT:-${TMPDIR:-/tmp}/flexaidds_astex85_dryrun}"
+    mkdir -p "${OUTPUT_DIR}"
+    EMIT_ARGS=(emit --out "${OUTPUT_DIR}" --dry-run
+        --git-commit "$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)"
+        --binary-path "unspecified-dry-run")
+    if [[ "${ORACLE_CEILING}" -eq 1 ]]; then
+        EMIT_ARGS+=(--oracle-ceiling)
+    fi
+    python3 "${REPO_ROOT}/scripts/blind_astex85_receipt_protocol.py" "${EMIT_ARGS[@]}"
+    ok "dry-run: RUN_RECEIPT written to ${OUTPUT_DIR}; not launching 85-target dock"
+    exit 0
 fi
 
 # =============================================================================
@@ -476,6 +497,16 @@ print("[OK] Wrote ${PROV_FILE}")
 PYEOF
 ok "Provenance written: ${PROV_FILE}"
 
+RECEIPT_ARGS=(emit --out "${OUTPUT_DIR}"
+    --git-commit "${HEAD_COMMIT}"
+    --binary-path "${FLEXAIDDS_BIN}"
+    --binary-sha256 "${BINARY_SHA256}")
+if [[ "${ORACLE_CEILING}" -eq 1 ]]; then
+    RECEIPT_ARGS+=(--oracle-ceiling)
+fi
+python3 "${REPO_ROOT}/scripts/blind_astex85_receipt_protocol.py" "${RECEIPT_ARGS[@]}"
+ok "RUN_RECEIPT written: ${OUTPUT_DIR}/RUN_RECEIPT.json"
+
 # =============================================================================
 # STEP 6 — Run benchmark
 # =============================================================================
@@ -549,6 +580,14 @@ if [[ ! -f "${RESULTS_CSV}" ]]; then
     die "Results CSV not found: ${RESULTS_CSV}
 Benchmark may have crashed. Check ${OUTPUT_DIR}/stderr.log"
 fi
+if [[ ! -f "${OUTPUT_DIR}/RUN_RECEIPT.json" ]]; then
+    die "No RUN_RECEIPT.json in ${OUTPUT_DIR} — refusing to print a success %."
+fi
+
+info "Receipt-gated S1 (scripts/blind_astex85_receipt_protocol.py claim):"
+if ! python3 "${REPO_ROOT}/scripts/blind_astex85_receipt_protocol.py" claim --dir "${OUTPUT_DIR}"; then
+    die "Refusing to print a success %. Blind receipt/CSV gates failed (see above)."
+fi
 
 python3 - "${RESULTS_CSV}" "${PROV_FILE}" \
     "${OUTPUT_DIR}" "${ARM_LABEL}" <<'PYEOF'
@@ -618,7 +657,7 @@ print(f"  {'Rows in CSV':<40} {n_rows:>12}")
 print(f"  {'N_denominator':<40} {N_DENOM:>12}")
 print(f"  {'RMSD instrument':<40} {instrument:>12}")
 print(f"  {'Successful (rank-0 RMSD <= 2.0 Å)':<40} {n_ok:>12}")
-print(f"  {'Observed S1 (n_ok / 85)':<40} {rate:>11.1f}%")
+print(f"  {'S1 percent':<40} {'(see claim line above)':>12}")
 print(f"  {'Mean RMSD (Å)':<40} {mean_r:>12.2f}")
 print(f"  {'Median RMSD (Å)':<40} {median_r:>12.2f}")
 if wall_times:
