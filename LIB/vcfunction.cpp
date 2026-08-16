@@ -8,6 +8,7 @@
 #include "ProtocolConfig.h"
 #include "ca_rec_flat.h"
 #include "EnvFlags.h"
+#include "get_yval.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -41,6 +42,10 @@ static const float con_r0 = []() {
     return v;
 }();
 static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
+// FLEXAIDDS_GET_YVAL_LUT default OFF (METHODOLOGY.md §1). Same magic-static
+// hoist as the flags above — getenv is never in the per-contact loop.
+// LUT remains opt-in; the 3-arg get_yval uses this snapshot.
+static const bool get_yval_use_lut = flexaids::get_yval_lut_enabled_cached();
 
 // FLEXAIDDS_POLAR_DESOLV_WEIGHT (float >= 0, default 0.0 = OFF): per-ligand-atom
 // polar-burial desolvation penalty, folded into the cfs->sas channel (which
@@ -505,7 +510,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 
 			//double yval = get_yval(energy_matrix,area/((surfA+surfB)/2.0));
 			// always use normalized areas in density functions
-			double yval = get_yval(energy_matrix,area/surfA);
+			double yval = get_yval(energy_matrix,area/surfA, get_yval_use_lut);
 			
 			SAS -= area;
 			
@@ -928,7 +933,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 										 (FA->ntypes-1)];
 			//printf("type1: %d\ttype2: %d\n", energy_matrix->type1, energy_matrix->type2);
 			
-			double yval = get_yval(energy_matrix,SAS/surfA);
+			double yval = get_yval(energy_matrix,SAS/surfA, get_yval_use_lut);
 			
 			if(energy_matrix->weight){
 				if(FA->normalize_area){
@@ -1460,4 +1465,4 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
   
 }
 
-// get_yval lives in get_yval.cpp (scan + opt-in LUT).
+// get_yval lives in get_yval.cpp (binary-search scan + opt-in lock-free LUT).
