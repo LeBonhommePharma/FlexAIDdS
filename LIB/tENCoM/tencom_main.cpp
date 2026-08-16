@@ -297,6 +297,7 @@ static void run_analysis_at_temperature(
 
     tencom_output::FlexMode ref_mode;
     ref_mode.mode_id = 0;
+    ref_mode.structure_index = 0;
     ref_mode.pdb_path = opts.pdb_files[0];
     ref_mode.label = "reference";
     ref_mode.S_vib = ref_svib.S_vib_kcal_mol_K;
@@ -333,6 +334,7 @@ static void run_analysis_at_temperature(
 
         tencom_output::FlexMode tgt_mode;
         tgt_mode.mode_id = static_cast<int>(t + 1);
+        tgt_mode.structure_index = t + 1;
         tgt_mode.pdb_path = opts.pdb_files[t + 1];
         tgt_mode.label = opts.pdb_files[t + 1];
         tgt_mode.S_vib = diff.svib_tgt.S_vib_kcal_mol_K;
@@ -354,9 +356,16 @@ static void run_analysis_at_temperature(
     population.print_summary();
 
     if (opts.output_pdb) {
-        int n = std::min(all_structures.size(), population.modes.size());
-        for (int i = 0; i < static_cast<int>(n); ++i) {
-            population.write_mode_pdb(population.modes[i], all_structures[i]);
+        for (const auto& mode : population.modes) {
+            const auto* st = tencom_output::FlexPopulation::paired_structure(
+                mode, all_structures);
+            if (!st) {
+                std::cerr << "Error: mode " << mode.mode_id
+                          << " structure_index " << mode.structure_index
+                          << " out of range\n";
+                continue;
+            }
+            population.write_mode_pdb(mode, *st);
         }
     }
     if (opts.output_json) {
