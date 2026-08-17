@@ -328,7 +328,7 @@ MAJOR/MINOR in July and were not closed.
 |-------------------|------------------|
 | §0 Python RMSD “NOT symmetry-corrected”; #365 open | #365 merged; element-Hungarian is on |
 | §4 ctest expect **11/11** | This configure registered far more than 11 binaries (see §8) |
-| cmake path `/opt/homebrew/bin/cmake` | Host-specific; Linux CI uses distro/kitware cmake |
+| cmake path `<host-specific-cmake-path>` (Darwin Homebrew in this session) | Host-specific; Linux CI uses distro/kitware cmake |
 
 The file remains the right *procedural* source of truth for parity / Astex-85
 A/B / merge gates. The **instrument table in §0** needs a methods edit (there,
@@ -339,12 +339,11 @@ not in a skill fork) so agents stop repeating a closed #365.
 ### M3 — MEDIUM: hardcoded Darwin paths in tests / scripts
 
 `tests/test_campaign_methodology_gates.py::test_g4_2_niche_distance_drives_shipped_cpp_binary`
-defaults `SCRATCH` to
-`/var/folders/8b/tgtvwb_j6zd_g03vl1w4ykfw0000gn/T/grok-goal-…`. On this Linux
-host that raises `PermissionError: '/var/folders'` rather than skipping. Same
-prefix appears in `scripts/patch_bcr_from_poses.py`. This is an AGENTS.md
-hygiene miss (machine-specific absolute path) and a false-red / false-environment
-test.
+defaults `SCRATCH` to a Darwin `<temporary-directory>` under the `/var/folders/`
+prefix (host-specific UUID path omitted). On this Linux host that raises
+`PermissionError` on that Darwin prefix rather than skipping. Same prefix
+appears in `scripts/patch_bcr_from_poses.py`. This is an AGENTS.md hygiene miss
+(machine-specific absolute path) and a false-red / false-environment test.
 
 ---
 
@@ -380,14 +379,17 @@ smell; the checker is no longer a total no-op.
 
 ---
 
-### M6 — LOW: CMake 3.28 cannot configure C++26 + OpenMP on GNU
+### M6 — LOW: CMake 3.28.3 cannot configure C++26 + OpenMP on GNU
 
 `cmake_minimum_required(VERSION 3.28)` plus `CMAKE_CXX_STANDARD 26` makes
 CMake 3.28.3’s `FindOpenMP` `try_compile` fail:
 “requires the language dialect CXX26 … GNU does not support this, or CMake
 does not know the flags.” This session configured successfully with **CMake
-4.4.2**. GitHub `ubuntu-latest` in 2026 likely ships a newer cmake than 3.28;
-a strictly-3.28 host cannot build. Worth documenting in INSTALLATION / CI.
+4.4.2**. Those are the only versions tested here (3.28.3 fail, 4.4.2 pass).
+This audit does **not** claim CMake ≥3.31 is sufficient — that was not
+build-tested. A host stuck on 3.28.3 cannot configure this tree. Worth
+documenting the tested pair in INSTALLATION / CI (out of scope for this
+docs-only change).
 
 ---
 
@@ -473,8 +475,8 @@ You **cannot** yet defend, from this tip alone:
 | 9 | Exact element match for hydrogen; tertiary-amine virtual H; rotor-donor closed-form angle |
 | 10 | Wire `score_reference.py` or retire `score_offline.py`; unify `<` vs `≤` 2.0 Å |
 | 11 | Register or delete the three unbuilt `tests/test_*.cpp` files; `pytest.skip` oracle-ceiling |
-| 12 | Replace Darwin `/var/folders/…` scratch defaults with `tempfile` |
-| 13 | Drop `\|\| true` on scancode; document CMake ≥ 3.31 (or 4.x) for CXX26+OpenMP |
+| 12 | Replace Darwin `/var/folders/` scratch defaults with `tempfile` |
+| 13 | Drop `\|\| true` on scancode; document a **tested** CMake minimum for CXX26+OpenMP (this session: 3.28.3 fail, 4.4.2 pass; do not claim 3.31 without a configure test) |
 | 14 | Opt-in `FLEXAIDDS_RNG_STREAM_FIX` / `NAN_RANK_GUARD` only after a new baseline campaign |
 
 ---
@@ -493,8 +495,8 @@ System CMake 3.28.3 **cannot** configure this tree (CXX26 + FindOpenMP `try_comp
 | `test_protocol_config` election/Softβ filter | **4/4 passed** including `ElectionShannonDefaultOffOptInAndLegacyZh` |
 | `FlexAID --help` | exit 0, usage text present |
 | Python science-gate subset (excluding Darwin-scratch test) | **79 passed, 1 skipped** |
-| Same subset **including** `test_g4_2_niche_distance_drives_shipped_cpp_binary` | **1 failed** — `PermissionError: '/var/folders'` (finding M3) |
-| `python3 scripts/check_repo_hygiene.py` | **OK** (does not flag the `/var/folders` path in `tests/`) |
+| Same subset **including** `test_g4_2_niche_distance_drives_shipped_cpp_binary` | **1 failed** — `PermissionError` on Darwin `<temporary-directory>` prefix (finding M3) |
+| `python3 scripts/check_repo_hygiene.py` | **OK** (does not flag the Darwin scratch default in `tests/`) |
 
 No Astex dock was run. No success rate is reported.
 
