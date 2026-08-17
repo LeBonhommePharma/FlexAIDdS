@@ -214,15 +214,15 @@ jobs:
           # makes G3' (a repeat is bit-identical) testable. FLEXAID_SEED is single-D
           # (RngSeed.h:28); empty => time(0) fallback (gaboom.cpp:337).
           FLEXAID_SEED: ${{ inputs.seed }}
-          # Tier-1 draw seed, PINNED (WO-3): without this the seed falls through
-          # to the UTC date, so every PR the same day draws the same 4 targets
-          # and the verdict rotates at midnight with no code change — the gate
-          # answers "today's dice", not "did this PR change anything". Pinned to
-          # 20260816 (the date this was traced): draws 1gpk 1mq6 1x8x 2c3i
-          # (anchors + 1x8x measured at 1219 s / 1619 s / 2455 s). Rotate the
-          # value deliberately via a direct commit or scheduled job — never
-          # per-PR — and only alongside a green run that establishes the new
-          # draw's expectations.
+          # Tier-1 draw seed, PINNED (WO-3 / addendum C-5): env overrides yaml
+          # tier1_seed. Do not change this value here without rotating yaml
+          # tier1_seed in both astex_diverse.yaml copies at the same time.
+          # Pinned to 20260816. After C-3 receptor-size exclusion of 1of6 the
+          # same seed draws 1gpk 1mq6 1xm6 2cet (anchors unchanged; rotating
+          # slots shifted because random.sample sees 83 eligible instead of 84).
+          # 1xm6=5635 apo atoms, 2cet=7895 — both below the 15098 outer fence.
+          # Rotate deliberately via a direct commit — never per-PR — and only
+          # alongside a green run that establishes the new draw's expectations.
           FLEXAIDDS_TIER1_SEED: "20260816"
           # Per-entry FlexAID wall-time cap (WO-2). Library default is 3600 s;
           # CI gets 5400 s headroom: the docking step cap is 105 min and 4
