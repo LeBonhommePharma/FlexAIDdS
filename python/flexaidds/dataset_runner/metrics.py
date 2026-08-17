@@ -10,7 +10,7 @@ Metric catalogue
 * enrichment_factor     — EF at any percentile
 * log_auc               — Logarithmic AUC for early enrichment
 * scoring_power         — Pearson r + RMSE vs experimental affinities
-* docking_power         — % top-ranked poses with RMSD < threshold
+* docking_power         — % top-ranked poses with RMSD <= threshold
 * target_specificity_zscore — Z-score of binder scores vs random background
 * hit_rate_top_n        — Fraction of true binders in top-N predictions
 * bootstrap_ci          — 95% CI via non-parametric bootstrapping
@@ -62,6 +62,15 @@ class PoseScore:
     ensemble_log_Z: Optional[float] = None  # P3 grand canonical: real log_Z from ensemble (for conc-weighted Xi)
 
 
+def rmsd_is_success(rmsd: float, threshold: float = 2.0) -> bool:
+    """Inclusive RMSD success gate (METHODOLOGY.md §0).
+
+    Success ⇔ ``0.0 <= rmsd <= threshold``. Sentinel values (-1 = not
+    computed, 999 = no pose) never succeed. Ranking/election is unchanged.
+    """
+    return 0.0 <= rmsd <= threshold
+
+
 # ---------------------------------------------------------------------------
 # Entropy rescue rate (Shannon Energy Collapse)
 # ---------------------------------------------------------------------------
@@ -81,7 +90,7 @@ def entropy_rescue_rate(
 
     A rescue event for target *t* requires all of the following:
     1. The crystal pose (lowest RMSD across all poses for *t*) has
-       ``rmsd < rmsd_threshold``.
+       ``0.0 <= rmsd <= rmsd_threshold``.
     2. Its enthalpy rank > ``rank_threshold`` (missed by enthalpy alone).
     3. Its entropy-corrected rank ≤ ``rank_threshold`` (rescued by ΔS).
 
@@ -113,7 +122,7 @@ def entropy_rescue_rate(
         if not valid:
             continue
         crystal = min(valid, key=lambda p: p.rmsd)
-        if crystal.rmsd >= rmsd_threshold:
+        if not rmsd_is_success(crystal.rmsd, rmsd_threshold):
             continue  # no reference pose within threshold
 
         # Rank by enthalpy (lower = better)
@@ -301,7 +310,7 @@ def docking_power(
     """Fraction of targets where the top-N poses contain a near-native pose.
 
     A target is a "success" if *any* of its top-``top_n`` ranked poses (by
-    ``total_score``) has ``0.0 <= rmsd < rmsd_threshold``.  Sentinel RMSD
+    ``total_score``) has ``0.0 <= rmsd <= rmsd_threshold``.  Sentinel RMSD
     values (-1 = not computed, 999 = no pose emitted) are never successes.
 
     The denominator is the number of targets *attempted*, not the number that
@@ -331,7 +340,7 @@ def docking_power(
         # Rank over every emitted pose. Filtering the sentinels out first would
         # promote a worse-scoring pose into the top-N and inflate the rate.
         ranked = sorted(target_poses, key=lambda p: p.total_score)[:top_n]
-        if any(0.0 <= p.rmsd < rmsd_threshold for p in ranked):
+        if any(rmsd_is_success(p.rmsd, rmsd_threshold) for p in ranked):
             n_success += 1
 
     denom = n_targets if n_targets is not None else len(by_target)
@@ -526,7 +535,7 @@ def compute_all_metrics(
         for p in poses:
             # Exclude both sentinels: -1 (not computed) and 999 (no pose
             # emitted).  Averaging 999 would silently poison the aggregate,
-            # unlike docking_power where the rmsd < 2.0 threshold neutralises it.
+            # unlike docking_power where the rmsd <= 2.0 threshold neutralises it.
             if 0.0 <= p.rmsd < 999.0:
                 _rmsd_by_target[p.target_id].append(p.rmsd)
         best_rmsds = sorted(min(v) for v in _rmsd_by_target.values() if v)

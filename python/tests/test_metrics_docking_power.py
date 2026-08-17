@@ -3,7 +3,7 @@
 These pin the two ways a reported success rate can be silently inflated:
 dropping targets that produced no usable pose from the denominator, and
 letting a sentinel RMSD (-1 = not computed, 999 = no pose) satisfy the
-``rmsd < 2.0`` comparison.
+``0.0 <= rmsd <= 2.0`` comparison.
 """
 
 from flexaidds.dataset_runner.metrics import PoseScore, docking_power
@@ -41,6 +41,12 @@ def test_n_targets_pins_the_full_dataset_size():
     # Only two targets reported anything at all; the rest never ran.
     poses = [_pose("HIT", 1.2, -10.0), _pose("MISS", 5.0, -9.0)]
     assert docking_power(poses, n_targets=85) == 1.0 / 85.0
+
+
+def test_rmsd_exactly_2_0_counts_as_success():
+    """METHODOLOGY.md §0: success ⇔ rank-0 in-place RMSD <= 2.0 Å."""
+    assert docking_power([_pose("T1", 2.0, -10.0)]) == 1.0
+    assert docking_power([_pose("T1", 2.0001, -10.0)]) == 0.0
 
 
 def test_sentinel_pose_still_occupies_its_rank():

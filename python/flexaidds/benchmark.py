@@ -715,8 +715,8 @@ class BenchmarkSummary:
 
     Attributes:
         n_systems: Total number of systems.
-        flexaidds_success_rate: Fraction with RMSD < threshold.
-        boltz2_success_rate: Fraction with RMSD < threshold.
+        flexaidds_success_rate: Fraction with RMSD <= threshold.
+        boltz2_success_rate: Fraction with RMSD <= threshold.
         flexaidds_median_rmsd_angstrom: Median best-pose RMSD.
         boltz2_median_rmsd_angstrom: Median best-pose RMSD.
         rank_correlation_spearman: Spearman rho between methods' score rankings.
@@ -821,7 +821,12 @@ class BenchmarkResult:
         threshold = self.rmsd_threshold_angstrom
 
         def _success(rmsds: List[float]) -> Optional[float]:
-            return sum(1 for r in rmsds if r < threshold) / len(rmsds) if rmsds else None
+            # Inclusive 2.0 Å gate (METHODOLOGY.md §0). Ranking/election unchanged.
+            return (
+                sum(1 for r in rmsds if 0.0 <= r <= threshold) / len(rmsds)
+                if rmsds
+                else None
+            )
 
         def _median(vals: List[float]) -> Optional[float]:
             if not vals:
