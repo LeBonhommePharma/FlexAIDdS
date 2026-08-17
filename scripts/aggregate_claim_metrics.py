@@ -384,10 +384,12 @@ def aggregate_rows(
         denom = len(manifest_codes)
         missing_targets = sorted(set(manifest_codes) - observed_ids)
         denom_source = f"frozen_manifest(N={denom},sha={manifest_sha[:12]})"
+        manifest_set: set[str] | None = {c.upper() for c in manifest_codes}
     else:
         denom = n
         missing_targets = []
         denom_source = "claim_eligible_rows(legacy)"
+        manifest_set = None
 
     s1_ids: list[str] = []
     s2_ids: list[str] = []
@@ -414,7 +416,11 @@ def aggregate_rows(
             s1_fail_ids.append(pid)
         if s2:
             s2_ids.append(pid)
-        if strict:
+        # STRICT numerator is ∩ the frozen 85-target manifest. Off-manifest
+        # extras must not inflate n while the denominator stays 85.
+        if strict and (
+            manifest_set is None or pid.strip().upper() in manifest_set
+        ):
             strict_ids.append(pid)
         if s3:
             s3_ids.append(pid)
@@ -455,7 +461,10 @@ def aggregate_rows(
                 "ids": s2_ids,
             },
             "STRICT": {
-                "definition": "claim_ready==1 with PB + tENCoM/Eigen + hash receipts",
+                "definition": (
+                    "claim_ready==1 with PB + tENCoM/Eigen + hash receipts; "
+                    "numerator ∩ frozen 85-target manifest"
+                ),
                 "role": "primary_headline",
                 "n": len(strict_ids),
                 "rate": rate(len(strict_ids)),
