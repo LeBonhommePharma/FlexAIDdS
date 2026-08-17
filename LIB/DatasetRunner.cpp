@@ -6161,7 +6161,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // Shannon-ON vs default A/B is a single-flag toggle on the same
                    // binary — no source fork. The flag is echoed into the per-case
                    // dock_config.json so the experiment arm is greppable on disk.
-                   <<    "    \"fitness_model\": \"SMFREE\"";  // v121: SMFREE e^(-CF/kT) overflows at docking CF~-80,kT=0.596 -> fitness=1000 for all -> GA=random sampler. v50b 81.2% relied on this: crystal-seed+exploration+5r-consensus finds native. PSHARE (ee9db7f9) optimizes correctly but converges to CF false-min -> 41.2%.
+                   // FLEXAIDDS_FITNESS_MODEL: default SMFREE (unset/empty) so every
+                   // existing number stays bit-identical. PSHARE is the 2016
+                   // production model. Unknown values fail-closed in ProtocolConfig.
+                   // v121: SMFREE e^(-CF/kT) overflows at docking CF~-80,kT=0.596 ->
+                   // fitness=1000 for all -> GA=random sampler. v50b 81.2% relied on
+                   // this: crystal-seed+exploration+5r-consensus finds native.
+                   // PSHARE (ee9db7f9) optimizes correctly but converges to CF
+                   // false-min -> 41.2%.
+                   <<    "    \"fitness_model\": \"" << protocol_cfg_.fitness_model << "\"";
                 if (protocol_cfg_.use_shannon) {
                     jf << ",\n    \"use_shannon\": true";
                 }
