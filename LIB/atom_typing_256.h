@@ -235,10 +235,23 @@ inline bool classify_hbond_acceptor(uint8_t base_type, float partial_charge,
         return classify_hbond_acceptor(base_type, partial_charge, n_hydrogens);
 
     switch (base_type) {
-        case N_sp3:
-            // The lone pair is what accepts. Once the nitrogen is quaternised
-            // or protonated it is spent — the atom is a donor, not an acceptor.
-            return !topo.is_quaternary_nitrogen() && !topo.is_cationic();
+        case N_sp3: {
+            // The lone pair is what accepts, and sp3 N has exactly one. Neutral
+            // sp3 N is 3-coordinate: three substituents plus that lone pair. A
+            // fourth substituent — heavy atom OR hydrogen — can only be there
+            // because the lone pair was spent forming it, i.e. the nitrogen is
+            // quaternised or protonated. So coordination number is the single
+            // criterion, and it consumes exactly the same protonation evidence
+            // the donor test accepts: an explicit H on an already 3-substituted
+            // nitrogen is an ammonium, not an amine with a free lone pair.
+            //
+            // 1°/2° amines stay amphoteric: R-NH2 is (1 heavy + 2 H) = 3, and
+            // R2NH is (2 heavy + 1 H) = 3 — both accept. Their conjugate acids
+            // R-NH3+ (1+3) and R2NH2+ (2+2) reach 4 and correctly stop.
+            const int h = (n_hydrogens > 0) ? n_hydrogens : 0;
+            const int coordination = topo.n_heavy_neighbors + h;
+            return coordination < 4 && !topo.is_cationic();
+        }
         case N_quat:
             return false;
         default:
