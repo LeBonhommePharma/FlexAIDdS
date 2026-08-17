@@ -110,12 +110,16 @@ def test_astex_diverse_yaml_uses_random_selection():
         seen.append((
             d.get("tier1_selection"),
             d.get("tier1_subset_size"),
-            # Wall-time exclusions change the eligible pool, so a drift here
-            # silently changes every CI draw on one copy but not the other.
+            d.get("tier1_seed"),
+            # Wall-time / receptor-size exclusions change the eligible pool, so
+            # a drift here silently changes every CI draw on one copy but not
+            # the other.
             tuple(d.get("tier1_wall_time_exclusions") or ()),
         ))
     # 4 = the free-coverage point: one batch of 4 workers, same wall as 2.
-    assert seen[0] == ("random", 4, ("2bys",))
+    # 20260816 = CI FLEXAIDDS_TIER1_SEED; yaml pin matches so local repro
+    # without the env var still draws the same subset.
+    assert seen[0] == ("random", 4, 20260816, ("1of6", "2bys"))
     assert seen[0] == seen[1], f"astex_diverse copies disagree: {seen}"
 
 
@@ -186,10 +190,10 @@ def test_pinned_seed_draw_ignores_utc_date(monkeypatch):
 
 def test_ci_pinned_seed_draw_is_the_documented_one(monkeypatch):
     """Guard the workflow pin: FLEXAIDDS_TIER1_SEED=20260816 in
-    benchmark-tier1.yml must keep drawing 1gpk 1mq6 1x8x 2c3i from the real
-    astex_diverse config. If a YAML edit silently changes this draw, the CI
-    gate's expectations change with no one noticing — this test makes that
-    loud instead."""
+    benchmark-tier1.yml must keep drawing 1gpk 1mq6 1xm6 2cet from the real
+    astex_diverse config (anchors + rotating slots after C-3 excluded 1of6).
+    If a YAML edit silently changes this draw, the CI gate's expectations
+    change with no one noticing — this test makes that loud instead."""
     import pathlib
 
     monkeypatch.setenv("FLEXAIDDS_TIER1_SEED", "20260816")
@@ -200,7 +204,62 @@ def test_ci_pinned_seed_draw_is_the_documented_one(monkeypatch):
     if not cfg_path.exists():
         pytest.skip(f"{cfg_path} not present")
     cfg = DatasetConfig.from_yaml(cfg_path)
-    assert cfg.tier1_targets() == ["1gpk", "1mq6", "1x8x", "2c3i"]
+    assert cfg.tier1_targets() == ["1gpk", "1mq6", "1xm6", "2cet"]
+
+
+def test_yaml_tier1_seed_is_stable_across_utc_dates(monkeypatch):
+    """C-5: with no FLEXAIDDS_TIER1_SEED, two different UTC dates draw the same
+    subset because yaml ``tier1_seed: 20260816`` wins over the date fallback.
+    """
+    import datetime
+    import pathlib
+
+    monkeypatch.delenv("FLEXAIDDS_TIER1_SEED", raising=False)
+    cfg_path = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "python/flexaidds/dataset_runner/datasets/astex_diverse.yaml"
+    )
+    if not cfg_path.exists():
+        pytest.skip(f"{cfg_path} not present")
+
+    draws = []
+    for ymd in ("20260816", "20260817", "20260901"):
+        class _DT(datetime.datetime):
+            _ymd = ymd
+
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.datetime.strptime(cls._ymd, "%Y%m%d").replace(
+                    tzinfo=datetime.timezone.utc
+                )
+
+        monkeypatch.setattr(
+            "flexaidds.dataset_runner.runner.datetime.datetime", _DT
+        )
+        cfg = DatasetConfig.from_yaml(cfg_path)
+        assert cfg.tier1_seed == 20260816
+        draws.append(tuple(cfg.tier1_targets()))
+    assert draws[0] == draws[1] == draws[2]
+    assert list(draws[0]) == ["1gpk", "1mq6", "1xm6", "2cet"]
+
+
+def test_receptor_size_exclusions_never_enter_a_draw(monkeypatch):
+    """1of6/2bys sit above the Tukey outer fence; no seed may draw them."""
+    import pathlib
+
+    cfg_path = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "python/flexaidds/dataset_runner/datasets/astex_diverse.yaml"
+    )
+    if not cfg_path.exists():
+        pytest.skip(f"{cfg_path} not present")
+    cfg = DatasetConfig.from_yaml(cfg_path)
+    assert "1of6" in cfg.tier1_wall_time_exclusions
+    assert "2bys" in cfg.tier1_wall_time_exclusions
+    for s in range(40):
+        monkeypatch.setenv("FLEXAIDDS_TIER1_SEED", str(s))
+        got = cfg.tier1_targets()
+        assert "1of6" not in got and "2bys" not in got
 
 
 # --------------------------------------------------------------------------
