@@ -391,7 +391,7 @@ jobs:
       - name: Validate public thermodynamic claims and provenance firewall
         run: |
           python3 scripts/validate_thermo_claims.py
-          python3 -m pytest tests/test_thermo_claim_firewall.py tests/test_rmsd_five_way_crosscheck.py -q
+           python3 -m pytest tests/test_thermo_claim_firewall.py tests/test_rmsd_five_way_crosscheck.py tests/test_wave4_tencom_ledger_firewall.py -q
       - name: Validate flexaidds skill packaging
         env:
           FLEXAIDDS_REQUIRE_BUILD: '0'

@@ -53,6 +53,20 @@ tier1_subset_size: 4
 # is not evidence on its own. Compare only runs reporting the same seed.
 tier1_selection: random
 
+# WALL-TIME exclusions (NOT science exclusions). Targets measured over the
+# tier-1 per-entry timeout cap are removed from the eligible pool before
+# selection in BOTH fixed and random modes. This says "too slow for this job
+# budget", never "too hard": excluded targets remain fully eligible for tier-2
+# and campaign runs. Re-admission requires a clean run under the CURRENT cap.
+# The measured evidence travels with each entry:
+#
+#   2bys  timed out at the 3600 s cap on 2026-08-16 (PR #439; timing per the
+#         external log audit recorded in workorders/HANDOFF_OpenCode_tier1_exit3.md
+#         — siblings that day: 1x8x 1219 s, 1gpk 1619 s, 1mq6 2455 s). Not yet
+#         measured against the 5400 s CI cap: re-admit after one clean 5400 s run.
+tier1_wall_time_exclusions:
+  - 2bys
+
 # Anchor targets: pinned into EVERY draw, so a fixed core of each run stays
 # directly comparable run-to-run while the remaining slots rotate for coverage.
 # 1gpk and 1mq6 are the historical pair (every Tier-1 run before #400 used exactly
