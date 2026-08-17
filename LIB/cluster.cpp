@@ -6,6 +6,7 @@
 #include "EnvFlags.h"
 #include "ClusterRepMode.h"
 #include "TargetServer.h"
+#include "tencom_ledger.h"
 #include <cmath>
 #include <cstdlib>
 #include <limits>
@@ -420,6 +421,12 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
       
 	printf("num_of_clusters=%d num_of_results=%d\n",num_of_clusters,num_of_results);
 	fflush(stdout);
+
+	flexaids::TencomLambdaLedger tencom_lambda_ledger{};
+	if (flexaids::ledger_tencom_lambda_enabled()) {
+		tencom_lambda_ledger = flexaids::collect_tencom_lambda_from_atoms(
+			atoms, residue, FA->res_cnt);
+	}
 	
         // output results, 10% of the number of chromosomes or 
         // the number of clusters, the smallest.
@@ -586,6 +593,12 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK frequency = %d\n", Clus_FRE[j]);
 			safe_remark_cat(remark, tmpremark, &remark_len);
+			if (flexaids::ledger_tencom_lambda_enabled()) {
+				const std::string tl =
+					flexaids::format_tencom_lambda_remark(tencom_lambda_ledger);
+				if (!tl.empty())
+					safe_remark_cat(remark, tl.c_str(), &remark_len);
+			}
 		}
 		for(i=0;i<FA->npar;++i)
 		{
