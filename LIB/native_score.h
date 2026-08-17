@@ -15,7 +15,11 @@
 //   steric-clash explosions.
 //
 // Output:  one line on stderr  (DatasetRunner parses the cf= field):
-//   [NATIVE_CF] cf=<total> breakdown=com:<v>,wal:<v>,sas:<v>,con:<v>
+//   [NATIVE_CF] cf=<total> breakdown=com:<v>,wal:<v>,sas:<v>,con:<v>,
+//               elec:<v>,hbond:<v>,gist_desolv:<v>,metal_coord:<v>,
+//               entropy:<v>,pb_clash:<v>
+//   Total matches get_cf_evalue() (ten channels). elec/gist are structurally
+//   zero today; metal_coord is the term this diagnostic previously omitted.
 //
 // The GA continues normally after this diagnostic — no extra subprocess needed.
 //

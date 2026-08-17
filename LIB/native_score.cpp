@@ -320,7 +320,11 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
             cf.wal += FA->optres[i].cf.wal;
             cf.sas += FA->optres[i].cf.sas;
             cf.con += FA->optres[i].cf.con;
+            cf.elec += FA->optres[i].cf.elec;
+            cf.gist_desolv += FA->optres[i].cf.gist_desolv;
+            cf.metal_coord += FA->optres[i].cf.metal_coord;
             cf.hbond += FA->optres[i].cf.hbond;
+            cf.entropy += FA->optres[i].cf.entropy;
             cf.pb_clash += FA->optres[i].cf.pb_clash;
         }
     }
@@ -339,13 +343,19 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
     // ── 5. Emit [NATIVE_CF] line for DatasetRunner parsing ───────────────────
     const double cf_total = get_cf_evalue(&cf, FA);
     fprintf(stderr,
-        "[NATIVE_CF] cf=%.6f breakdown=com:%.4f,wal:%.4f,sas:%.4f,con:%.4f,hbond:%.4f,pb_clash:%.4f\n",
+        "[NATIVE_CF] cf=%.6f breakdown=com:%.4f,wal:%.4f,sas:%.4f,con:%.4f,"
+        "elec:%.4f,hbond:%.4f,gist_desolv:%.4f,metal_coord:%.4f,entropy:%.4f,"
+        "pb_clash:%.4f\n",
         cf_total,
         static_cast<double>(cf.com),
         static_cast<double>(cf.wal),
         static_cast<double>(cf.sas),
         static_cast<double>(cf.con),
+        static_cast<double>(cf.elec),
         static_cast<double>(cf.hbond),
+        static_cast<double>(cf.gist_desolv),
+        static_cast<double>(cf.metal_coord),
+        static_cast<double>(cf.entropy),
         static_cast<double>(cf.pb_clash));
 }
 
