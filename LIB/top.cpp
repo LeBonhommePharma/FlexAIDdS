@@ -1675,10 +1675,20 @@ int main(int argc, char **argv){
 						const int explicit_h = bonded_hydrogen_count(i);
 						const int n_hydrogens = explicit_h +
 							conservative_implicit_h_count(i, explicit_h, k);
+						// Heavy-atom substitution evidence for amine/alcohol roles.
+						// Only trusted when the atom actually carries a bond list:
+						// PDB receptor atoms can arrive with bond[0]==0, and a
+						// fabricated heavy count of 0 would read as a primary amine.
+						// With known=false the classifier reproduces its previous
+						// verdict exactly.
+						atom256::HbondTopology topo;
+						topo.n_heavy_neighbors = heavy_neighbor_count(i);
+						topo.known             = (atoms[i].bond[0] > 0);
 						atoms[i].type256 = atom256::encode_from_sybyl(
 							atoms[i].type,   // SYBYL type 1–40
 							atoms[i].charge, // partial charge (MOL2 or AMBER ff14SB)
-							n_hydrogens      // explicit + conservative implicit H
+							n_hydrogens,     // explicit + conservative implicit H
+							topo             // heavy-atom substitution evidence
 						);
 						// Virtual-H geometry recipe: stores heavy-neighbor indices so
 						// hbond_potential.h reconstructs H direction from live coords
