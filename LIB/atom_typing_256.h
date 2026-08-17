@@ -104,6 +104,35 @@ struct HbondRoles {
     bool acceptor;
 };
 
+// ─── topology evidence for amine substitution ───────────────────────────────
+// Partial charge cannot resolve amine substitution: ligand charges are
+// identically 0 on the PDB-derived SDF path (PDB carries no partial charges by
+// format definition), so `partial_charge < 0.3f` is unconditionally true and
+// every ligand sp3 N entered scoring acceptor-only — a protonated amine, the
+// dominant CNS pharmacophore, had its roles exactly inverted.
+//
+// The discriminator is heavy-atom substitution count, not charge and not
+// n_hydrogens (which cannot tell "0 H because tertiary" from "0 H because the
+// input had no H information"). `known` carries that distinction explicitly:
+// when connectivity is absent the classifier falls back to the pre-existing
+// charge-based verdict, byte for byte.
+struct HbondTopology {
+    int  n_heavy_neighbors = 0;      // bonded non-hydrogen count
+    bool known             = false;  // connectivity actually available
+    int  formal_charge     = 0;      // perceived formal charge (e)
+    bool charge_known      = false;  // distinguishes "0" from "unknown"
+
+    // Perceive formal charge from substitution where the topology allows it.
+    // A 4-coordinate sp3 N is a quaternary/protonated ammonium (+1); nothing
+    // else is inferable from heavy-atom count alone.
+    constexpr bool is_quaternary_nitrogen() const noexcept {
+        return known && n_heavy_neighbors >= 4;
+    }
+    constexpr bool is_cationic() const noexcept {
+        return charge_known && formal_charge > 0;
+    }
+};
+
 inline bool classify_hbond_donor(uint8_t base_type, float partial_charge,
                                  int n_hydrogens) noexcept {
     (void)partial_charge;
@@ -167,6 +196,70 @@ inline bool classify_hbond_acceptor(uint8_t base_type, float partial_charge,
     }
 }
 
+// ─── topology-aware overloads ───────────────────────────────────────────────
+// Identical to the 3-argument forms whenever `topo.known` is false, so call
+// sites without connectivity keep their exact previous verdict.
+
+inline bool classify_hbond_donor(uint8_t base_type, float partial_charge,
+                                 int n_hydrogens,
+                                 const HbondTopology& topo) noexcept {
+    if (!topo.known)
+        return classify_hbond_donor(base_type, partial_charge, n_hydrogens);
+
+    switch (base_type) {
+        case N_sp3: {
+            // 4-coordinate → quaternary ammonium: no labile H, not a donor.
+            if (topo.is_quaternary_nitrogen()) return false;
+            // 1°/2° amine (≤2 heavy substituents) necessarily carries N–H.
+            // 3° amine carries N–H only when protonated — evidenced by an
+            // explicit H or a perceived positive formal charge.
+            return topo.n_heavy_neighbors <= 2 || n_hydrogens > 0 ||
+                   topo.is_cationic();
+        }
+        case N_quat:
+            // SYBYL N.4 is by definition quaternary/protonated. It donates
+            // through whatever H fill its fourth-plus valence.
+            return topo.n_heavy_neighbors < 4 || n_hydrogens > 0;
+        case O_sp3:
+            // Hydroxyl (1 heavy substituent) donates; ether (2) does not.
+            return topo.n_heavy_neighbors <= 1;
+        default:
+            return classify_hbond_donor(base_type, partial_charge, n_hydrogens);
+    }
+}
+
+inline bool classify_hbond_acceptor(uint8_t base_type, float partial_charge,
+                                    int n_hydrogens,
+                                    const HbondTopology& topo) noexcept {
+    if (!topo.known)
+        return classify_hbond_acceptor(base_type, partial_charge, n_hydrogens);
+
+    switch (base_type) {
+        case N_sp3: {
+            // The lone pair is what accepts, and sp3 N has exactly one. Neutral
+            // sp3 N is 3-coordinate: three substituents plus that lone pair. A
+            // fourth substituent — heavy atom OR hydrogen — can only be there
+            // because the lone pair was spent forming it, i.e. the nitrogen is
+            // quaternised or protonated. So coordination number is the single
+            // criterion, and it consumes exactly the same protonation evidence
+            // the donor test accepts: an explicit H on an already 3-substituted
+            // nitrogen is an ammonium, not an amine with a free lone pair.
+            //
+            // 1°/2° amines stay amphoteric: R-NH2 is (1 heavy + 2 H) = 3, and
+            // R2NH is (2 heavy + 1 H) = 3 — both accept. Their conjugate acids
+            // R-NH3+ (1+3) and R2NH2+ (2+2) reach 4 and correctly stop.
+            const int h = (n_hydrogens > 0) ? n_hydrogens : 0;
+            const int coordination = topo.n_heavy_neighbors + h;
+            return coordination < 4 && !topo.is_cationic();
+        }
+        case N_quat:
+            return false;
+        default:
+            return classify_hbond_acceptor(base_type, partial_charge,
+                                           n_hydrogens);
+    }
+}
+
 inline bool is_hbond_capable(uint8_t base_type, float partial_charge,
                               int n_hydrogens) noexcept {
     return classify_hbond_donor(base_type, partial_charge, n_hydrogens) ||
@@ -178,6 +271,15 @@ inline HbondRoles infer_hbond_roles(uint8_t base_type, float partial_charge,
     return {
         classify_hbond_donor(base_type, partial_charge, n_hydrogens),
         classify_hbond_acceptor(base_type, partial_charge, n_hydrogens),
+    };
+}
+
+inline HbondRoles infer_hbond_roles(uint8_t base_type, float partial_charge,
+                                    int n_hydrogens,
+                                    const HbondTopology& topo) noexcept {
+    return {
+        classify_hbond_donor(base_type, partial_charge, n_hydrogens, topo),
+        classify_hbond_acceptor(base_type, partial_charge, n_hydrogens, topo),
     };
 }
 
@@ -298,6 +400,30 @@ inline uint8_t encode_from_sybyl(int sybyl_type, float partial_charge,
     base = refine_base_type(base, aromatic_c, has_heteroatom_neighbor,
                             is_bridgehead);
     const HbondRoles roles = infer_hbond_roles(base, partial_charge, n_hydrogens);
+    return encode_roles(base, roles.donor, roles.acceptor);
+}
+
+// Topology-aware encoding. `topo.known == false` reproduces the 3-argument
+// form exactly; SYBYL N.4 supplies its own formal charge, since that type is
+// quaternary/protonated by definition.
+inline uint8_t encode_from_sybyl(int sybyl_type, float partial_charge,
+                                  int n_hydrogens,
+                                  HbondTopology topo,
+                                  bool has_heteroatom_neighbor = false,
+                                  bool is_bridgehead = false) noexcept {
+    uint8_t base = sybyl_to_base(sybyl_type);
+    bool aromatic_c = (sybyl_type == 4);  // C.AR
+    base = refine_base_type(base, aromatic_c, has_heteroatom_neighbor,
+                            is_bridgehead);
+    if (sybyl_type == 9) {  // N.4 — quaternary/protonated by SYBYL definition
+        topo.formal_charge = 1;
+        topo.charge_known  = true;
+    } else if (topo.is_quaternary_nitrogen() && base == N_sp3) {
+        topo.formal_charge = 1;
+        topo.charge_known  = true;
+    }
+    const HbondRoles roles =
+        infer_hbond_roles(base, partial_charge, n_hydrogens, topo);
     return encode_roles(base, roles.donor, roles.acceptor);
 }
 

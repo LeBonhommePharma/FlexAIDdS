@@ -52,7 +52,18 @@ void register_matrix_bindings(py::module_& m) {
         "Map base type (0-63) to SYBYL parent (1-40)");
     m_at.def("base_type_name", &atom256::base_type_name,
         py::arg("base"), "Human-readable name for base type");
-    m_at.def("encode_from_sybyl", &atom256::encode_from_sybyl,
+    // encode_from_sybyl is overloaded (legacy form + topology-aware form), so
+    // &atom256::encode_from_sybyl is ambiguous for pybind11's template
+    // deduction — same hazard as atom256::encode above. Bind via a lambda
+    // pinned to the real signature.
+    m_at.def("encode_from_sybyl",
+        [](int sybyl_type, float partial_charge, int n_hydrogens,
+           bool has_heteroatom_neighbor, bool is_bridgehead) {
+            return atom256::encode_from_sybyl(sybyl_type, partial_charge,
+                                              n_hydrogens,
+                                              has_heteroatom_neighbor,
+                                              is_bridgehead);
+        },
         py::arg("sybyl_type"), py::arg("partial_charge"),
         py::arg("n_hydrogens"),
         py::arg("has_heteroatom_neighbor") = false,

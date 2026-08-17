@@ -2797,6 +2797,12 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME HBondPotentialTests
     )
 
+    # test_hbond_amine_roles — topology-based sp3 N/O H-bond role classification
+    flexaids_add_unit_test(test_hbond_amine_roles
+        SOURCES tests/test_hbond_amine_roles.cpp
+        TEST_NAME HBondAmineRoleTests
+    )
+
     # test_gist_grid — GIST desolvation grid unit tests
     flexaids_add_unit_test(test_gist_grid
         SOURCES tests/test_gist_grid.cpp
