@@ -179,6 +179,7 @@ void seed_runtime_gates() {
     };
     static const char* kEnum[] = {
         "FLEXAIDDS_CLUSTER_REP",
+        "FLEXAIDDS_FITNESS_MODEL",
         "FLEXAIDDS_SEARCH",
         "FLEXAIDDS_POSEBUST_BACKEND",
         "FLEXAIDDS_NEW_SEARCH_ARCH",

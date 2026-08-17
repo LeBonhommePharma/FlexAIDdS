@@ -46,6 +46,12 @@ struct ProtocolConfig {
     /// True when FLEXAIDDS_VCT_ENTROPY_WEIGHT was present (apply_config gate).
     bool vct_entropy_weight_set{false};
     bool use_shannon{false};          ///< FLEXAIDDS_USE_SHANNON (presence)
+    /// GA fitness model emitted into dock_config.json `ga.fitness_model`.
+    /// Default SMFREE — bit-identical to the historical DatasetRunner hardcode.
+    /// FLEXAIDDS_FITNESS_MODEL=PSHARE selects classic rank + niche sharing
+    /// (2016 production). Unset or empty → SMFREE. Unknown values throw
+    /// (fail-closed; do not silently run a typo arm).
+    std::string fitness_model{"SMFREE"};  ///< FLEXAIDDS_FITNESS_MODEL
 
     // ── Ranking / emission + GA ablation (config_parser / engine) ─────────
     /// nullopt = env unset (keep JSON/default). true/false = explicit override.
