@@ -1462,6 +1462,17 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME TENCoMDiffTests
     )
 
+    # test_tencom_output — FlexPopulation mode↔structure pairing after sort
+    flexaids_add_unit_test(test_tencom_output
+        SOURCES
+            tests/test_tencom_output.cpp
+            LIB/tENCoM/tencom_output.cpp
+            LIB/tENCoM/pdb_calpha.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        TEST_NAME TENCoMOutputTests
+    )
+
     # test_ptm_attachment — PTMAttachment module tests
     flexaids_add_unit_test(test_ptm_attachment
         SOURCES

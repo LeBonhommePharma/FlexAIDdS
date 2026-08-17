@@ -39,6 +39,16 @@ void FlexPopulation::sort_by_free_energy() {
               });
 }
 
+const tencom_pdb::CalphaStructure*
+FlexPopulation::paired_structure(
+    const FlexMode& mode,
+    const std::vector<tencom_pdb::CalphaStructure>& structures)
+{
+    if (mode.structure_index >= structures.size())
+        return nullptr;
+    return &structures[mode.structure_index];
+}
+
 // ─── FlexPopulation::write_mode_pdb ─────────────────────────────────────────
 
 void FlexPopulation::write_mode_pdb(const FlexMode& mode,
@@ -270,9 +280,15 @@ void FlexPopulation::output_all(
                   << ") != mode count (" << modes.size() << ")\n";
     }
 
-    int n = std::min(structures.size(), modes.size());
-    for (int i = 0; i < n; ++i) {
-        write_mode_pdb(modes[i], structures[i]);
+    for (const auto& mode : modes) {
+        const auto* st = paired_structure(mode, structures);
+        if (!st) {
+            std::cerr << "Error: mode " << mode.mode_id
+                      << " structure_index " << mode.structure_index
+                      << " out of range (" << structures.size() << " structures)\n";
+            continue;
+        }
+        write_mode_pdb(mode, *st);
     }
 
     std::cout << "\ntENCoM analysis complete. "
@@ -320,12 +336,11 @@ void FlexPopulation::write_json(
         ofs << "      \"n_modes\": " << m.n_modes << ",\n";
         ofs << "      \"n_residues\": " << m.n_residues << ",\n";
 
-        // Composition
-        if (mi < structures.size()) {
-            const auto& s = structures[mi];
-            ofs << "      \"composition\": {\"protein\": " << s.n_protein
-                << ", \"dna\": " << s.n_dna
-                << ", \"rna\": " << s.n_rna << "},\n";
+        // Composition — pair by construction index, not post-sort slot.
+        if (const auto* s = paired_structure(m, structures)) {
+            ofs << "      \"composition\": {\"protein\": " << s->n_protein
+                << ", \"dna\": " << s->n_dna
+                << ", \"rna\": " << s->n_rna << "},\n";
         }
 
         // B-factors
