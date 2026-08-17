@@ -116,7 +116,7 @@ def _row(
 def test_claim_filter_drops_seeded_rows(tmp_path: Path):
     mod = _load()
     rows = [
-        _row("GOOD1", rmsd_ordered=1.2, bcr=0.8, pb=1, claim_ready=1),
+        _row("1G9V", rmsd_ordered=1.2, bcr=0.8, pb=1, claim_ready=1),
         _row("SEED1", rmsd_ordered=0.5, bcr=0.4, pb=1, seed_echo=1, claim=0, claim_ready=0),
         _row("NAT1", rmsd_ordered=0.9, bcr=0.7, pb=1, native_seeded=1, claim=0, claim_ready=0),
         _row("GOOD2", rmsd_ordered=3.5, bcr=1.1, pb=0, claim_ready=0),
@@ -125,10 +125,10 @@ def test_claim_filter_drops_seeded_rows(tmp_path: Path):
     pin, src = mod.load_matrix_pin(camp, None)
     assert pin == DEFAULT_PIN
     report = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, src, str(camp))
-    # Only GOOD1 has claim_ready=1
+    # Only 1G9V has claim_ready=1 (and is on the frozen 85-target manifest)
     assert report["N_claim"] == 1
     assert report["metrics"]["STRICT"]["n"] == 1
-    assert report["metrics"]["S1"]["ids"] == ["GOOD1"]
+    assert report["metrics"]["S1"]["ids"] == ["1G9V"]
 
 
 def test_s1_uses_ordered_not_hungarian(tmp_path: Path):
@@ -160,7 +160,7 @@ def test_s1_uses_ordered_not_hungarian(tmp_path: Path):
 def test_s1_vs_s3_diverge_election_gap(tmp_path: Path):
     mod = _load()
     rows = [
-        _row("HIT", rmsd_ordered=1.5, bcr=0.9, pb=1, claim_ready=1),
+        _row("1G9V", rmsd_ordered=1.5, bcr=0.9, pb=1, claim_ready=1),
         _row("GAP1", rmsd_ordered=5.7, bcr=1.6, pb=0, claim_ready=0),
         _row("GAP2", rmsd_ordered=4.2, bcr=1.9, pb=0, claim_ready=0),
         _row("MISS", rmsd_ordered=6.0, bcr=3.5, pb=0, claim_ready=0),
@@ -213,7 +213,7 @@ def test_cli_headline_s3_exits_nonzero(tmp_path: Path):
 
 def test_cli_happy_path_json(tmp_path: Path):
     rows = [
-        _row("P1", rmsd_ordered=1.0, bcr=0.5, pb=1, claim_ready=1),
+        _row("1G9V", rmsd_ordered=1.0, bcr=0.5, pb=1, claim_ready=1),
         _row("P2", rmsd_ordered=4.0, bcr=1.5, pb=0, claim_ready=0),
         _row("SEED", rmsd_ordered=0.1, bcr=0.1, pb=1, seed_echo=1, claim=0, claim_ready=0),
     ]
@@ -291,6 +291,22 @@ def test_success_s1_flag_cannot_override_high_rmsd(tmp_path: Path):
     rep = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, "test", str(camp))
     assert rep["N_claim"] == 1
     assert rep["metrics"]["S1"]["n"] == 0
+
+
+def test_off_manifest_strict_success_does_not_inflate_numerator():
+    """An off-manifest claim_ready row must not bump STRICT n (denom stays 85)."""
+    mod = _load()
+    codes, _ = mod.load_target_manifest()
+    assert codes and len(codes) == 85
+    on = _row(codes[0], rmsd_ordered=1.0, bcr=0.5, pb=1, claim_ready=1)
+    extra = _row("9XXX", rmsd_ordered=0.4, bcr=0.3, pb=1, claim_ready=1)
+    report = mod.aggregate_rows([on, extra], DEFAULT_PIN, "test", fixed_denominator=True)
+    assert report["N_denominator"] == 85
+    assert report["metrics"]["STRICT"]["n"] == 1
+    assert report["headline"]["n"] == 1
+    ids = {str(x).upper() for x in report["metrics"]["STRICT"]["ids"]}
+    assert codes[0].upper() in ids
+    assert "9XXX" not in ids
 
 
 def test_seed_echo_0_0_accepted():

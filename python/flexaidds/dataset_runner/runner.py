@@ -169,6 +169,10 @@ class DatasetConfig:
                                sample of N, so coverage rotates across runs).
         tier1_seed:            Explicit seed for ``random`` selection. Overridden by
                                ``FLEXAIDDS_TIER1_SEED``; defaults to the UTC date.
+        tier1_wall_time_exclusions:
+                               Targets removed from the tier-1 eligible pool for
+                               measured WALL-TIME reasons (over the per-entry
+                               timeout cap) — never for science reasons.
         benchmark_order:       Stable run/display order; lower values run first.
         targets:               Full list of target identifiers.
         structural_states:     Receptor states available (``holo``, ``apo``, ``af2``).
@@ -193,6 +197,12 @@ class DatasetConfig:
     tier1_subset_size: int = 5
     tier1_selection: str = "fixed"
     tier1_seed: Optional[int] = None
+    # WALL-TIME exclusions (not science exclusions): targets measured over the
+    # tier-1 per-entry timeout cap. They are removed from the eligible pool
+    # before fixed/random selection so a known-slow target cannot sink every
+    # PR that draws it. Each entry must carry its measured time + date in a
+    # YAML comment, and re-admission requires a clean run under the current cap.
+    tier1_wall_time_exclusions: List[str] = field(default_factory=list)
     tier2_subset_size: int = 0  # 0 = every target (historical tier-2 behaviour)
     tier2_selection: str = "fixed"
     tier2_seed: Optional[int] = None
@@ -272,6 +282,11 @@ class DatasetConfig:
             tier1_subset_size=int(raw.pop("tier1_subset_size", 5)),
             tier1_selection=str(raw.pop("tier1_selection", "fixed")).strip().lower(),
             tier1_seed=(lambda v: None if v is None else int(v))(raw.pop("tier1_seed", None)),
+            tier1_wall_time_exclusions=[
+                str(t).strip().lower()
+                for t in raw.pop("tier1_wall_time_exclusions", [])
+                if str(t).strip()
+            ],
             anchor_targets=list(raw.pop("anchor_targets", [])),
             tier2_subset_size=int(raw.pop("tier2_subset_size", 0)),
             tier2_selection=str(raw.pop("tier2_selection", "fixed")).strip().lower(),
@@ -362,6 +377,12 @@ class DatasetConfig:
         reproducible.  The seed is logged; re-run with
         ``FLEXAIDDS_TIER{N}_SEED=<logged seed>`` to reproduce a draw.
 
+        ``tier1_wall_time_exclusions`` removes targets from the eligible pool
+        BEFORE selection in both modes.  This is a WALL-TIME exclusion (the
+        target measured over the per-entry timeout cap), not a science one:
+        the target is not "too hard", it is "too slow for this job budget",
+        and it stays fully eligible for tier-2 and campaign runs.
+
         A subset size of 0 (or negative) means *every* target, which is the
         historical tier-2 behaviour and remains the tier-2 default.
 
@@ -372,31 +393,57 @@ class DatasetConfig:
         """
         size, selection, _ = self._tier_selection_params(tier)
         mode = (selection or "fixed").strip().lower()
+        # Wall-time exclusions apply only to tier 1: they exist to keep known
+        # over-cap targets out of a job with a hard step budget.
+        excl = (
+            {t.strip().lower() for t in self.tier1_wall_time_exclusions}
+            if tier == 1
+            else set()
+        )
+        if excl and not set(t.lower() for t in self.targets).issuperset(excl):
+            unknown = sorted(
+                e for e in excl
+                if e not in {t.lower() for t in self.targets}
+            )
+            raise ValueError(
+                f"tier1_wall_time_exclusions names targets not in the dataset: "
+                f"{', '.join(unknown)}"
+            )
+        # Eligible pool keeps dataset order; exclusions only ever shrink it.
+        eligible = [t for t in self.targets if t.lower() not in excl]
+        if excl:
+            logger.info(
+                "tier-1 wall-time exclusions active: %s (%d of %d targets eligible)",
+                ",".join(sorted(excl)), len(eligible), len(self.targets),
+            )
         # size <= 0 means "all targets" -- subsetting is opt-in per tier.
-        k = len(self.targets) if size <= 0 else min(size, len(self.targets))
+        k = len(eligible) if size <= 0 else min(size, len(eligible))
         if mode == "fixed":
-            return self.targets[:k]
+            return eligible[:k]
         if mode != "random":
             raise ValueError(
                 f"tier{tier}_selection must be 'fixed' or 'random', got {selection!r}"
             )
-        if k >= len(self.targets):
-            return list(self.targets)  # nothing to sample; keep dataset order
+        if k >= len(eligible):
+            return list(eligible)  # nothing to sample; keep dataset order
         seed = self.resolve_tier_seed(tier)
         # Anchors are pinned into every draw so a fixed core of the run stays
         # directly comparable across runs; only the remaining slots rotate.
-        anchors = [t for t in self.targets if t in set(self.anchor_targets)][:k]
-        pool = [t for t in self.targets if t not in set(anchors)]
+        # They draw from the ELIGIBLE pool: a wall-time exclusion outranks an
+        # anchor, so an excluded anchor is dropped, not silently re-admitted.
+        anchor_set = set(self.anchor_targets)
+        anchors = [t for t in eligible if t in anchor_set][:k]
+        pool = [t for t in eligible if t not in set(anchors)]
         n_draw = max(0, k - len(anchors))
         drawn = random.Random(seed).sample(pool, min(n_draw, len(pool)))
         picked = anchors + drawn
         # Restore dataset order within the draw so run/display order is stable.
-        picked.sort(key=self.targets.index)
+        picked.sort(key=eligible.index)
         logger.info(
-            "tier-%d subset: seed=%d k=%d of %d | anchors=%s | drawn=%s "
+            "tier-%d subset: seed=%d k=%d of %d eligible | anchors=%s | drawn=%s "
             "(replay this exact draw with FLEXAIDDS_TIER%d_SEED=%d)",
-            tier, seed, k, len(self.targets),
-            ",".join(anchors) or "-", ",".join(sorted(drawn, key=self.targets.index)) or "-",
+            tier, seed, k, len(eligible),
+            ",".join(anchors) or "-", ",".join(sorted(drawn, key=eligible.index)) or "-",
             tier, seed,
         )
         return picked
@@ -615,6 +662,13 @@ class DatasetResult:
     # value is a real exit/return code, or None when the engine never executed
     # (exec failure) — mirrors DatasetRunner._entry_exit_codes.
     entry_exit_codes: Dict[str, Optional[int]] = field(default_factory=dict)
+    # "target/ligand" -> the per-entry timeout cap (seconds) that killed it.
+    # A subset of the keys whose entry_exit_codes value is None: those keys
+    # split into "timed out" (here) and "exec failure" (not here). Same
+    # liveness class for the science verdict — the gate counts both as crashes
+    # — but a different triage meaning, which is why the reason string
+    # distinguishes them (cli._benchmark_inconclusive_reasons).
+    entry_timeouts: Dict[str, int] = field(default_factory=dict)
     # "target/state" -> early-termination record for entries whose GA stopped
     # before its configured budget. Keyed per entry like entry_exit_codes above,
     # so an MPI merge is a dict update rather than a sum. Empty is the normal
@@ -716,6 +770,7 @@ class DatasetResult:
             "flexaid_crashes": self.flexaid_crashes,
             "total_poses": self.total_poses,
             "entry_exit_codes": self.entry_exit_codes,
+            "entry_timeouts": self.entry_timeouts,
             "early_terminations": self.early_terminations,
             "early_exit_params": self.early_exit_params,
             "inconclusive_metrics": self.inconclusive_metrics,
@@ -1427,6 +1482,7 @@ class DatasetRunner:
         resume: bool = False,
         command_line: Optional[str] = None,
         default_conc_M: float = 1.0,  # P3
+        entry_timeout_seconds: Optional[int] = None,
     ) -> None:
         _default_datasets = Path(__file__).resolve().parent / "datasets"
         self.datasets_dir = Path(datasets_dir) if datasets_dir is not None else _default_datasets
@@ -1461,6 +1517,24 @@ class DatasetRunner:
         self.resume = bool(resume)
         self.command_line = command_line
         self.default_conc_M = float(default_conc_M)
+        # Per-entry FlexAID wall-time cap (WO-1). Explicit arg > env > 3600.
+        # The DEFAULT MUST REMAIN 3600 so this knob is a no-op outside CI —
+        # matching the C++ runner's --job-timeout-seconds default
+        # (LIB/benchmark_datasets.cpp). Logged once here, per run, so a
+        # timeout in the artifact is attributable to the cap that produced it.
+        if entry_timeout_seconds is None:
+            env_cap = os.environ.get("FLEXAIDDS_ENTRY_TIMEOUT_SECONDS", "").strip()
+            entry_timeout_seconds = int(env_cap) if env_cap else 3600
+        self.entry_timeout_seconds = int(entry_timeout_seconds)
+        if self.entry_timeout_seconds <= 0:
+            raise ValueError(
+                f"entry_timeout_seconds must be > 0, got {self.entry_timeout_seconds}"
+            )
+        logger.info(
+            "Per-entry FlexAID timeout: %d s "
+            "(override with --entry-timeout-seconds or FLEXAIDDS_ENTRY_TIMEOUT_SECONDS)",
+            self.entry_timeout_seconds,
+        )
         # Pose PDBs are written by the engine into a per-ligand TemporaryDirectory
         # and destroyed when that ligand's iteration ends -- before the target
         # finishes, let alone the job.  Every question that needs coordinates
@@ -1493,8 +1567,15 @@ class DatasetRunner:
         self._crash_lock = threading.Lock()
         self._flexaid_crashes = 0
         # int = a real process exit/return code; None = the engine never
-        # executed (exec failure), which no completed subprocess.run can produce.
+        # executed (exec failure) or was killed at the cap (timeout), which no
+        # completed subprocess.run can produce.
         self._entry_exit_codes: Dict[str, Optional[int]] = {}
+        # "target/ligand" -> cap seconds, for entries killed at the wall-time
+        # cap. Keyed like _entry_exit_codes so an MPI merge is a dict update.
+        # Lets the liveness reason name TIMED OUT separately from CRASHED
+        # (same science verdict, different triage meaning) without changing
+        # what entry_exit_codes records.
+        self._entry_timeouts: Dict[str, int] = {}
         # Early-termination evidence, keyed "target/state", recorded by
         # _run_flexaid and consumed by run_dataset when it builds the
         # TargetResult.  Routed through instance state under the same lock as
@@ -1674,7 +1755,7 @@ class DatasetRunner:
                         [self.binary, str(receptor_path), str(ligand_path), "-o", "flexaid", "--conc", str(conc_M)],
                         capture_output=True,
                         text=True,
-                        timeout=3600,
+                        timeout=self.entry_timeout_seconds,
                         cwd=tmp_path,
                         env=sub_env,
                     )
@@ -1694,10 +1775,22 @@ class DatasetRunner:
                     # signal 1".  None is a value no completed subprocess.run can
                     # yield, so in entry_exit_codes it means "did not complete"
                     # and only that.
+                    #
+                    # The entry is ALSO recorded in _entry_timeouts with the cap
+                    # that killed it, so the liveness reason can say TIMED OUT
+                    # at N s rather than the unactionable "no exit code".  Same
+                    # crash class and same gate verdict either way — a timeout
+                    # is liveness-negative regardless of the cap.
                     with self._crash_lock:
                         self._flexaid_crashes += 1
                         self._entry_exit_codes[f"{target_id}/{ligand_id}"] = None
-                    logger.error("Docking timed out: %s/%s", target_id, ligand_id)
+                        self._entry_timeouts[f"{target_id}/{ligand_id}"] = int(
+                            self.entry_timeout_seconds
+                        )
+                    logger.error(
+                        "Docking timed out: %s/%s (killed at the %d s per-entry cap)",
+                        target_id, ligand_id, self.entry_timeout_seconds,
+                    )
                     continue
                 except OSError as exc:
                     # #326 liveness: subprocess.run itself raising (the binary is
@@ -2173,6 +2266,7 @@ class DatasetRunner:
         with self._crash_lock:
             self._flexaid_crashes = 0
             self._entry_exit_codes = {}
+            self._entry_timeouts = {}
             self._entry_early_termination = {}
             self._entry_early_exit_params = {}
             self._element_mismatches = []
@@ -2304,6 +2398,7 @@ class DatasetRunner:
         with self._crash_lock:
             crashes = self._flexaid_crashes
             exit_codes = dict(self._entry_exit_codes)
+            timeouts = dict(self._entry_timeouts)
             early_terms = {
                 k: dict(v) for k, v in self._entry_early_termination.items()
                 if v.get("terminated_early")
@@ -2346,8 +2441,8 @@ class DatasetRunner:
         # MPI gather (still works at target granularity for final aggregation)
         if self._mpi_comm is not None:
             all_results_by_rank = self._mpi_comm.gather(
-                (all_poses, completed, failed, crashes, exit_codes, newly, resumed,
-                 early_terms, early_params), root=0
+                (all_poses, completed, failed, crashes, exit_codes, timeouts,
+                 newly, resumed, early_terms, early_params), root=0
             )
             if self._mpi_root:
                 all_poses = []
@@ -2355,17 +2450,21 @@ class DatasetRunner:
                 failed = []
                 crashes = 0
                 exit_codes = {}
+                timeouts = {}
                 newly = 0
                 resumed = 0
                 merged_early_terms: Dict[str, Dict[str, Any]] = {}
                 merged_early_params: Dict[str, Any] = {}
-                for (poses_i, comp_i, fail_i, crash_i, codes_i, newly_i, resumed_i,
-                     early_i, params_i) in (all_results_by_rank or []):
+                for (poses_i, comp_i, fail_i, crash_i, codes_i, timeouts_i,
+                     newly_i, resumed_i, early_i, params_i) in (all_results_by_rank or []):
                     all_poses.extend(poses_i)
                     completed.extend(comp_i)
                     failed.extend(fail_i)
                     crashes += crash_i
                     exit_codes.update(codes_i)
+                    # Timeouts are keyed per entry like exit_codes, so an
+                    # update merges partitioned ranks without double-counting.
+                    timeouts.update(timeouts_i or {})
                     # Keyed per entry and partitioned across ranks, like
                     # exit_codes: a dict update merges without double-counting.
                     merged_early_terms.update(early_i or {})
@@ -2389,6 +2488,7 @@ class DatasetRunner:
             dr.targets_failed = failed
             dr.flexaid_crashes = crashes
             dr.entry_exit_codes = exit_codes
+            dr.entry_timeouts = timeouts
             dr.early_terminations = early_terms
             dr.early_exit_params = early_params
             dr.total_poses = len(all_poses)

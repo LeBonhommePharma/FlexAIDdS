@@ -512,6 +512,52 @@ TEST(RmsdCrossCheck, OneTypeSpansElements_InvertsTheInequality) {
     EXPECT_LT(eng, dat);  // inversion: a shared type flatters the engine, not the dataset metric
 }
 
+// METHODOLOGY.md §0 claim cutoff: rank-0 in-place RMSD <= 2.0 Å.
+// Methods 4 (engine Hungarian / REMARK) and 5 (DatasetRunner Hungarian / CSV)
+// must agree on success/failure for an asymmetric translation (one type per
+// element, so the partitions coincide). Superposition is not applied here.
+namespace {
+constexpr float kClaimRmsdA = 2.0f;
+bool claim_success(float rmsd) { return rmsd <= kClaimRmsdA; }
+
+std::vector<AtomSpec> translated_asymmetric(float dx) {
+    return {
+        {4, "C", {dx, 0, 0}, {0, 0, 0}},
+        {7, "N", {1.0f + dx, 0, 0}, {1, 0, 0}},
+        {8, "O", {dx, 1.0f, 0}, {0, 1, 0}},
+    };
+}
+}  // namespace
+
+TEST(RmsdClaimCutoff, Rank0InPlaceHitAt1p5A) {
+    const auto a = translated_asymmetric(1.5f);
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, dat, 1e-4f);
+    EXPECT_NEAR(eng, 1.5f, 1e-3f);
+    EXPECT_TRUE(claim_success(eng));
+    EXPECT_TRUE(claim_success(dat));
+}
+
+TEST(RmsdClaimCutoff, Rank0InPlaceInclusiveTwoAngstrom) {
+    const auto a = translated_asymmetric(2.0f);
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, 2.0f, 1e-3f);
+    EXPECT_TRUE(claim_success(eng));
+    EXPECT_TRUE(claim_success(dat));
+}
+
+TEST(RmsdClaimCutoff, Rank0InPlaceMissAt2p5A) {
+    const auto a = translated_asymmetric(2.5f);
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, dat, 1e-4f);
+    EXPECT_NEAR(eng, 2.5f, 1e-3f);
+    EXPECT_FALSE(claim_success(eng));
+    EXPECT_FALSE(claim_success(dat));
+}
+
 // =============================================================================
 // Provenance JSON writer tests (P1 leaf — DatasetRunnerProvenance)
 // No network, no docking; temp-dir only.
