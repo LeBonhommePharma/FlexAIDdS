@@ -12,8 +12,8 @@ name: Benchmark Tier 2 (Nightly Comprehensive)
 #   Set runs-on to your self-hosted label (e.g. 'self-hosted,hpc,gpu').
 #   For MPI multi-node runs, use the 'mpirun' step pattern below.
 #
-# Dataset caching: datasets are downloaded from Zenodo/object storage and
-# cached by dataset slug + version hash to avoid redundant downloads.
+# Datasets: Zenodo record IDs are not registered. Push and weekly cron are
+# --dry-run until they are. Do not cache an empty benchmark_data/ tree.
 
 on:
   push:
@@ -46,7 +46,7 @@ concurrency:
 
 jobs:
   # -----------------------------------------------------------------------
-  # Build matrix: build FlexAID once, cache for all benchmark jobs
+  # Build FlexAID once per SHA (ccache objects only — never cache build/).
   # -----------------------------------------------------------------------
   build:
     name: Build FlexAIDdS
@@ -61,32 +61,45 @@ jobs:
           bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libeigen3-dev libomp-dev libopenmpi-dev openmpi-bin gcc-14 g++-14
+            cmake ninja-build libeigen3-dev libomp-dev libopenmpi-dev openmpi-bin gcc-14 g++-14 ccache
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
 
-      - name: Cache build artifacts
-        id: cache-build
+      # ccache is content-addressed (keyed on preprocessed source + flags), so a
+      # changed source cannot hit a stale object. That is a different mechanism
+      # from the build/ dir cache whose restore-keys prefix fallback restored a
+      # stale binary — proven on Tier-1 (CF.pb_clash absent though the writer
+      # emits it unconditionally). That cache is intentionally NOT used here.
+      # ccache is safe alongside the clean `rm -rf build`: it only makes the
+      # recompile cheaper, never skips one. A cmake/-only commit therefore
+      # still runs cmake --build (acceptance for C-1).
+      - name: Cache ccache objects
         uses: actions/cache@v6
         with:
-          path: build
-          key: tier2-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
+          path: ~/.ccache
+          key: tier2-ccache-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
-            tier2-build-${{ runner.os }}-
+            tier2-ccache-${{ runner.os }}-
 
-      - name: Build FlexAIDdS (Release + AVX2 + OpenMP)
-        if: steps.cache-build.outputs.cache-hit != 'true'
+      # NO build-dir cache. Always compile from a clean build/ so a commit that
+      # touches only cmake/ cannot upload a binary built from old sources.
+      - name: Build FlexAIDdS (Release + AVX2 + OpenMP, clean)
         run: |
+          rm -rf build
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DFLEXAIDS_USE_CUDA=OFF \
             -DFLEXAIDS_USE_METAL=OFF \
             -DFLEXAIDS_USE_AVX2=ON \
+            -DFLEXAIDS_USE_AVX512=OFF \
             -DFLEXAIDS_USE_OPENMP=ON \
             -DFLEXAIDS_USE_MPI=OFF \
             -DBUILD_TESTING=OFF \
             -DBUILD_PYTHON_BINDINGS=OFF
           cmake --build build --parallel --target FlexAID
+          ccache --show-stats || true
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -108,8 +121,10 @@ jobs:
       RESULTS_DIR: results/tier2
       N_WORKERS: ${{ inputs.n_workers || '4' }}
       DO_BOOTSTRAP: ${{ inputs.bootstrap || 'true' }}
-      # Push events dry-run until Zenodo dataset IDs are configured.
-      DRY_RUN_FLAG: ${{ (github.event_name == 'push' || inputs.dry_run == 'true') && '--dry-run' || '' }}
+      # Push AND weekly cron dry-run until Zenodo dataset IDs are configured.
+      # Schedule used to omit --dry-run, then exit 3 (BENCHMARK INCONCLUSIVE)
+      # against empty benchmark_data/ (ZENODO_RECORDS is still a placeholder).
+      DRY_RUN_FLAG: ${{ (github.event_name == 'push' || github.event_name == 'schedule' || inputs.dry_run == 'true') && '--dry-run' || '' }}
       DATASET_FILTER: ${{ inputs.datasets || '' }}
 
     steps:
@@ -139,71 +154,6 @@ jobs:
 
       - name: Make binary executable
         run: chmod +x build/FlexAID
-
-      # -- Dataset cache / download --
-      - name: Cache CASF-2016 dataset
-        uses: actions/cache@v6
-        with:
-          path: benchmark_data/casf2016
-          key: bench-data-casf2016-v1
-          restore-keys: bench-data-casf2016-
-
-      - name: Cache ITC-187 dataset
-        uses: actions/cache@v6
-        with:
-          path: benchmark_data/itc187
-          key: bench-data-itc187-v1
-          restore-keys: bench-data-itc187-
-
-      - name: Cache DUD-E 37 dataset
-        uses: actions/cache@v6
-        with:
-          path: benchmark_data/dude37
-          key: bench-data-dude37-v1
-          restore-keys: bench-data-dude37-
-
-      - name: Cache MUV dataset
-        uses: actions/cache@v6
-        with:
-          path: benchmark_data/muv
-          key: bench-data-muv-v1
-          restore-keys: bench-data-muv-
-
-      - name: Download missing datasets
-        env:
-          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
-        run: |
-          python - <<'EOF'
-          import os
-          import urllib.request
-          from pathlib import Path
-
-          # Map slug → Zenodo record ID (update when DOIs are registered)
-          ZENODO_RECORDS = {
-              # "casf2016": "XXXXXXX",  # Update with real record ID
-              # "itc187":   "XXXXXXX",
-              # "dude37":   "XXXXXXX",
-              # "muv":      "XXXXXXX",
-          }
-
-          data_root = Path("benchmark_data")
-          token = os.environ.get("ZENODO_TOKEN", "")
-
-          for slug, record_id in ZENODO_RECORDS.items():
-              dest = data_root / slug
-              marker = dest / ".downloaded"
-              if marker.exists():
-                  print(f"[{slug}] Already cached, skipping.")
-                  continue
-              print(f"[{slug}] Downloading from Zenodo record {record_id}...")
-              dest.mkdir(parents=True, exist_ok=True)
-              headers = {"Authorization": f"Bearer {token}"} if token else {}
-              api_url = f"https://zenodo.org/api/records/{record_id}"
-              # NOTE: Implement download logic here once DOIs are registered.
-              # For now, warn and continue — DatasetRunner handles missing data.
-              print(f"[{slug}] WARNING: Zenodo download not yet configured. "
-                    "Set real record IDs in benchmark-tier2.yml.")
-          EOF
 
       - name: Build dataset filter argument
         id: dataset-args
