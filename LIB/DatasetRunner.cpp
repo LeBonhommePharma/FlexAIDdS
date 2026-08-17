@@ -6777,7 +6777,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         // ── Parse [NATIVE_CF] from stderr.log ────────────────────────────────
         // Line format (emitted by native_score.cpp):
-        //   [NATIVE_CF] cf=<total> breakdown=com:<v>,wal:<v>,sas:<v>,con:<v>
+        //   [NATIVE_CF] cf=<total> breakdown=com:<v>,wal:<v>,sas:<v>,con:<v>,...
+        //   (ten get_cf_evalue channels; parser reads only cf=)
         {
             std::string stderr_path = out_dir + "/stderr.log";
             std::ifstream nf(stderr_path);

@@ -19,7 +19,7 @@
 //   which overrides the ligand atoms[].coor[] with the pose read from
 //   FLEXAIDDS_RMSDST and calls vcfunction() DIRECTLY — no GA — then std::exit()s
 //   before the search.  It prints:
-//       [NATIVE_CF] cf=<total> breakdown=com:..,wal:..,sas:..,con:..,hbond:..,pb_clash:..
+//       [NATIVE_CF] cf=<total> breakdown=com:..,wal:..,sas:..,con:..,elec:..,hbond:..,gist_desolv:..,metal_coord:..,entropy:..,pb_clash:..
 //   probe_cf captures that line and reformats it as JSON.
 //
 // This wraps the existing score_native_pose() diagnostic (per the task's
@@ -347,8 +347,9 @@ int main(int argc, char** argv) {
         return 4;
     }
 
-    // Parse: [NATIVE_CF] cf=<t> breakdown=com:<>,wal:<>,sas:<>,con:<>,hbond:<>,pb_clash:<>
-    double cf_total = 0, com = 0, wal = 0, sas = 0, con = 0, hbond = 0, pb_clash = 0;
+    // Parse: [NATIVE_CF] cf=<t> breakdown=com:<>,wal:<>,sas:<>,con:<>,elec:<>,hbond:<>,gist_desolv:<>,metal_coord:<>,entropy:<>,pb_clash:<>
+    double cf_total = 0, com = 0, wal = 0, sas = 0, con = 0, elec = 0, hbond = 0;
+    double gist_desolv = 0, metal_coord = 0, entropy = 0, pb_clash = 0;
     {
         size_t p = native_line.find("cf=");
         if (p != std::string::npos) cf_total = std::atof(native_line.c_str() + p + 3);
@@ -358,7 +359,9 @@ int main(int argc, char** argv) {
             if (q != std::string::npos) dst = std::atof(native_line.c_str() + q + k.size());
         };
         grab("com", com); grab("wal", wal); grab("sas", sas);
-        grab("con", con); grab("hbond", hbond); grab("pb_clash", pb_clash);
+        grab("con", con); grab("elec", elec); grab("hbond", hbond);
+        grab("gist_desolv", gist_desolv); grab("metal_coord", metal_coord);
+        grab("entropy", entropy); grab("pb_clash", pb_clash);
     }
 
     double roundtrip_rmsd = -1.0;
@@ -378,6 +381,10 @@ int main(int argc, char** argv) {
     std::printf("\"cf_hbond\": %.6f, ", hbond);
     std::printf("\"cf_sas\": %.6f, ", sas);
     std::printf("\"cf_wal\": %.6f, ", wal);
+    std::printf("\"cf_elec\": %.6f, ", elec);
+    std::printf("\"cf_gist_desolv\": %.6f, ", gist_desolv);
+    std::printf("\"cf_metal_coord\": %.6f, ", metal_coord);
+    std::printf("\"cf_entropy\": %.6f, ", entropy);
     std::printf("\"cf_clash\": %.6f, ", pb_clash);
     if (a.mode == "roundtrip")
         std::printf("\"roundtrip_rmsd\": %.4f, ", roundtrip_rmsd);
