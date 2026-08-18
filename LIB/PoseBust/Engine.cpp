@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -241,19 +242,22 @@ PoseBustReport evaluate(const Molecule& ligand_pred,
     report.backend = "native_pose_qc";
     report.n_ligand_atoms = static_cast<int>(ligand_pred.atoms.size());
 
+    const bool mol_only = (opt.suite == Suite::Mol);
+
     // Crop protein to pocket around ligand heavy COM (empty if no protein).
     const Molecule protein_cropped =
-        protein.empty()
+        (mol_only || protein.empty())
             ? Molecule{}
             : crop_protein_near_ligand(protein, ligand_pred, opt.protein_crop_A);
     report.n_protein_atoms_cropped = static_cast<int>(protein_cropped.atoms.size());
 
     // Loading reflects the *input* protein (pre-crop); pocket checks use crop.
+    // Suite::Mol is ligand-only: omit mol_cond_loaded and protein/identity keys.
     const Molecule* protein_for_loading =
-        protein.empty() ? nullptr : &protein;
+        (mol_only || protein.empty()) ? nullptr : &protein;
 
-    // Always: loading + chemistry (full suite diagnostics)
-    check_loading(&ligand_pred, protein_for_loading, report.checks);
+    check_loading(&ligand_pred, protein_for_loading, report.checks,
+                  /*emit_condition=*/!mol_only);
     check_chemistry_sanity(ligand_pred, report.checks);
 
     // Geometry (ligand-only)
@@ -264,32 +268,34 @@ PoseBustReport evaluate(const Molecule& ligand_pred,
     check_stereochemistry(ligand_pred, ligand_true, report.checks);
     check_internal_energy(ligand_pred, ligand_true, report.checks);
 
-    // Protein-conditioned checks
-    if (!protein_cropped.empty()) {
-        check_intermolecular_distance(ligand_pred, protein_cropped, report.checks);
-        check_volume_overlap(ligand_pred, protein_cropped, report.checks);
-        fill_continuous_summaries(report);
-    } else if (!protein.empty()) {
-        // Crop emptied — still emit fail-closed protein keys
-        CheckItem miss;
-        miss.key = "minimum_distance_to_protein";
-        miss.label = "Minimum distance to protein";
-        miss.passed = false;
-        miss.detail = "protein crop empty (no heavy atoms within crop radius of ligand)";
-        report.checks.push_back(miss);
-        miss.key = "protein-ligand_maximum_distance";
-        miss.label = "Protein-ligand maximum distance";
-        miss.detail = "protein crop empty";
-        report.checks.push_back(miss);
-        miss.key = "volume_overlap_with_protein";
-        miss.label = "Volume overlap with protein";
-        miss.detail = "protein crop empty";
-        report.checks.push_back(miss);
-    }
+    if (!mol_only) {
+        // Protein-conditioned checks
+        if (!protein_cropped.empty()) {
+            check_intermolecular_distance(ligand_pred, protein_cropped, report.checks);
+            check_volume_overlap(ligand_pred, protein_cropped, report.checks);
+            fill_continuous_summaries(report);
+        } else if (!protein.empty()) {
+            // Crop emptied — still emit fail-closed protein keys
+            CheckItem miss;
+            miss.key = "minimum_distance_to_protein";
+            miss.label = "Minimum distance to protein";
+            miss.passed = false;
+            miss.detail = "protein crop empty (no heavy atoms within crop radius of ligand)";
+            report.checks.push_back(miss);
+            miss.key = "protein-ligand_maximum_distance";
+            miss.label = "Protein-ligand maximum distance";
+            miss.detail = "protein crop empty";
+            report.checks.push_back(miss);
+            miss.key = "volume_overlap_with_protein";
+            miss.label = "Volume overlap with protein";
+            miss.detail = "protein crop empty";
+            report.checks.push_back(miss);
+        }
 
-    // Identity vs crystal when reference provided (dock + redock)
-    if (ligand_true != nullptr) {
-        check_identity_formula(ligand_pred, ligand_true, report.checks);
+        // Identity vs crystal when reference provided (dock + redock)
+        if (ligand_true != nullptr) {
+            check_identity_formula(ligand_pred, ligand_true, report.checks);
+        }
     }
 
     // Optional sidecar: extracted ligand SDF + JSON report
@@ -416,6 +422,7 @@ bool write_report_json(const PoseBustReport& report, const std::string& path,
         out << "      \"key\": \"" << json_escape(c.key) << "\",\n";
         out << "      \"label\": \"" << json_escape(c.label) << "\",\n";
         out << "      \"passed\": " << (c.passed ? "true" : "false") << ",\n";
+        out << "      \"skipped\": " << (c.skipped ? "true" : "false") << ",\n";
         out << "      \"detail\": \"" << json_escape(c.detail) << "\",\n";
         out << "      \"metric\": ";
         write_json_number_or_null(out, c.metric);
@@ -465,10 +472,10 @@ void warn_bust_unavailable(const std::string& stem, const std::string& err,
             << "  *   effect      : pb_ran=0 pb_pass=0 (fail-closed, strict mode)\n";
     } else {
         std::cerr
-            << "  *   effect      : fell back to NativePoseQC.\n"
-            << "  *                 pb_pass here is the in-house reimplementation,\n"
-            << "  *                 NOT upstream PoseBusters. claim_ready is\n"
-            << "  *                 UNREACHABLE for this run (needs bust_cli).\n";
+            << "  *   effect      : NativePoseQC ran as a diagnostic only\n"
+            << "  *                 (native_qc_*). pb_ran=0 pb_pass=0 — native\n"
+            << "  *                 all_passed() is NOT copied onto pb_pass.\n"
+            << "  *                 claim_ready is UNREACHABLE (needs bust_cli).\n";
     }
     std::cerr
         << "  *   fix         : export FLEXAIDDS_POSEBUSTERS_BIN=/abs/path/to/bust\n"
@@ -651,11 +658,17 @@ ElectedPoseBustOutcome validate_elected_pose(
             return out;
         }
         if (bust_unavailable && opt.native_fallback_if_bust_missing) {
-            fill_from_native("native_pose_qc_fallback");
-            if (!br.error.empty()) {
-                if (!out.pb_failed_keys.empty()) out.pb_failed_keys += ';';
-                out.pb_failed_keys += "bust_missing:" + br.error;
-            }
+            // NativePoseQC already ran above as native_qc_*. Official pb_pass
+            // is PoseBusters-only. Do not copy native all_passed() onto pb_pass.
+            out.pb_backend = "native_pose_qc_fallback";
+            out.pb_ran = false;
+            out.pb_pass = false;
+            out.pb_n_pass = 0;
+            out.pb_n_fail = 0;
+            out.pb_n_checks = 0;
+            out.pb_failed_keys =
+                "bust_missing:" + (br.error.empty() ? std::string("bust CLI unavailable")
+                                                    : br.error);
             warn_bust_unavailable(stem, br.error, /*strict=*/false);
         } else {
             out.pb_ran = br.ran;
@@ -689,7 +702,12 @@ ElectedPoseBustOutcome validate_elected_pose(
                              << json_escape(out.pose_sha256) << "\"\n"
                              << "}\n";
                     }
+                } catch (const std::exception& ex) {
+                    std::cerr << "[POSEBUST] bust receipt write failed: "
+                              << ex.what() << "\n";
                 } catch (...) {
+                    std::cerr << "[POSEBUST] bust receipt write failed "
+                                 "(unknown exception)\n";
                 }
             }
         }

@@ -20,8 +20,8 @@
 
 namespace flexaids::posebust {
 
-/// Bondi van der Waals radius in Å for atomic number Z.
-/// Unknown / out-of-range Z returns a conservative default (1.70 Å).
+/// van der Waals radius in Å for atomic number Z (same organics as
+/// `LIB/soft_wall.h` `posebusters_vdw_radius`). Unknown Z returns 2.0 Å.
 [[nodiscard]] float vdw_radius(int Z) noexcept;
 
 /// Intermolecular steric check between ligand and protein heavy atoms.
@@ -40,7 +40,7 @@ void check_intermolecular_distance(const Molecule& ligand,
 /// Appends to \p out:
 ///   - "volume_overlap_with_protein"
 ///   - "protein-ligand_maximum_distance" (pocket presence within 5 Å)
-///   - cofactor/water min-distance + volume keys (vacuous pass on apo crop)
+///   - cofactor/water min-distance + volume keys (skipped on apo crop)
 void check_volume_overlap(const Molecule& ligand,
                           const Molecule& protein,
                           std::vector<CheckItem>& out);

@@ -58,3 +58,23 @@ def test_pack_bundling_ok_when_split(tmp_path: Path, monkeypatch):
         lambda base="origin/main": (["LIB/gaboom.h", "tests/test_gaboom.cpp"], None),
     )
     assert hygiene.check_science_pack_bundling(tmp_path) == []
+
+
+def test_pack_bundling_ok_for_posebust_engine_other(tmp_path: Path, monkeypatch):
+    """PoseBust is post-election (not SCIENCE_CRITICAL). Audit + PoseBust is allowed."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "SCIENCE_CRITICAL_PATHS.txt").write_text(
+        "LIB/DatasetRunner.cpp\nLIB/gaboom.h\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        hygiene,
+        "_changed_files",
+        lambda base="origin/main": (
+            [
+                "LIB/PoseBust/Engine.cpp",
+                "docs/audit/2026-08-18_posebust_science_and_code_audit.md",
+            ],
+            None,
+        ),
+    )
+    assert hygiene.check_science_pack_bundling(tmp_path) == []

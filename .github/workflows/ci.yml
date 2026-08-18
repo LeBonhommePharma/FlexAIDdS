@@ -387,7 +387,7 @@ jobs:
       - name: Check tracked secrets and hardcoded agent paths
         run: python3 scripts/check_repo_hygiene.py
       - name: Root run-artifact guard and diff classifier
-        run: python3 -m pytest tests/test_check_root_artifacts.py tests/test_classify_diff.py tests/test_coverage_gate.py -q --tb=line
+        run: python3 -m pytest tests/test_check_root_artifacts.py tests/test_classify_diff.py tests/test_tier1_pr_needs_dock.py tests/test_coverage_gate.py -q --tb=line
       - name: Validate public thermodynamic claims and provenance firewall
         run: |
           python3 scripts/validate_thermo_claims.py

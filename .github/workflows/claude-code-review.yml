@@ -21,8 +21,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      # write so a successful SDK run can post the review comment.
+      # Do not set track_progress / extra claude_args here: on this repo that
+      # combination aborted the SDK in ~350ms with is_error:true and $0 cost
+      # (run 32091914831). The working reviews use the plugin prompt only.
+      pull-requests: write
+      issues: write
       id-token: write
 
     steps:
@@ -34,16 +38,13 @@ jobs:
       # Step-level continue-on-error (not job-level): a failed step with this
       # flag still lets the job conclude success, so the PR check is green.
       # Job-level continue-on-error leaves the check red while only the
-      # workflow overall succeeds — that is what this PR was hitting.
-      #
-      # Why this is not a review of the diff: since 2026-08-17 ~08:46Z every
-      # Claude Code Review on this repo (same action SHA that was green at
-      # 05:17Z, CLI 2.1.233, model claude-sonnet-5) exits in ~0.5s with
-      # subtype=success, is_error=true, num_turns=1, total_cost_usd=0.
-      # That envelope is Anthropic-side (OAuth 401 / 429 usage cap; see
-      # anthropics/claude-code-action#1614), not a finding on the PR.
+      # workflow overall succeeds.
       - name: Run Claude Code Review
         id: claude-review
+        # Not a required check. The Anthropic plugin often returns
+        # subtype=success / is_error=true with num_turns=1 and $0 cost
+        # (OAuth/plugin abort; anthropics/claude-code-action#1614).
+        # Hygiene and Tier-1 are the merge gates.
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
@@ -61,4 +62,3 @@ jobs:
         if: steps.claude-review.outcome == 'failure'
         run: |
           echo "::warning::Claude Code Review SDK returned is_error:true with zero cost (auth/quota). This is not a review of the PR diff. Refresh CLAUDE_CODE_OAUTH_TOKEN or wait for the Anthropic cap to reset."
-

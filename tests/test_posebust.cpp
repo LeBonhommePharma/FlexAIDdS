@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "PoseBust/BustCli.h"
+#include "PoseBust/ChecksGeometry.h"
 #include "PoseBust/Engine.h"
 #include "PoseBust/Loaders.h"
 #include "PoseBust/PdbCoords.h"
@@ -85,6 +86,46 @@ fs::path find_1g9v_pose() {
 // Mirrors DatasetRunner mapping: Backend::Native → pb_pass = success_pb_full()
 bool dataset_runner_pb_pass_from_native(const PoseBustReport& nrep) {
     return nrep.ran && nrep.error.empty() && nrep.success_pb_full();
+}
+
+struct EnvRestore {
+    std::string key;
+    std::string old;
+    bool had = false;
+    EnvRestore(const char* k, const char* v) : key(k) {
+        const char* e = std::getenv(k);
+        had = e != nullptr;
+        if (had) old = e;
+        ::setenv(k, v, 1);
+    }
+    ~EnvRestore() {
+        if (had) ::setenv(key.c_str(), old.c_str(), 1);
+        else ::unsetenv(key.c_str());
+    }
+};
+
+Molecule benzene_heavy_only(float z_pucker) {
+    Molecule m;
+    m.name = "PhH0";
+    const float r = 1.39f;
+    constexpr float kPi = 3.14159265f;
+    for (int i = 0; i < 6; ++i) {
+        const float a = static_cast<float>(i) * kPi / 3.f;
+        Atom at;
+        at.id = i + 1;
+        at.element = "C";
+        at.atomic_num = 6;
+        at.x = r * std::cos(a);
+        at.y = r * std::sin(a);
+        at.z = ((i % 2) == 0) ? z_pucker : -z_pucker;
+        at.is_h = false;
+        m.atoms.push_back(at);
+    }
+    for (int i = 0; i < 6; ++i) {
+        m.bonds.push_back(Bond{i, (i + 1) % 6, 4});
+    }
+    m.build_adjacency();
+    return m;
 }
 
 std::map<std::string, bool> parse_bust_bools(const std::string& csv) {
@@ -578,7 +619,34 @@ TEST(PoseBustEngine, CrystalSelfDockNearNativePassesCore) {
     EXPECT_TRUE(ba->passed) << ba->detail;
     auto inchi = rep.find_check("inchi_convertible");
     ASSERT_NE(inchi, nullptr);
-    EXPECT_TRUE(inchi->passed) << inchi->detail;
+    if (inchi->skipped) {
+        EXPECT_FALSE(inchi->passed)
+            << "skipped InChI must not count as a pass: " << inchi->detail;
+        EXPECT_NE(inchi->detail.find("inchi-1_missing"), std::string::npos)
+            << inchi->detail;
+    } else {
+        EXPECT_TRUE(inchi->passed) << inchi->detail;
+    }
+    auto arom = rep.find_check("aromatic_ring_flatness");
+    ASSERT_NE(arom, nullptr);
+    EXPECT_GT(arom->n_checked, 0)
+        << "heavy-only aromatic rings must be scored: " << arom->detail;
+    EXPECT_TRUE(arom->passed) << arom->detail;
+    static const char* kVacuous[] = {
+        "minimum_distance_to_organic_cofactors",
+        "minimum_distance_to_inorganic_cofactors",
+        "minimum_distance_to_waters",
+        "volume_overlap_with_organic_cofactors",
+        "volume_overlap_with_inorganic_cofactors",
+        "volume_overlap_with_waters",
+    };
+    for (const char* k : kVacuous) {
+        auto* c = rep.find_check(k);
+        ASSERT_NE(c, nullptr) << k;
+        EXPECT_TRUE(c->skipped) << k << " " << c->detail;
+        EXPECT_FALSE(c->passed) << k << " must not inflate native pass";
+    }
+    EXPECT_TRUE(rep.all_passed()) << "native failed: " << rep.failed_keys_csv();
 }
 
 // Honest differential: native dock-suite booleans vs upstream bust on crystal
@@ -650,6 +718,7 @@ TEST(PoseBustParity, CrystalSelfDockAgreesWithUpstreamBust) {
 
     int n_shared = 0;
     int n_agree = 0;
+    int n_skipped = 0;
     std::vector<std::string> disagrees;
     for (const char* key : kShared) {
         auto* nc = nrep.find_check(key);
@@ -661,6 +730,10 @@ TEST(PoseBustParity, CrystalSelfDockAgreesWithUpstreamBust) {
             continue;
         }
         ++n_shared;
+        if (nc->skipped) {
+            ++n_skipped;
+            continue;
+        }
         if (nc->passed == uit->second) {
             ++n_agree;
         } else {
@@ -671,11 +744,13 @@ TEST(PoseBustParity, CrystalSelfDockAgreesWithUpstreamBust) {
         }
     }
     EXPECT_EQ(n_shared, 27) << "expected full dock-suite key coverage";
-    EXPECT_EQ(n_agree, n_shared)
-        << "parity fails: " << n_agree << "/" << n_shared;
+    EXPECT_TRUE(disagrees.empty())
+        << "parity fails: " << n_agree << " agree / " << n_skipped
+        << " skipped / " << n_shared << " shared";
     for (const auto& d : disagrees) {
         ADD_FAILURE() << "DISAGREE " << d;
     }
+    EXPECT_EQ(n_agree + n_skipped, n_shared);
     // Crystal self-dock should fully pass both
     EXPECT_TRUE(nrep.all_passed()) << "native failed: " << nrep.failed_keys_csv();
     EXPECT_TRUE(br.pb_pass) << "upstream failed: " << br.failed_keys;
@@ -853,4 +928,90 @@ TEST(ElectedPosePoseBust, CrystalSelfDockViaEvaluatePathsIdentity) {
     // success_pb algebra
     EXPECT_TRUE(true && pb_pass);
     EXPECT_FALSE(false && pb_pass);
+}
+
+TEST(PoseBustGeometry, VdwMatchesSearchTimePbClashTable) {
+    EXPECT_NEAR(vdw_radius(7), 1.60f, 1e-5f);
+    EXPECT_NEAR(vdw_radius(8), 1.55f, 1e-5f);
+    EXPECT_NEAR(vdw_radius(17), 1.80f, 1e-5f);
+}
+
+TEST(PoseBustGeometry, HeavyOnlyAromaticRingIsScored) {
+    Molecule lig = benzene_heavy_only(0.0f);
+    std::vector<CheckItem> out;
+    check_flatness(lig, out);
+    const CheckItem* arom = nullptr;
+    for (const auto& c : out) {
+        if (c.key == "aromatic_ring_flatness") arom = &c;
+    }
+    ASSERT_NE(arom, nullptr);
+    EXPECT_GE(arom->n_checked, 1) << arom->detail;
+    EXPECT_TRUE(arom->passed) << arom->detail;
+}
+
+TEST(PoseBustGeometry, PuckeredAromaticRingFailsFlatness) {
+    Molecule lig = benzene_heavy_only(0.60f);
+    std::vector<CheckItem> out;
+    check_flatness(lig, out);
+    const CheckItem* arom = nullptr;
+    for (const auto& c : out) {
+        if (c.key == "aromatic_ring_flatness") arom = &c;
+    }
+    ASSERT_NE(arom, nullptr);
+    EXPECT_GE(arom->n_checked, 1) << arom->detail;
+    EXPECT_FALSE(arom->passed) << arom->detail;
+}
+
+TEST(PoseBustEngine, MolSuiteSkipsProteinAndIdentity) {
+    const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
+    const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
+    if (!fs::is_regular_file(crystal) || !fs::is_regular_file(protein)) {
+        GTEST_SKIP() << "missing 1G9V crystal/apo";
+    }
+    Molecule lig, prot;
+    std::string err;
+    ASSERT_TRUE(load_sdf(crystal.string(), lig, &err)) << err;
+    ASSERT_TRUE(load_pdb_protein_heavy(protein.string(), prot, &err)) << err;
+    EvaluateOptions opt;
+    opt.suite = Suite::Mol;
+    auto rep = evaluate(lig, prot, &lig, opt);
+    ASSERT_TRUE(rep.ran);
+    EXPECT_EQ(rep.find_check("mol_cond_loaded"), nullptr);
+    EXPECT_EQ(rep.find_check("minimum_distance_to_protein"), nullptr);
+    EXPECT_EQ(rep.find_check("molecular_formula"), nullptr);
+    ASSERT_NE(rep.find_check("sanitization"), nullptr);
+    ASSERT_NE(rep.find_check("aromatic_ring_flatness"), nullptr);
+}
+
+TEST(ElectedPosePoseBust, BustMissingDoesNotCopyNativePass) {
+    const fs::path pose = find_1g9v_pose();
+    const fs::path crystal = astex_dir("1G9V") / "1G9V_ligand.sdf";
+    const fs::path protein = astex_dir("1G9V") / "1G9V_apo.pdb";
+    if (pose.empty() || !fs::is_regular_file(crystal) ||
+        !fs::is_regular_file(protein)) {
+        GTEST_SKIP() << "missing 1G9V elected pose / apo / crystal";
+    }
+    EnvRestore pin("FLEXAIDDS_POSEBUSTERS_BIN",
+                   "/no/such/flexaidds_bust_binary");
+    const fs::path side =
+        fs::temp_directory_path() / "flexaidds_elected_pb_bust_missing";
+    std::error_code ec;
+    fs::remove_all(side, ec);
+    fs::create_directories(side, ec);
+
+    ElectedPoseValidateOptions opt;
+    opt.backend = Backend::BustCli;
+    opt.native_fallback_if_bust_missing = true;
+    opt.sidecar_dir = side.string();
+    opt.pdb_id = "1G9V";
+
+    auto out = validate_elected_pose(pose.string(), protein.string(),
+                                     crystal.string(), opt);
+    EXPECT_EQ(out.pb_backend, "native_pose_qc_fallback") << out.error;
+    EXPECT_FALSE(out.pb_ran);
+    EXPECT_FALSE(out.pb_pass);
+    EXPECT_TRUE(out.native_qc_ran) << out.native_qc_failed_keys;
+    out.finalize_success_pb(/*success_rmsd=*/true);
+    EXPECT_FALSE(out.success_pb)
+        << "missing bust must not mint success_pb from NativePoseQC";
 }
