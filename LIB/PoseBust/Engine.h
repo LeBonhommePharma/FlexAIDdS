@@ -95,9 +95,9 @@ struct ElectedPoseValidateOptions {
     /// When true (default), Backend::Off with a non-empty elected path still
     /// runs NativePoseQC (mandatory floor). Claim-ready still requires bust_cli.
     bool force_native_when_off = true;
-    /// When BustCli is selected but `bust` is missing/fails to start, fall back
-    /// to NativePoseQC so pb_ran can still be true (fail-closed on missing CLI
-    /// only for STRICT claim_ready via pb_backend).
+    /// When BustCli is selected but `bust` is missing/fails to start, still
+    /// run NativePoseQC as native_qc_* diagnostic. pb_ran/pb_pass stay false
+    /// so DatasetRunner success_pb cannot be a native-backed claim.
     bool native_fallback_if_bust_missing = true;
 };
 

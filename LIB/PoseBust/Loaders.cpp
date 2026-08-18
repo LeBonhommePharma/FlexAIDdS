@@ -521,7 +521,7 @@ bool write_sdf(const Molecule& mol, const std::string& path, std::string* err) {
     }
 
     for (const Bond& b : mol.bonds) {
-        char buf[32];
+        char buf[64];
         const int order = (b.order >= 1 && b.order <= 4) ? b.order : 1;
         std::snprintf(buf, sizeof(buf), "%3d%3d%3d  0  0  0  0\n", b.a + 1, b.b + 1, order);
         out << buf;

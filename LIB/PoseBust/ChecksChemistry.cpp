@@ -45,12 +45,14 @@ void emit(std::vector<CheckItem>& out,
           std::string key,
           std::string label,
           bool passed,
-          std::string detail = {}) {
+          std::string detail = {},
+          bool skipped = false) {
     CheckItem item;
-    item.key    = std::move(key);
-    item.label  = std::move(label);
-    item.passed = passed;
-    item.detail = std::move(detail);
+    item.key     = std::move(key);
+    item.label   = std::move(label);
+    item.passed  = passed && !skipped;
+    item.skipped = skipped;
+    item.detail  = std::move(detail);
     out.push_back(std::move(item));
 }
 
@@ -197,20 +199,6 @@ void expected_valences(int Z, std::vector<int>& out) {
         case 53: out = {1}; break;          // I
         default: break;  // metals / unknown: not enforced
     }
-}
-
-[[nodiscard]] bool valence_ok(int Z, float bos) noexcept {
-    std::vector<int> vals;
-    expected_valences(Z, vals);
-    if (vals.empty()) return true;
-
-    // Aromatic half-orders + formal-charge slack ±1 (no formal_charge field).
-    // tol = 1.05 covers off-by-one valence for charged species and 1.5 aromatic.
-    constexpr float tol = 1.05f;
-    for (int v : vals) {
-        if (std::fabs(bos - static_cast<float>(v)) <= tol) return true;
-    }
-    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +348,34 @@ ElementMultiset heavy_formula(const Molecule& mol) {
     return oss.str();
 }
 
+[[nodiscard]] bool file_executable(const std::filesystem::path& p) {
+    std::error_code ec;
+    return std::filesystem::is_regular_file(p, ec) &&
+           (std::filesystem::status(p, ec).permissions() &
+            std::filesystem::perms::owner_exec) != std::filesystem::perms::none;
+}
+
+/// FLEXAIDDS_INCHI_BIN, then PATH. No Homebrew absolute paths, no popen.
+[[nodiscard]] std::string resolve_inchi_binary() {
+    if (const char* e = std::getenv("FLEXAIDDS_INCHI_BIN"); e && e[0]) {
+        if (file_executable(e)) return e;
+    }
+    if (const char* path = std::getenv("PATH")) {
+        std::string p = path;
+        std::size_t start = 0;
+        while (start <= p.size()) {
+            auto end = p.find(':', start);
+            std::string dir = p.substr(
+                start, end == std::string::npos ? std::string::npos : end - start);
+            std::filesystem::path cand = std::filesystem::path(dir) / "inchi-1";
+            if (file_executable(cand)) return cand.string();
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+    }
+    return {};
+}
+
 }  // namespace
 
 // ===========================================================================
@@ -368,7 +384,8 @@ ElementMultiset heavy_formula(const Molecule& mol) {
 
 void check_loading(const Molecule* pred,
                    const Molecule* protein,
-                   std::vector<CheckItem>& out) {
+                   std::vector<CheckItem>& out,
+                   bool emit_condition) {
     const bool pred_ok = molecule_loaded(pred);
     {
         std::ostringstream d;
@@ -382,6 +399,8 @@ void check_loading(const Molecule* pred,
         }
         emit(out, "mol_pred_loaded", "MOL_PRED loaded", pred_ok, d.str());
     }
+
+    if (!emit_condition) return;
 
     const bool cond_ok = molecule_loaded(protein);
     {
@@ -409,8 +428,9 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
          sanity.detail);
 
     // --- inchi_convertible ------------------------------------------------
-    // Prefer real InChI via system `inchi-1` (IUPAC InChI, not RDKit). Falls
-    // back to connectivity preconditions only when the binary is absent.
+    // Prefer real InChI via system `inchi-1` (IUPAC InChI, not RDKit).
+    // Missing binary is a skip (passed=false, ignored by all_passed()), not a
+    // soft pass. Official PoseBusters uses RDKit MolToInchi.
     {
         int heavy = 0;
         bool all_known = !pred.atoms.empty();
@@ -426,6 +446,7 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
 
         std::string detail;
         bool ok = false;
+        bool skipped = false;
         if (!precond) {
             ok = false;
             std::ostringstream d;
@@ -436,46 +457,13 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
               << " sanitization=" << (sanity.ok ? 1 : 0);
             detail = d.str();
         } else {
-            // Resolve inchi-1: FLEXAIDDS_INCHI_BIN, PATH, Homebrew paths.
-            std::string inchi_bin;
-            if (const char* e = std::getenv("FLEXAIDDS_INCHI_BIN"); e && e[0]) {
-                inchi_bin = e;
-            }
+            const std::string inchi_bin = resolve_inchi_binary();
             if (inchi_bin.empty()) {
-                for (const char* cand : {"/opt/homebrew/bin/inchi-1",
-                                         "/usr/local/bin/inchi-1",
-                                         "inchi-1"}) {
-                    // For bare name, try which via shell.
-                    if (std::string(cand) == "inchi-1") {
-                        FILE* w = popen("command -v inchi-1 2>/dev/null", "r");
-                        if (w) {
-                            char buf[512];
-                            if (fgets(buf, sizeof(buf), w)) {
-                                std::string p = buf;
-                                while (!p.empty() &&
-                                       (p.back() == '\n' || p.back() == '\r'))
-                                    p.pop_back();
-                                if (!p.empty()) inchi_bin = p;
-                            }
-                            pclose(w);
-                        }
-                    } else {
-                        std::ifstream t(cand);
-                        if (t.good()) {
-                            inchi_bin = cand;
-                            break;
-                        }
-                    }
-                    if (!inchi_bin.empty()) break;
-                }
-            }
-
-            if (inchi_bin.empty()) {
-                // Fail closed when binary missing? Prefer soft pass only if
-                // preconditions hold, but mark soft so parity tests can skip.
-                ok = true;
+                // Not a pass: all_passed() ignores skipped rows.
+                skipped = true;
+                ok = false;
                 detail =
-                    "soft=true inchi-1_missing; preconditions_ok heavy=" +
+                    "skipped=true inchi-1_missing; preconditions_ok heavy=" +
                     std::to_string(heavy);
             } else {
                 // Write temp SDF and invoke inchi-1
@@ -524,7 +512,7 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
                 }
             }
         }
-        emit(out, "inchi_convertible", "InChI convertible", ok, detail);
+        emit(out, "inchi_convertible", "InChI convertible", ok, detail, skipped);
     }
 
     // --- all_atoms_connected (heavy-atom graph, bonds only) ---------------

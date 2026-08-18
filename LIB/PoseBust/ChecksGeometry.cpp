@@ -313,13 +313,30 @@ std::vector<Cycle> find_simple_cycles_5_6(const std::vector<std::vector<int>>& a
     return raw;
 }
 
-bool majority_aromatic_or_sp2(const Molecule& /*mol*/,
+bool ring_has_mdl_aromatic_bond(const Molecule& mol, const Cycle& cyc) {
+    for (std::size_t i = 0; i < cyc.size(); ++i) {
+        const int a = cyc[i];
+        const int b = cyc[(i + 1) % cyc.size()];
+        for (const Bond& bond : mol.bonds) {
+            if (((bond.a == a && bond.b == b) || (bond.a == b && bond.b == a)) &&
+                bond.order == 4) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool majority_aromatic_or_sp2(const Molecule& mol,
                               const Cycle& cyc,
                               const std::vector<std::vector<int>>& adj) {
+    // Heavy-only phenyls have degree 2 (implicit H). Official bust uses RDKit
+    // aromatic rings. Score the ring as aromatic if it has any MDL order-4
+    // bond OR a majority of degree-3 (trigonal) atoms.
+    if (ring_has_mdl_aromatic_bond(mol, cyc)) return true;
     int votes = 0;
     for (int idx : cyc) {
         const int deg = static_cast<int>(adj[static_cast<std::size_t>(idx)].size());
-        // Degree-3 trigonal / sp2 heuristic (no aromatic flag on Atom in Types.h).
         if (deg == 3) {
             ++votes;
         }
@@ -358,22 +375,24 @@ CheckItem make_item(std::string key,
 // ---------------------------------------------------------------------------
 
 float vdw_radius(int Z) noexcept {
-    // Bondi (1964) van der Waals radii (Å); common organics + defaults.
+    // Same RDKit-like table as search-time CF.pb_clash (LIB/soft_wall.h
+    // posebusters_vdw_radius). Still not the radii inside official `bust`.
+    // Extra Z (B, Si, As) keep Bondi-ish values; they are not in soft_wall.h.
     switch (Z) {
         case 1:  return 1.20f; // H
-        case 5:  return 1.92f; // B (approx.)
+        case 5:  return 1.92f; // B (Bondi-ish; not in pb_clash table)
         case 6:  return 1.70f; // C
-        case 7:  return 1.55f; // N
-        case 8:  return 1.52f; // O
-        case 9:  return 1.47f; // F
+        case 7:  return 1.60f; // N  (soft_wall / RDKit-like)
+        case 8:  return 1.55f; // O
+        case 9:  return 1.50f; // F
         case 14: return 2.10f; // Si
-        case 15: return 1.80f; // P
+        case 15: return 1.95f; // P
         case 16: return 1.80f; // S
-        case 17: return 1.75f; // Cl
+        case 17: return 1.80f; // Cl
         case 33: return 1.85f; // As
         case 34: return 1.90f; // Se
-        case 35: return 1.85f; // Br
-        case 53: return 1.98f; // I
+        case 35: return 1.90f; // Br
+        case 53: return 2.10f; // I
         default: return 2.00f;
     }
 }
@@ -610,18 +629,7 @@ void check_flatness(const Molecule& pred, std::vector<CheckItem>& out) {
         double min_oop = std::numeric_limits<double>::infinity();
 
         auto ring_has_aromatic_bond = [&](const Cycle& cyc) -> bool {
-            for (std::size_t i = 0; i < cyc.size(); ++i) {
-                const int a = cyc[i];
-                const int b = cyc[(i + 1) % cyc.size()];
-                for (const Bond& bond : pred.bonds) {
-                    if (((bond.a == a && bond.b == b) ||
-                         (bond.a == b && bond.b == a)) &&
-                        bond.order == 4) {
-                        return true;
-                    }
-                }
-            }
-            return false;
+            return ring_has_mdl_aromatic_bond(pred, cyc);
         };
 
         for (const Cycle& cyc : cycles) {

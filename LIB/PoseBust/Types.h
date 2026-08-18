@@ -106,6 +106,11 @@ struct CheckItem {
     std::string label;   // human: "Internal steric clash"
     bool        passed = false;
     std::string detail;
+    /// Not computed / not applicable (missing InChI binary, no cofactor
+    /// entities in an apo crop, …). Ignored by all_passed() / n_fail() /
+    /// failed_keys_csv() so a skipped key cannot inflate a native pass or a
+    /// native fail. JSON still emits the row.
+    bool        skipped = false;
     // Optional continuous diagnostics (NaN if unused)
     float metric    = std::numeric_limits<float>::quiet_NaN();
     float threshold = std::numeric_limits<float>::quiet_NaN();
@@ -143,9 +148,13 @@ struct PoseBustReport {
 
     [[nodiscard]] bool all_passed() const {
         if (!ran || !error.empty()) return false;
-        for (const CheckItem& c : checks)
+        int n_scored = 0;
+        for (const CheckItem& c : checks) {
+            if (c.skipped) continue;
+            ++n_scored;
             if (!c.passed) return false;
-        return !checks.empty();
+        }
+        return n_scored > 0;
     }
 
     /// Full NativePoseQC suite (diagnostic / parity target). Not claim gate.
@@ -173,13 +182,19 @@ struct PoseBustReport {
     [[nodiscard]] int n_pass() const {
         int n = 0;
         for (const CheckItem& c : checks)
-            if (c.passed) ++n;
+            if (!c.skipped && c.passed) ++n;
         return n;
     }
     [[nodiscard]] int n_fail() const {
         int n = 0;
         for (const CheckItem& c : checks)
-            if (!c.passed) ++n;
+            if (!c.skipped && !c.passed) ++n;
+        return n;
+    }
+    [[nodiscard]] int n_skipped() const {
+        int n = 0;
+        for (const CheckItem& c : checks)
+            if (c.skipped) ++n;
         return n;
     }
     [[nodiscard]] int n_checks() const { return static_cast<int>(checks.size()); }
@@ -187,7 +202,7 @@ struct PoseBustReport {
     [[nodiscard]] std::string failed_keys_csv() const {
         std::string out;
         for (const CheckItem& c : checks) {
-            if (c.passed) continue;
+            if (c.skipped || c.passed) continue;
             if (!out.empty()) out += ';';
             out += c.key;
         }

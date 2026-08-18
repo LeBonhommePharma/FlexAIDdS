@@ -153,7 +153,11 @@ std::vector<std::string> split_csv_line(const std::string& line) {
 
 std::string resolve_bust_binary() {
     if (const char* e = std::getenv("FLEXAIDDS_POSEBUSTERS_BIN")) {
-        if (e[0] && file_executable(e)) return e;
+        if (e[0]) {
+            // Explicit pin: miss is fail-closed (do not silently pick PATH).
+            if (file_executable(e)) return e;
+            return {};
+        }
     }
     // PATH lookup
     if (const char* path = std::getenv("PATH")) {
