@@ -647,6 +647,7 @@ TEST(PoseBustEngine, CrystalSelfDockNearNativePassesCore) {
         EXPECT_FALSE(c->passed) << k << " must not inflate native pass";
     }
     EXPECT_TRUE(rep.all_passed()) << "native failed: " << rep.failed_keys_csv();
+}
 
 // Honest differential: native dock-suite booleans vs upstream bust on crystal
 // self-dock (rewritten SDF). RMSD column is excluded (success_rmsd domain).
