@@ -35,11 +35,16 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Step-level continue-on-error (not job-level): a failed step with this
+      # flag still lets the job conclude success, so the PR check is green.
+      # Job-level continue-on-error leaves the check red while only the
+      # workflow overall succeeds.
       - name: Run Claude Code Review
         id: claude-review
         # Not a required check. The Anthropic plugin often returns
         # subtype=success / is_error=true with num_turns=1 and $0 cost
-        # (OAuth/plugin abort). Hygiene and Tier-1 are the merge gates.
+        # (OAuth/plugin abort; anthropics/claude-code-action#1614).
+        # Hygiene and Tier-1 are the merge gates.
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
@@ -52,3 +57,8 @@ jobs:
           # repo that would let arbitrary GitHub Apps invoke the reviewer with a
           # prompt they control. See anthropics/claude-code-action docs/security.md.
           allowed_bots: cursor,cursor[bot]
+
+      - name: Note Claude reviewer outage
+        if: steps.claude-review.outcome == 'failure'
+        run: |
+          echo "::warning::Claude Code Review SDK returned is_error:true with zero cost (auth/quota). This is not a review of the PR diff. Refresh CLAUDE_CODE_OAUTH_TOKEN or wait for the Anthropic cap to reset."
