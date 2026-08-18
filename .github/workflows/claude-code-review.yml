@@ -21,10 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # write: the code-review plugin posts a PR review / tracking comment.
-      # The /install-github-app scaffold ships pull-requests: read, which
-      # 403s those API calls and the action then fails with is_error:true
-      # (https://github.com/anthropics/claude-code-action/issues/944).
+      # write so a successful SDK run can post the review comment.
+      # Do not set track_progress / extra claude_args here: on this repo that
+      # combination aborted the SDK in ~350ms with is_error:true and $0 cost
+      # (run 32091914831). The working reviews use the plugin prompt only.
       pull-requests: write
       issues: write
       id-token: write
@@ -33,15 +33,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Run Claude Code Review
         id: claude-review
+        # Not a required check. The Anthropic plugin often returns
+        # subtype=success / is_error=true with num_turns=1 and $0 cost
+        # (OAuth/plugin abort). Hygiene and Tier-1 are the merge gates.
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ github.token }}
-          track_progress: true
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
@@ -50,7 +52,3 @@ jobs:
           # repo that would let arbitrary GitHub Apps invoke the reviewer with a
           # prompt they control. See anthropics/claude-code-action docs/security.md.
           allowed_bots: cursor,cursor[bot]
-          # The plugin fetches the PR via gh and posts inline comments. Default
-          # tool policy denies those Bash calls and the review exits empty.
-          claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*)"
