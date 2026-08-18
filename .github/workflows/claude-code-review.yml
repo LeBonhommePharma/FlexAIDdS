@@ -31,8 +31,20 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Step-level continue-on-error (not job-level): a failed step with this
+      # flag still lets the job conclude success, so the PR check is green.
+      # Job-level continue-on-error leaves the check red while only the
+      # workflow overall succeeds — that is what this PR was hitting.
+      #
+      # Why this is not a review of the diff: since 2026-08-17 ~08:46Z every
+      # Claude Code Review on this repo (same action SHA that was green at
+      # 05:17Z, CLI 2.1.233, model claude-sonnet-5) exits in ~0.5s with
+      # subtype=success, is_error=true, num_turns=1, total_cost_usd=0.
+      # That envelope is Anthropic-side (OAuth 401 / 429 usage cap; see
+      # anthropics/claude-code-action#1614), not a finding on the PR.
       - name: Run Claude Code Review
         id: claude-review
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -44,4 +56,9 @@ jobs:
           # repo that would let arbitrary GitHub Apps invoke the reviewer with a
           # prompt they control. See anthropics/claude-code-action docs/security.md.
           allowed_bots: cursor,cursor[bot]
+
+      - name: Note Claude reviewer outage
+        if: steps.claude-review.outcome == 'failure'
+        run: |
+          echo "::warning::Claude Code Review SDK returned is_error:true with zero cost (auth/quota). This is not a review of the PR diff. Refresh CLAUDE_CODE_OAUTH_TOKEN or wait for the Anthropic cap to reset."
 
