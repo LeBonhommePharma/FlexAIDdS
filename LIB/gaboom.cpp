@@ -3126,8 +3126,14 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			// fields: scorable_list, n_scorable, scorable_cap, fastpath_used).
 			std::vector<std::vector<int>>         tl_scorable;
 		};
-		static ParEvalWS ws;   // resident across generations (serial init: GA
-		                       // parallelism lives strictly inside this loop).
+		thread_local ParEvalWS ws;  // resident across generations on THIS thread.
+		                       // Must not be process-wide static: --parallel-dock
+		                       // runs GA() under an outer OpenMP parallel-for
+		                       // (ParallelDock.cpp). A shared static races on
+		                       // rebuild and tl_* buffers. Inner eval still
+		                       // shares this thread's tl_* via references
+		                       // captured before the inner omp for, so the
+		                       // serial claim path is unchanged.
 
 		const bool ws_valid =
 			ws.n_thr == n_thr && ws.natm == natm && ws.nres == nres &&

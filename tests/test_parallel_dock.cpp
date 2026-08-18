@@ -6,6 +6,8 @@
 #include <set>
 #include <numeric>
 #include <thread>
+#include <vector>
+#include "../LIB/AtomCopyExtent.h"
 #include "../LIB/GridDecomposer.h"
 #include "../LIB/SharedPosePool.h"
 #include "../LIB/statmech.h"
@@ -335,4 +337,75 @@ TEST(GridDecomposer, RegionBoundsCorrect) {
     EXPECT_EQ(r.num_points, 5);
 
     free(grid);
+}
+
+// ============================================================================
+// 1-based atom[] copy (ParallelDock create_workspace)
+// ============================================================================
+// FlexAID stores live atoms at indices [1, atm_cnt]. Gaboom ParEvalWS copies
+// `atoms + natm + 1`. The old ParallelDock line was:
+//   ws.atoms_copy.assign(atoms_, atoms_ + FA_->atm_cnt);
+// which is a half-open range of length atm_cnt and drops atoms[atm_cnt].
+// flexaid_one_based_copy_n is what create_workspace uses; if it returned
+// atm_cnt this test fails.
+
+TEST(ParallelDockWorkspace, AtomCopyExtentIsAtmCntPlusOne) {
+    EXPECT_EQ(flexaid_one_based_copy_n(0), 1);
+    EXPECT_EQ(flexaid_one_based_copy_n(1), 2);
+    EXPECT_EQ(flexaid_one_based_copy_n(7), 8);
+    EXPECT_NE(flexaid_one_based_copy_n(7), 7);
+}
+
+TEST(ParallelDockWorkspace, AtomCopyIncludesLastOneBasedAtom) {
+    const int atm_cnt = 3;
+    atom atoms[4]{};
+    atoms[1].number = 101;
+    atoms[2].number = 102;
+    atoms[3].number = 103;
+    atoms[3].coor[0] = 42.0f;
+
+    std::vector<atom> dropped(atoms, atoms + atm_cnt);
+    std::vector<atom> kept(atoms, atoms + flexaid_one_based_copy_n(atm_cnt));
+
+    ASSERT_EQ(dropped.size(), static_cast<size_t>(atm_cnt));
+    ASSERT_EQ(kept.size(), static_cast<size_t>(atm_cnt) + 1);
+    EXPECT_EQ(dropped.back().number, 102) << "assign(..., atm_cnt) stops at atoms[atm_cnt-1]";
+    EXPECT_EQ(kept[atm_cnt].number, 103);
+    EXPECT_FLOAT_EQ(kept[atm_cnt].coor[0], 42.0f);
+}
+
+// ============================================================================
+// thread_local workspace isolation (gaboom ParEvalWS under --parallel-dock)
+// ============================================================================
+// Not a race test: two threads write distinct sentinels and publish addresses
+// after join. A process-wide static would share one object; thread_local must
+// not. Production: thread_local ParEvalWS in gaboom.cpp calculate_fitness.
+
+TEST(ParEvalWSIsolation, ThreadLocalWorkspacesDoNotShare) {
+    struct WS { int sentinel = 0; };
+    thread_local WS ws;
+
+    WS* p0 = nullptr;
+    WS* p1 = nullptr;
+    int v0 = -1;
+    int v1 = -1;
+
+    std::thread t0([&] {
+        ws.sentinel = 7;
+        p0 = &ws;
+        v0 = ws.sentinel;
+    });
+    std::thread t1([&] {
+        ws.sentinel = 9;
+        p1 = &ws;
+        v1 = ws.sentinel;
+    });
+    t0.join();
+    t1.join();
+
+    ASSERT_NE(p0, nullptr);
+    ASSERT_NE(p1, nullptr);
+    EXPECT_NE(p0, p1);
+    EXPECT_EQ(v0, 7);
+    EXPECT_EQ(v1, 9);
 }

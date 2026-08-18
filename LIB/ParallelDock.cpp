@@ -65,8 +65,11 @@ ParallelDockManager::RegionWorkspace ParallelDockManager::create_workspace() con
     ws.gb = *GB_;
     ws.vc = *VC_;
 
-    // Deep copy mutable arrays
-    ws.atoms_copy.assign(atoms_, atoms_ + FA_->atm_cnt);
+    // Deep copy mutable arrays. atom[] is 1-based: live atoms occupy
+    // atoms[1]..atoms[atm_cnt] (gaboom.cpp ParEvalWS: atoms + natm + 1).
+    // residue[] is the same layout (res_cnt+1 already). Using atm_cnt as a
+    // half-open C++ end drops atoms[atm_cnt] — the last 1-based atom.
+    ws.atoms_copy.assign(atoms_, atoms_ + flexaid_one_based_copy_n(FA_->atm_cnt));
     ws.residue_copy.assign(residue_, residue_ + FA_->res_cnt + 1);
 
     return ws;

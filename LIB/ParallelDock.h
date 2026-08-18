@@ -6,6 +6,7 @@
 #pragma once
 
 #include "flexaid.h"
+#include "AtomCopyExtent.h"
 #include "gaboom.h"
 #include "GAContext.h"
 #include "statmech.h"
