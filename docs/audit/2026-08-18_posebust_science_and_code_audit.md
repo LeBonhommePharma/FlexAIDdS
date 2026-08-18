@@ -4,6 +4,7 @@
 **Mode:** Diagnostic. No engine, ranking, or thermodynamic behaviour was changed.
 **Chemist-facing introduction:** [`LIB/PoseBust/README.md`](../../LIB/PoseBust/README.md)
 **Auditor:** Cursor Grok 4.6 cloud agent; every factual claim below was read from source in this session.
+**Honesty follow-up:** §11 lists source fixes landed on this branch after the diagnostic audit. Where §1–§10 and §11 disagree, §11 + current sources win.
 
 Literature reference for the *official* gate (not incorporated as source):
 Buttenschoen, Morris, Deane, *Chem. Sci.* **15**, 3130–3139 (2024), doi:10.1039/D3SC04185A.
@@ -213,3 +214,24 @@ So: **STRICT headline cannot be faked by NativePoseQC.** Intermediate column `su
 5. Either implement `opt.suite` or delete the enum.
 6. Default claim campaigns: `FLEXAIDDS_POSEBUSTERS_REQUIRE_CLI=1` in DatasetRunner claim protocols so `success_pb` cannot be native-backed.
 7. Replace the standalone PoseBust GitHub README placeholder (hardware/ΔS fiction) with this chemist text.
+
+---
+
+## 11. Honesty fixes landed after this audit
+
+Implemented in `LIB/PoseBust/` (same branch as this document). NativePoseQC remains a diagnostic, not PoseBusters.
+
+| ID | Change |
+|----|--------|
+| C1 | Missing `inchi-1` → `skipped=true`, `passed=false`. `all_passed()` ignores skipped rows. Resolver: `FLEXAIDDS_INCHI_BIN` then PATH; no `popen`, no Homebrew paths. |
+| C2 | Apo cofactor/water keys emit `skipped=true`, `passed=false`, `n_checked=0` so they cannot inflate native full-suite pass. |
+| C13 | Aromatic rings scored if majority degree-3 **or** any MDL order-4 bond in the cycle (heavy-only phenyls are no longer a dead zone). |
+| Fallback | Missing official `bust` sets `pb_backend=native_pose_qc_fallback`, `pb_ran=false`, `pb_pass=false`. NativePoseQC still fills `native_qc_*`. Explicit `FLEXAIDDS_POSEBUSTERS_BIN` pin miss is fail-closed (no PATH fall-through). |
+| vdW | `ChecksGeometry.cpp` `vdw_radius` organics match `LIB/soft_wall.h` `posebusters_vdw_radius` (N 1.60, O 1.55, Cl 1.80). Still not RDKit-inside-bust. |
+| C5 | `evaluate()` honors `Suite::Mol` (skip protein + identity + `mol_cond_loaded`). Dock/Redock keep 27-key behavior when a crystal pointer is set. |
+| C6 | Cell-list no longer writes a 5 Å `min_dist` sentinel when `has_pair` is false. |
+| C7 | `write_sdf` bond-line `snprintf` buffer is 64 bytes. |
+| C12 | Bust receipt write logs to stderr instead of swallowing `catch (...)`. |
+| C11 | `tests/test_posebust_upstream_parity.py` tries clang++/g++-14 C++26 then g++ C++23. |
+
+Still open from §10: claim-protocol default `FLEXAIDDS_POSEBUSTERS_REQUIRE_CLI=1` (now less load-bearing because fallback no longer copies native onto `pb_pass`); sibling GitHub PoseBust README (different repo).

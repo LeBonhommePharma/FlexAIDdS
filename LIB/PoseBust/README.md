@@ -30,7 +30,7 @@ PoseBust is a **post-election validator**. It does not search, does not rank Bin
 | **BustCli** (`BustCli.cpp`) | Argv bridge to the installed PoseBusters 0.6.5 CLI (`bust`). RDKit chemistry, UFF internal energy, RDKit distance-geometry bounds, ShapeTversky volume overlap. BSD tool, user-installed. | **`pb_pass` for claims.** `pb_backend` must be `bust_cli`. |
 | **NativePoseQC** (`Checks*.cpp`, `Engine.cpp`) | Apache-2.0 clean-room C++26 suite that *reuses PoseBusters column names* so reports can be compared. Algorithms are original. No RDKit, no posebusters source. | **Diagnostic / fallback only.** Never “PoseBusters passed.” |
 
-Default backend is official `bust`. NativePoseQC always still runs as a parity diagnostic. If `bust` is missing, the campaign **falls back** to NativePoseQC (`pb_backend=native_pose_qc_fallback`) unless `FLEXAIDDS_POSEBUSTERS_REQUIRE_CLI` is set. That fallback can fill `pb_pass`, but **`claim_ready` stays unreachable** because DatasetRunner requires `pb_backend == "bust_cli"`.
+Default backend is official `bust`. NativePoseQC always still runs as a parity diagnostic. If `bust` is missing, NativePoseQC still runs (`native_qc_*`) and `pb_backend` becomes `native_pose_qc_fallback`, but **`pb_ran` and `pb_pass` stay false**. `success_pb` cannot be minted from the in-house suite. `claim_ready` stays unreachable because DatasetRunner requires `pb_backend == "bust_cli"`.
 
 ```
 success_rmsd  =  elected_pose RMSD ≤ 2.0 Å          (S1)
@@ -58,7 +58,7 @@ Water is **in**. Upstream redock.yml selects `minimum_distance_to_waters` and `v
 |---|-----------|-------------------------------------------|---------------------------|
 | 1–3 | `mol_pred_loaded`, `mol_true_loaded`, `mol_cond_loaded` | RDKit load of predicted ligand, crystal ligand, protein | Non-empty atom arrays |
 | 4 | `sanitization` | RDKit `SanitizeMol` (valence, aromaticity, kekulize) | Finite coordinates, known Z, valid bond indices |
-| 5 | `inchi_convertible` | RDKit → InChI | Real `inchi-1` when present; **soft-pass if the binary is missing** |
+| 5 | `inchi_convertible` | RDKit → InChI | Real `inchi-1` (`FLEXAIDDS_INCHI_BIN` / PATH). **Missing binary → skipped** (`passed=false`, ignored by `all_passed()`) |
 | 6 | `all_atoms_connected` | Single RDKit fragment | Single connected component on the **heavy-atom** bond graph |
 | 7 | `no_radicals` | RDKit radical-electron count | Over-valence only (`bos > max valence + 1.05`). Under-valence allowed (heavy-only FlexAID poses omit H) |
 | 8 | `molecular_formula` | Identity vs crystal | Heavy-atom element **multiset** equality |
@@ -67,16 +67,16 @@ Water is **in**. Upstream redock.yml selects `minimum_distance_to_waters` and `v
 | 11 | `tetrahedral_chirality` | RDKit CIP vs crystal | Signed tetrahedral volume vs crystal, neighbor-index order, **not CIP**; vacuous True without crystal |
 | 12 | `bond_lengths` | Within 25% of RDKit distance-geometry bounds | Within 25% of Cordero covalent-radius sum |
 | 13 | `bond_angles` | Same DG 25% window | Hybridization heuristic (109.5° / 120° / 180°) with 25% relative **or** 25° absolute floor |
-| 14 | `internal_steric_clash` | DG 1–5+ distances, 30% tolerance | Heavy pairs with graph distance ≥ 4: \(d \ge 0.70\,(r_i+r_j)\) Bondi |
-| 15 | `aromatic_ring_flatness` | RDKit aromatic rings, out-of-plane | Size 5–6 cycles, majority degree-3 vote, max OOP ≤ 0.25 Å. Heavy-only phenyls often miss the vote, so the ring is **not scored** (vacuous pass). 1G9V crystal this session: 0 rings checked despite MDL aromatic bonds. |
-| 16 | `non-aromatic_ring_non-flatness` | Aliphatic rings must pucker | Skips cycles that have an MDL order-4 bond. Together with row 15 this is a **dead zone**: an under-counted phenyl is neither “aromatic” nor “aliphatic.” |
+| 14 | `internal_steric_clash` | DG 1–5+ distances, 30% tolerance | Heavy pairs with graph distance ≥ 4: \(d \ge 0.70\,(r_i+r_j)\) using the `soft_wall.h` RDKit-like vdW table |
+| 15 | `aromatic_ring_flatness` | RDKit aromatic rings, out-of-plane | Size 5–6 cycles; aromatic if **MDL order-4 bond present or** majority degree-3; max OOP ≤ 0.25 Å |
+| 16 | `non-aromatic_ring_non-flatness` | Aliphatic rings must pucker | Skips cycles that have an MDL order-4 bond (those go to row 15) |
 | 17 | `double_bond_flatness` | DG / RDKit | \(\lvert\sin\phi\rvert \le 0.25\) on first substituents |
 | 18 | `internal_energy` | UFF energy ≤ 100 × mean of 50 ETKDGv3+UFF conformers | Mean **squared relative bond strain** vs covalent radii; pass if ≤ 0.0625, or ≤ 2× crystal |
 | 19 | `protein-ligand_maximum_distance` | Ligand is in the pocket | Some protein heavy atom within 5 Å of some ligand heavy atom |
-| 20 | `minimum_distance_to_protein` | \(d/(r_i+r_j) \ge 0.75\) (RDKit vdW; covalent radii for inorganic cofactors) | \(d \ge 1.5\) Å **and** \(d \ge 0.75\,(r_i+r_j)\) **Bondi** table |
-| 21–23 | min distance to organic / inorganic cofactors / waters | Real classification from the condition molecule | **Vacuous True** (apo protein crop has no separate entities) |
-| 24 | `volume_overlap_with_protein` | RDKit `ShapeTverskyIndex`; vdW scaled **0.8**; overlap **< 7.5%** of ligand volume | 0.5 Å voxel occupancy of **unscaled** Bondi spheres; overlap **≤ 7.5%** |
-| 25–27 | volume overlap with cofactors / waters | Same Tversky, scale 0.8 organic / 0.5 inorganic | **Vacuous True** |
+| 20 | `minimum_distance_to_protein` | \(d/(r_i+r_j) \ge 0.75\) (RDKit vdW; covalent radii for inorganic cofactors) | \(d \ge 1.5\) Å **and** \(d \ge 0.75\,(r_i+r_j)\) using the same RDKit-like table as `CF.pb_clash` |
+| 21–23 | min distance to organic / inorganic cofactors / waters | Real classification from the condition molecule | **Skipped** (`n_checked=0`) on apo protein crop — keys are emitted but do not inflate `all_passed()` |
+| 24 | `volume_overlap_with_protein` | RDKit `ShapeTverskyIndex`; vdW scaled **0.8**; overlap **< 7.5%** of ligand volume | 0.5 Å voxel occupancy of **unscaled** spheres; overlap **≤ 7.5%** |
+| 25–27 | volume overlap with cofactors / waters | Same Tversky, scale 0.8 organic / 0.5 inorganic | **Skipped** (same as 21–23) |
 
 NativePoseQC also crops the protein to heavy atoms within **10 Å of the ligand heavy-atom centre of mass** before intermolecular checks. Official `bust` sees the condition molecule the CLI was given (typically the full receptor PDB).
 
@@ -94,7 +94,7 @@ PoseBust never feeds back into CF ranking. A physically invalid pose can still w
 
 ### Do not confuse this with `CF.pb_clash`
 
-`FLEXAIDDS_PB_CLASH_WEIGHT` (default **0.0**) is an optional **search-time** intermolecular clash *penalty* inside `vcfunction.cpp`. It uses `posebusters_vdw_radius()` in `LIB/soft_wall.h` (RDKit-like table: N 1.60, O 1.55, Cl 1.80 Å). NativePoseQC intermolecular checks use a **Bondi-ish** table in `ChecksGeometry.cpp` (N 1.55, O 1.52, Cl 1.75 Å). Same *idea* (0.75 × summed vdW), **not the same numbers**, and **not a PoseBusters pass**.
+`FLEXAIDDS_PB_CLASH_WEIGHT` (default **0.0**) is an optional **search-time** intermolecular clash *penalty* inside `vcfunction.cpp`. It uses `posebusters_vdw_radius()` in `LIB/soft_wall.h` (RDKit-like table: N 1.60, O 1.55, Cl 1.80 Å). NativePoseQC intermolecular checks now use **the same table** via `vdw_radius()` in `ChecksGeometry.cpp`. Same *idea* (0.75 × summed vdW), **still not a PoseBusters pass** — official `bust` uses RDKit radii plus covalent radii for inorganic cofactors.
 
 Turning the clash penalty on during search does not make `pb_pass` true. Leaving it off does not make `pb_pass` false.
 
@@ -176,7 +176,7 @@ python3 tests/test_posebust_upstream_parity.py
 | `Loaders.cpp` | SDF V2000, FlexAID CONECT ligand extract, fail-closed topology transfer |
 | `ChecksChemistry.cpp` | Load / sanitization / InChI / connectivity / formula / stereo / strain |
 | `ChecksGeometry.cpp` | Bonds, angles, internal clash, ring and double-bond flatness |
-| `ChecksProtein.cpp` | Ligand–protein distance, voxel volume overlap, vacuous cofactor/water keys |
+| `ChecksProtein.cpp` | Ligand–protein distance, voxel volume overlap, skipped cofactor/water keys |
 | `Engine.cpp` | Native orchestration, JSON sidecar, `validate_elected_pose` |
 | `BustCli.cpp` | Official `bust` argv + 27-column schema pin + receipts |
 
@@ -184,16 +184,14 @@ python3 tests/test_posebust_upstream_parity.py
 
 ## Limitations chemists should budget for
 
-These are observed in the shipped sources, not hypotheticals.
+These remain after the 2026-08-18 honesty fixes.
 
-1. **Native cofactor/water keys always pass** on apo crops. A pose that hits a crystallographic water or a heme iron can be NativePoseQC-green and `bust`-red. That is why fallback `pb_pass` is not a publication metric.
-2. **Aromatic-ring dead zone on heavy-only poses.** A phenyl with MDL order-4 bonds is skipped by the aliphatic check, but the aromatic check requires a majority of ring atoms to have heavy degree 3. Missing hydrogens drop the vote, so **neither** flatness test runs (1G9V crystal: `n_checked=0`, still PASS). Official `bust` uses RDKit aromatic rings and would still score the ring.
-3. **Two vdW tables.** Search-time `pb_clash` (`soft_wall.h`) ≠ NativePoseQC Bondi table ≠ RDKit table inside `bust`. Do not compare a Native min-distance metric to a PoseBusters waterfall and call them the same clash.
-4. **Volume overlap is a different estimator.** Voxels of unscaled spheres vs RDKit Tversky with 0.8-scaled vdW. The 7.5% threshold is the same *number* with different *volumes*.
-5. **`inchi_convertible` fail-open.** If `inchi-1` is not installed, NativePoseQC records a pass with `soft=true inchi-1_missing`. Official `bust` does not.
-6. **`Suite::{Dock,Redock,Mol}` is unused in `evaluate()`.** Identity checks run iff a crystal pointer is provided; they are not switched by the enum.
-7. **SDF writer is V2000** (≤999 atoms). Fine for drug-like ligands; not a biological assembly dumper.
-8. **No GPU, no ΔS, no Eigen** in this directory. Hardware-dispatch or “entropy integration” language does not describe this code.
+1. **Native cofactor/water keys are skipped, not scored**, on apo crops. A pose that hits a crystallographic water or a heme iron can still be NativePoseQC-green (`all_passed()` ignores the skipped rows) and `bust`-red. Missing `bust` no longer copies that native green onto `pb_pass`.
+2. **Volume overlap is a different estimator.** Voxels of unscaled spheres vs RDKit Tversky with 0.8-scaled vdW. The 7.5% threshold is the same *number* with different *volumes*.
+3. **Official `bust` vdW/energy/stereo are still not NativePoseQC.** Aligning NativePoseQC with `soft_wall.h` does not make it PoseBusters 0.6.5.
+4. **`Suite::Mol` is ligand-only.** Dock/Redock still emit the 27-key dock list when a crystal pointer is set (parity lock).
+5. **SDF writer is V2000** (≤999 atoms). Fine for drug-like ligands; not a biological assembly dumper.
+6. **No GPU, no ΔS, no Eigen** in this directory. Hardware-dispatch or “entropy integration” language does not describe this code.
 
 The 2026-08-18 source audit that produced this introduction is
 [`docs/audit/2026-08-18_posebust_science_and_code_audit.md`](../../docs/audit/2026-08-18_posebust_science_and_code_audit.md).
