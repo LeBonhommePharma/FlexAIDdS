@@ -5,7 +5,7 @@
 **Tip audited:** `bde7908cc600b396a957d22dcedc72f0c11251fd` (`main`, `#455`)  
 **Parent of window:** `f9e1d046` (`#444` merge)  
 **Auditor:** Cursor Grok 4.6 (cloud agent), first-hand source + tests this session  
-**Companions:** `docs/audit/2026-08-16_science_and_code_audit.md`, `METHODOLOGY.md`, `AGENTS.md`  
+**Companions:** `docs/audit/2026-08-16_science_and_code_audit.md`, `docs/audit/2026-08-18_past_week_science_and_code_audit.md` (hard §1 bar, full week), `METHODOLOGY.md`, `AGENTS.md`  
 **Mode:** Diagnostic. This PR does not change engine, ranking, or thermodynamics.
 
 Every factual statement below was re-read from files, `git log`/`git diff`, or test output in this session. No Astex dock was run. **No success rate is reported.**
