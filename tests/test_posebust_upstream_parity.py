@@ -19,6 +19,7 @@ import argparse
 import csv
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -99,19 +100,38 @@ def compile_tool(src: str, name: str, td: Path) -> Path:
     cpp = td / f"{name}.cpp"
     cpp.write_text(src)
     binp = td / name
-    cmd = [
-        "clang++",
-        "-std=c++26",
-        "-O2",
-        f"-I{ROOT / 'LIB'}",
-        f"-I{ROOT / 'LIB' / 'PoseBust'}",
-        str(cpp),
-        str(ROOT / "LIB/PoseBust/Loaders.cpp"),
-        "-o",
-        str(binp),
-    ]
-    subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    return binp
+    candidates: list[tuple[str, str]] = []
+    for exe, std in (
+        ("clang++", "c++26"),
+        ("clang++-18", "c++26"),
+        ("g++-14", "c++26"),
+        ("g++", "c++23"),
+        ("clang++", "c++23"),
+    ):
+        if shutil.which(exe):
+            candidates.append((exe, std))
+    last_err = b""
+    for exe, std in candidates:
+        cmd = [
+            exe,
+            f"-std={std}",
+            "-O2",
+            f"-I{ROOT / 'LIB'}",
+            f"-I{ROOT / 'LIB' / 'PoseBust'}",
+            str(cpp),
+            str(ROOT / "LIB/PoseBust/Loaders.cpp"),
+            "-o",
+            str(binp),
+        ]
+        proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if proc.returncode == 0:
+            return binp
+        last_err = proc.stderr
+    raise RuntimeError(
+        "failed to compile PoseBust helper "
+        f"{name}: no working compiler among {candidates!r}; last stderr:\n"
+        + last_err.decode("utf-8", "replace")
+    )
 
 
 EXTRACT_MAIN = r"""

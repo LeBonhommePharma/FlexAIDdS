@@ -7643,7 +7643,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 pb_opt.backend = flexaids::posebust::resolve_backend_from_env();
                 pb_opt.sidecar_dir = pb_dir;
                 pb_opt.pdb_id = entry.pdb_id;
-                // Mandatory: Off → Native floor; missing bust → native fallback.
+                // Mandatory: Off → Native floor (pb_pass from native suite).
+                // Missing bust → NativePoseQC diagnostic only; pb_pass stays false.
                 pb_opt.force_native_when_off = true;
                 pb_opt.native_fallback_if_bust_missing = true;
 

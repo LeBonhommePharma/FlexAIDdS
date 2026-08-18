@@ -22,9 +22,11 @@ namespace flexaids::posebust {
 /// Appends CheckItems:
 ///   - key "mol_pred_loaded"  — predicted ligand pointer non-null and has ≥1 atom
 ///   - key "mol_cond_loaded"  — protein / condition pointer non-null and has ≥1 atom
+/// \p emit_condition false (Suite::Mol) omits mol_cond_loaded.
 void check_loading(const Molecule* pred,
                    const Molecule* protein,
-                   std::vector<CheckItem>& out);
+                   std::vector<CheckItem>& out,
+                   bool emit_condition = true);
 
 /// Native chemistry sanity (PoseBusters key names; native algorithms).
 /// Appends CheckItems:
@@ -33,8 +35,8 @@ void check_loading(const Molecule* pred,
 ///       (Named for interoperability; no RDKit dependency.)
 ///   - "inchi_convertible"
 ///       Real conversion via system `inchi-1` (IUPAC InChI CLI) when available
-///       (FLEXAIDDS_INCHI_BIN / PATH / Homebrew). Requires connected graph,
-///       known elements, sanitization OK; fails closed on conversion error.
+///       (FLEXAIDDS_INCHI_BIN / PATH). Requires connected graph, known
+///       elements, sanitization OK. Missing binary → skipped (not a pass).
 ///   - "all_atoms_connected"
 ///       Single connected component on the heavy-atom graph (bonds only).
 ///   - "no_radicals"

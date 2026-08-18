@@ -37,8 +37,9 @@ inline constexpr float kThresholdFlatnessAngstrom = 0.25f;
 // sin(14.5°) ≈ 0.25 — same numeric scale as the ring flatness threshold.
 inline constexpr float kThresholdDoubleBondSinPhi = 0.25f;
 
-/// Bondi-style van der Waals radius (Å) for atomic number Z.
-/// Unknown / zero Z returns a conservative default (2.0 Å).
+/// van der Waals radius (Å) for atomic number Z.
+/// Organics match search-time `posebusters_vdw_radius` in `LIB/soft_wall.h`
+/// (N 1.60, O 1.55, Cl 1.80). Unknown / zero Z returns 2.0 Å.
 [[nodiscard]] float vdw_radius(int Z) noexcept;
 
 /// Append binary geometry checks for intramolecular distance geometry:
