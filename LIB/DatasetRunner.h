@@ -164,11 +164,8 @@ struct DockingResult {
     // ── Success gates (fixed semantics; never remapped by env) ────────────
     // success_rmsd : ordered direct rmsd_to_crystal <= 2 Å && !seed_echo
     //                (rmsd_hungarian is diagnostic only; never sets success)
-    // pb_pass      : official PoseBusters (bust_cli) on elected BindingMode
-    //                pose. Backend::Native maps NativePoseQC all_passed() into
-    //                pb_pass (diagnostic campaigns only). Missing bust does
-    //                NOT copy native pass onto pb_pass (backend
-    //                native_pose_qc_fallback, pb_ran=false).
+    // pb_pass      : PoseBust on elected BindingMode pose (bust_cli preferred;
+    //                native_pose_qc / native_pose_qc_fallback when Off/missing).
     //                Never true unless pb_ran (validate_elected_pose contract).
     // success_pb   : success_rmsd && pb_pass
     // claim_ready  : success_pb && pb_backend==bust_cli && tENCoM/Eigen + hashes
