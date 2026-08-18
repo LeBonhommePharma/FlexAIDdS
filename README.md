@@ -40,7 +40,7 @@ The total CF for a pose is:
 CF = CF.com  +  CF.wal  +  CF.sas  +  CF.elec  +  CF.hbond  +  CF.pb_clash  +  CF.con
 ```
 
-where `CF.com` is the Voronoi contact complementarity, `CF.wal` is the soft-wall steric repulsion (capped at 50 CF units per contact to prevent numerical blow-up), `CF.sas` is an accessible-surface area term, `CF.elec` is an optional electrostatic term, `CF.hbond` a hydrogen-bond term, `CF.pb_clash` the PoseBusters intermolecular clash penalty, and `CF.con` a distance-constraint term.
+where `CF.com` is the Voronoi contact complementarity, `CF.wal` is the soft-wall steric repulsion (capped at 50 CF units per contact to prevent numerical blow-up), `CF.sas` is an accessible-surface area term, `CF.elec` is an optional electrostatic term, `CF.hbond` a hydrogen-bond term, `CF.pb_clash` an optional all-pairs intermolecular clash *penalty* inside the search (default weight 0; **not** a PoseBusters pass), and `CF.con` a distance-constraint term. Post-election physical validity is a separate validator — see [PoseBust](LIB/PoseBust/README.md).
 
 The energy matrix maps atom-type pairs to statistical potentials derived from contact frequencies in the PDB. A pair that appears more often in real binding sites than in a random background gets a negative entry (stabilizing); one that appears less often gets a positive entry (destabilizing). With 40 atom types and full symmetry, there are 820 unique interaction parameters. See [docs/SCORING.md](docs/SCORING.md) for the full derivation.
 
@@ -88,7 +88,7 @@ flag therefore does not currently enforce a physics filter on the elected pose.
 | Pose ranking criterion | min(CF) | Cluster-local soft-β `G̃ = H̃ − T·S̃` over the same CF samples (still CF-bound; no physical energy enters) |
 | Ensemble analysis | ✗ | ✓ fail-closed proxy/canonical provenance ledger |
 | Impossibility predicate | ✗ | diagnostic only; not wired to final election |
-| Intermolecular clash detection | Approximated (23× undercounting) | ✓ Full all-pairs PoseBusters penalty |
+| Intermolecular clash detection | Approximated (23× undercounting) | ✓ Optional all-pairs clash *penalty* in CF (`pb_clash`, default off); post-election PoseBusters `bust` is the S2 gate |
 | Receptor clash grid | Rebuilt every CF eval | ✓ Loop-invariant hoist (once per dock) |
 | Spread guard (false-minima demotion) | ✗ | ✓ Two-gate: distance + frequency + consensus |
 | Atom type: N.2 (sp2 imine) | → N.am (donor, wrong sign) | → N.ar (acceptor, correct) |
@@ -314,7 +314,7 @@ FlexAID∆S exposes its scientific innovations as environment-variable flags so 
   │              Voronoi Contact Function (vcfunction)              │
   │  Voronoi tessellation → contact areas → energy matrix lookup    │
   │  + soft-wall repulsion  (capped at 50 CF units)                 │
-  │  + PoseBusters clash penalty  (all-pairs, loop-invariant grid)  │
+  │  + optional pb_clash penalty  (all-pairs; default weight 0)     │
   │  + H-bond / GIST / metal-coordination optional terms            │
   └────────────────────────────┬────────────────────────────────────┘
                                │  converged population
@@ -322,7 +322,7 @@ FlexAID∆S exposes its scientific innovations as environment-variable flags so 
   ┌────────────────────────────────────────┐  ┌──────────────────────────┐
   │   Mode election (BindingMode/cluster)  │  │    Pose Validation        │
   │  ALL QUANTITIES IN CF UNITS            │  │  RMSD acceptance: S1     │
-  │  H̃  = weighted mean CF of the mode    │  │  PoseBusters bust: S2    │
+  │  H̃  = weighted mean CF of the mode    │  │  PoseBust / bust CLI: S2 │
   │  S̃  = −Σ p_i ln p_i over mode members │  │  BCR (sampling ceiling)  │
   │  G̃  = H̃ − T·S̃   ← RANKING OBJECTIVE  │  └──────────────────────────┘
   │  T is a score-scale parameter, not K   │
@@ -347,6 +347,14 @@ FlexAID∆S exposes its scientific innovations as environment-variable flags so 
   │  Python API (flexaidds)  │  PyMOL plugin  │  CLI inspector      │
   └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Pose validation (PoseBust)
+
+After a BindingMode pose is elected, FlexAID∆S asks a different question than CF: is this pose a chemically and sterically admissible molecule in the pocket? That is [PoseBust](LIB/PoseBust/README.md).
+
+Modern success is **S2** = RMSD ≤ 2.0 Å **and** PoseBusters pass on the **same** elected pose. RMSD-only is S1 (diagnostic). STRICT `claim_ready` further requires the official PoseBusters 0.6.5 `bust` CLI (`pb_backend=bust_cli`), not the in-tree NativePoseQC diagnostic, plus tENCoM/Eigen on the pose SHA-256. NativePoseQC reuses PoseBusters *column names* for report parity; it is not RDKit PoseBusters and must not be cited as such.
+
+The search-time `FLEXAIDDS_PB_CLASH_WEIGHT` term is a CF penalty. It does not set `pb_pass`.
 
 ---
 
@@ -409,6 +417,7 @@ Related work:
 
 - Gaudreault F, Morency LP & Najmanovich RJ (2015). NRGsuite. *Bioinformatics* **31**(23):3856–3858. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)
 - Frappier V et al. (2015). ENCoM. *Proteins* **83**(11):2073–2082. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)
+- Buttenschoen M, Morris GM & Deane CM (2024). PoseBusters: AI-based docking methods fail to generate physically valid poses or generalise to novel sequences. *Chem. Sci.* **15**, 3130–3139. [DOI:10.1039/D3SC04185A](https://doi.org/10.1039/D3SC04185A) — official physical-validity gate (`bust`); FlexAID∆S NativePoseQC is a separate Apache-2.0 diagnostic ([PoseBust README](LIB/PoseBust/README.md))
 - Morency LP & Najmanovich RJ (2026). FlexAID∆S — *methods manuscript in preparation*
 
 ---
