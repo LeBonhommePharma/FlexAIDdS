@@ -1719,6 +1719,36 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME EnsemblePipelineTests
     )
 
+    # ── Coverage uplift (chore/coverage-uplift): determinism-critical units ──
+    # test_cleft_determinism — detect_cleft reproducibility + probe ordering,
+    # and the previously-untested select_flexible_residues() contract
+    flexaids_add_unit_test(test_cleft_determinism
+        SOURCES
+            tests/test_cleft_determinism.cpp
+            LIB/CleftDetector.cpp
+            LIB/geometry.cpp
+        LINK_OPENMP
+        TEST_NAME CleftDeterminismTests
+    )
+
+    # test_binary_snapshot — FASN on-disk format, endianness, mmap, error paths
+    flexaids_add_unit_test(test_binary_snapshot
+        SOURCES
+            tests/test_binary_snapshot.cpp
+            LIB/BinarySnapshot.cpp
+            LIB/fileio.cpp
+        TEST_NAME BinarySnapshotTests
+    )
+
+    # test_instream_clustering — online medoid clustering (order-sensitive
+    # finalize() sort + swap-with-last capacity merge)
+    flexaids_add_unit_test(test_instream_clustering
+        SOURCES
+            tests/test_instream_clustering.cpp
+            LIB/InStreamClustering.cpp
+        TEST_NAME InStreamClusteringTests
+    )
+
     # test_mif_grid — MIFGrid molecular interaction field tests
     flexaids_add_unit_test(test_mif_grid
         SOURCES tests/test_mif_grid.cpp
