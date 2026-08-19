@@ -1220,8 +1220,34 @@ if(BUILD_TESTING)
     set(FLEXAIDS_GRAND_CANONICAL ON CACHE BOOL "Force GPF modules for BUILD_TESTING (P0 gate: always compile Grand/Target/MultiSite)" FORCE)
     message(STATUS "BUILD_TESTING=ON → FLEXAIDS_GRAND_CANONICAL forced ON to guarantee GrandPartitionFunction/TargetServer/MultiSiteGPF compilation and tests")
 
-    find_package(GTest QUIET)
-    if(NOT GTest_FOUND)
+    # GoogleTest source of truth: fetch the pinned version by default, so a local
+    # `ctest` is comparable with CI instead of depending on whatever GoogleTest
+    # happens to be on the machine.  The previous find_package()-first order made
+    # an implicitly-discovered GoogleTest win, which failed two ways:
+    #
+    #   * version drift — an active conda environment commonly supplies 1.11.0
+    #     (often pulled in transitively by yaml-cpp) while CI pins 1.17.0, so
+    #     local and CI results were not measuring the same harness;
+    #   * hard breakage — conda ships libgtest*.dylib whose install name is
+    #     "@rpath/libgtest_main.<ver>.dylib", but CMake emits no LC_RPATH when an
+    #     imported target is linked by full path, so dyld cannot resolve it and
+    #     gtest_discover_tests aborts during the CTest configure step.  ctest then
+    #     runs ZERO tests rather than failing any — a silent loss of the suite.
+    #     Note CMAKE_BUILD_RPATH_USE_LINK_PATH does NOT cure this, precisely
+    #     because a full-path link contributes no -L entry to propagate.
+    #
+    # CI never saw either problem: neither the apt nor the brew job installs
+    # googletest, so both already took the fetch path.
+    option(FLEXAIDS_USE_SYSTEM_GTEST
+           "Use a system GoogleTest instead of the pinned FetchContent build" OFF)
+    set(CMAKE_BUILD_RPATH_USE_LINK_PATH ON)  # best-effort for the opt-in path
+
+    if(FLEXAIDS_USE_SYSTEM_GTEST)
+        find_package(GTest REQUIRED)
+        message(STATUS "GoogleTest: system (FLEXAIDS_USE_SYSTEM_GTEST=ON) — "
+                       "if it is a shared build you may need to set "
+                       "DYLD_FALLBACK_LIBRARY_PATH/LD_LIBRARY_PATH for ctest")
+    else()
         include(FetchContent)
         FetchContent_Declare(
             googletest
@@ -1230,6 +1256,7 @@ if(BUILD_TESTING)
         )
         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
         FetchContent_MakeAvailable(googletest)
+        message(STATUS "GoogleTest: pinned FetchContent v1.17.0 (matches CI)")
     endif()
 
     enable_testing()
