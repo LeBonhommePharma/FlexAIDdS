@@ -12,11 +12,14 @@
 // Apache-2.0 (c) 2026 Le Bonhomme Pharma
 // =============================================================================
 
-#include "rescore_pool.h"
-
+// gtest FIRST: flexaid.h leaks macros (e.g. #define E) that break gtest
+// internals otherwise — same pattern as tests/test_dataset_runner.cpp.
 #include <gtest/gtest.h>
 
+#include "rescore_pool.h"
+
 #include <cstdlib>
+#include <sys/stat.h>
 #include <fstream>
 #include <string>
 #include <unordered_map>
@@ -102,4 +105,158 @@ TEST(RescorePoolLoader, MalformedCoordinateLineIsSkippedNotFatal)
     EXPECT_EQ(skipped, 1);   // malformed coordinate line counted and skipped
     EXPECT_FLOAT_EQ(coor[1 * 3 + 0], 1.0f);
     EXPECT_FLOAT_EQ(coor[1 * 3 + 2], 3.0f);
+}
+
+
+// ── Adversarial hardening suite (worst-case pool files) ─────────────────────
+
+TEST(RescorePoolLoader, OutOfIntRangeSerialDoesNotPoisonMappedSlot)
+{
+    // 4294967297 mod 2^32 == 1: a naive int cast would collide with serial 1
+    // and overwrite slot A's coordinates with garbage.
+    const std::string pdb =
+        "HETATM   1  N1  LIG B   1       1.000   2.000   3.000  1.00  0.00           N\n"
+        "HETATM4294967297  XX  LIG B   1     -9.000  -9.000  -9.000  1.00  0.00           C\n";
+    const std::string path = write_temp("rescore_overflow.pdb", pdb);
+    std::unordered_map<int,int> m{{1, 5}};
+    float coor[6 * 3] = {};
+    int matched = -1, skipped = -1;
+    ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(matched, 1);
+    EXPECT_EQ(skipped, 1);  // the overflowing serial is refused, not wrapped
+    EXPECT_FLOAT_EQ(coor[5 * 3 + 0], 1.0f);
+    EXPECT_FLOAT_EQ(coor[5 * 3 + 1], 2.0f);
+}
+
+TEST(RescorePoolLoader, NegativeSerialIsSkipped)
+{
+    const std::string pdb =
+        "HETATM  -7  X1  LIG B   1       9.000   9.000   9.000  1.00  0.00           C\n"
+        "HETATM   2  N1  LIG B   1       1.000   1.000   1.000  1.00  0.00           N\n";
+    const std::string path = write_temp("rescore_neg.pdb", pdb);
+    std::unordered_map<int,int> m{{2, 0}};
+    float coor[3] = {};
+    int matched = -1, skipped = -1;
+    ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(matched, 1);
+    EXPECT_EQ(skipped, 1);
+    EXPECT_FLOAT_EQ(coor[0], 1.0f);
+}
+
+TEST(RescorePoolLoader, DuplicateSerialsLastWriteWinsAndCountsBoth)
+{
+    // Real pools should never contain duplicates; if one appears the loader's
+    // contract is deterministic: both records count as matched and the LAST
+    // occurrence owns the slot (documented, not silent corruption).
+    const std::string pdb =
+        "HETATM   1  C1  LIG B   1       1.000   1.000   1.000  1.00  0.00           C\n"
+        "HETATM   1  C1  LIG B   1       2.000   2.000   2.000  1.00  0.00           C\n";
+    const std::string path = write_temp("rescore_dup.pdb", pdb);
+    std::unordered_map<int,int> m{{1, 2}};
+    float coor[3 * 3] = {};   // slot 2 -> needs indices 6..8
+    int matched = -1, skipped = -1;
+    ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(matched, 2);                 // every occurrence counts
+    EXPECT_FLOAT_EQ(coor[2 * 3 + 0], 2.0f);// LAST occurrence owns the slot
+    EXPECT_FLOAT_EQ(coor[2 * 3 + 1], 2.0f);
+    EXPECT_FLOAT_EQ(coor[2 * 3 + 2], 2.0f);
+    EXPECT_FLOAT_EQ(coor[0], 0.0f);        // other slots untouched
+}
+
+TEST(RescorePoolLoader, EmptyAndNoAtomFilesParseToZero)
+{
+    {
+        const std::string path = write_temp("rescore_empty.pdb", "");
+        std::unordered_map<int,int> m{{1, 0}};
+        float coor[3] = {9.f, 9.f, 9.f};
+        int matched = -1, skipped = -1;
+        ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+            path.c_str(), m, coor, &matched, &skipped));
+        EXPECT_EQ(matched, 0);
+        EXPECT_EQ(skipped, 0);
+        EXPECT_FLOAT_EQ(coor[0], 9.f);  // untouched initialiser survives
+    }
+    {
+        const std::string path = write_temp(
+            "rescore_noatom.pdb", "REMARK nothing here\nEND\n");
+        std::unordered_map<int,int> m{{1, 0}};
+        float coor[3] = {};
+        int matched = -1, skipped = -1;
+        ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+            path.c_str(), m, coor, &matched, &skipped));
+        EXPECT_EQ(matched, 0);
+    }
+}
+
+TEST(RescorePoolLoader, OverlongLineDrainedWithoutPhantomRecords)
+{
+    // 600-char record line: fgets(512) splits it. Contract: the physical line
+    // is accounted ONCE (its parseable prefix still lands coordinates), and
+    // the drained tail must never resurface as a phantom atom record.
+    std::string long_body(600, 'A');
+    const std::string pdb =
+        "HETATM   1  C1  LIG B   1       1.000   2.000   3.000  1.00  0.00" +
+        long_body + "\n"
+        "HETATM   2  N1  LIG B   1       4.000   5.000   6.000  1.00  0.00           N\n";
+    const std::string path = write_temp("rescore_long.pdb", pdb);
+    std::unordered_map<int,int> m{{1, 0}, {2, 1}};
+    float coor[2 * 3] = {};
+    int matched = -1, skipped = -1;
+    ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(skipped, 0);   // prefix carried valid coordinates: not skipped
+    EXPECT_EQ(matched, 2);   // serial 1 once (not twice!) + serial 2
+                             // a phantom re-parse of the tail would make this 3
+    EXPECT_FLOAT_EQ(coor[0 * 3 + 0], 1.0f);
+    EXPECT_FLOAT_EQ(coor[0 * 3 + 2], 3.0f);
+    EXPECT_FLOAT_EQ(coor[1 * 3 + 0], 4.0f);
+    EXPECT_FLOAT_EQ(coor[1 * 3 + 2], 6.0f);
+}
+
+TEST(RescorePoolLoader, CrlfLineEndingsAccepted)
+{
+    const std::string pdb =
+        "HETATM   1  C1  LIG B   1       1.500   2.500   3.500  1.00  0.00           C\r\n";
+    const std::string path = write_temp("rescore_crlf.pdb", pdb);
+    std::unordered_map<int,int> m{{1, 0}};
+    float coor[3] = {};
+    int matched = -1, skipped = -1;
+    ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(matched, 1);
+    EXPECT_FLOAT_EQ(coor[0], 1.5f);
+    EXPECT_FLOAT_EQ(coor[2], 3.5f);
+}
+
+TEST(RescorePoolLoader, Utf8BomBeforeFirstRecordHandled)
+{
+    const std::string pdb =
+        "\xEF\xBB\xBF"
+        "HETATM   1  C1  LIG B   1       7.000   8.000   9.000  1.00  0.00           C\n";
+    const std::string path = write_temp("rescore_bom.pdb", pdb);
+    std::unordered_map<int,int> m{{1, 4}};
+    float coor[5 * 3] = {};
+    int matched = -1, skipped = -1;
+    ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(matched, 1);
+    EXPECT_EQ(skipped, 0);
+    EXPECT_FLOAT_EQ(coor[4 * 3 + 0], 7.0f);
+}
+
+TEST(RescorePoolLoader, UnreadableFileFailsClosed)
+{
+    const std::string path = write_temp("rescore_unreadable.pdb",
+                                        "HETATM   1  C   LIG B   1       0.000   0.000   0.000\n");
+    ::chmod(path.c_str(), 0000);
+    std::unordered_map<int,int> m{{1, 0}};
+    float coor[3] = {};
+    int matched = -1, skipped = -1;
+    EXPECT_FALSE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(matched, 0);
+    ::chmod(path.c_str(), 0644);  // allow removal on teardown
 }

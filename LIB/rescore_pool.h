@@ -61,12 +61,34 @@ inline bool load_complex_coor_from_pdb(const char* pdb_path,
     FILE* f = std::fopen(pdb_path, "r");
     if (!f) return false;
 
-    char buf[256];
+    char buf[512];
     int matched = 0, skipped = 0;
+    bool first = true;
     while (std::fgets(buf, sizeof(buf), f)) {
-        if (std::strncmp(buf, "ATOM  ", 6) != 0 &&
-            std::strncmp(buf, "HETATM", 6) != 0)
-            continue;
+        if (first) {
+            // UTF-8 BOM would otherwise hide the first ATOM/HETATM record.
+            const unsigned char* b =
+                reinterpret_cast<const unsigned char*>(buf);
+            if (b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) {
+                std::memmove(buf, buf + 3, std::strlen(buf + 3) + 1);
+            }
+            first = false;
+        }
+        // Overlong physical line: drain the remainder so the tail cannot be
+        // re-parsed as a phantom record, then account this logical line once.
+        size_t len = std::strlen(buf);
+        bool truncated = false;
+        while (len > 0 && buf[len - 1] != '\n') {
+            truncated = true;
+            int c;
+            if ((c = std::fgetc(f)) == EOF) break;
+            if (c == '\n') { buf[len - 1] = '\n'; break; }
+            if (len + 1 < sizeof(buf)) buf[len++] = static_cast<char>(c);
+        }
+        const bool is_atom = std::strncmp(buf, "ATOM  ", 6) == 0 ||
+                             std::strncmp(buf, "HETATM", 6) == 0;
+        if (!is_atom && !truncated) continue;
+        if (!is_atom) { continue; }  // drained non-record tail counts as nothing
         if (std::strlen(buf) < 54) { ++skipped; continue; }
         char serial_buf[8];
         std::memcpy(serial_buf, buf + 6, 5);
@@ -74,6 +96,10 @@ inline bool load_complex_coor_from_pdb(const char* pdb_path,
         char* endp = nullptr;
         const long serial = std::strtol(serial_buf, &endp, 10);
         if (endp == serial_buf) { ++skipped; continue; }
+        // Worst-case guard: out-of-int-range serials must NOT be truncated by
+        // the int cast (e.g. 4294967297 would wrap onto serial 1 and silently
+        // poison a mapped slot's coordinates).
+        if (serial < -2147483647L - 1 || serial > 2147483647L) { ++skipped; continue; }
         auto it = serial_to_slot.find(static_cast<int>(serial));
         if (it == serial_to_slot.end()) {
             ++skipped;
