@@ -44,4 +44,31 @@ float hungarian_rmsd(
     const std::vector<std::pair<std::string, std::array<float, 3>>>& crystal,
     const std::vector<std::pair<std::string, std::array<float, 3>>>& docked);
 
+/// Outcome of compute_pose_ligand_rmsd: both RMSD estimands plus a
+/// machine-readable failure reason. fail_reason == "none" iff serial >= 0.
+/// Values (bug 2026-08-22, arms 8/9/10 wrote 0% summaries over valid poses):
+///   none               — serial RMSD computed
+///   ref_empty          — crystal reference missing/unparseable at runtime
+///                        (the previously SILENT wholesale-failure path)
+///   pose_block_empty   — CONECT fingerprint selected no heavy atoms
+///   count_mismatch     — pose/crystal heavy-atom counts differ (fail-closed)
+///   elem_mismatch      — element-vector length mismatch (fail-closed)
+///   elem_order_mismatch— ordered RMSD undefined (element sequences differ);
+///                        hungarian may still be valid
+struct PoseRmsdOutcome {
+    float serial{-1.0f};
+    float hungarian{-1.0f};
+    std::string fail_reason{"none"};
+};
+
+/// Production rank-0 / ceiling RMSD path (see DatasetRunner.cpp). Declared
+/// here so unit tests exercise the exact production reason-code contract,
+/// mirroring hungarian_rmsd above.
+PoseRmsdOutcome compute_pose_ligand_rmsd(
+    const std::string& pose_pdb,
+    const std::vector<std::array<float, 3>>& crystal_xyz,
+    const std::vector<std::string>& crystal_elem,
+    const std::string& pdb_id,
+    bool warn);
+
 } // namespace dataset

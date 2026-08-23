@@ -148,6 +148,13 @@ struct DockingResult {
     float best_score{0.0f};
     float rmsd_to_crystal{-1.0f};     // serial-order RMSD to crystal ligand (Å); -1 = not computed/failed
     float rmsd_hungarian{-1.0f};      // symmetry-corrected (Hungarian) RMSD (Å); -1 = not computed/failed
+    // Why rmsd_to_crystal is -1, when it is. "none" iff RMSD >= 0.
+    // Values: none | ref_empty | pose_block_empty | count_mismatch |
+    //         elem_mismatch | elem_order_mismatch | input_missing.
+    // Exists because a bare -1 is ambiguous between a per-pose failure and a
+    // wholesale reference-resolution failure (bug 2026-08-22: campaign arms
+    // 8/9/10 wrote valid poses with all-RMSD=-1 and 0% success summaries).
+    std::string rmsd_fail_reason{"none"};
     // Ensemble free-energy estimate (F = -kT ln Z) when available; else CF
     // fallback. CSV column `predicted_dG` is a historical name — not exp. ΔG.
     float predicted_dG{0.0f};

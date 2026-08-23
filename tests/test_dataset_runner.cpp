@@ -438,6 +438,111 @@ TEST(HungarianRMSD, EmptyIsSentinel) {
 }
 
 // =============================================================================
+// compute_pose_ligand_rmsd reason codes (bug 2026-08-22).
+// A bare rmsd_to_crystal == -1 used to be ambiguous between a per-pose failure
+// and a wholesale crystal-reference-resolution failure. Campaign arms 8/9/10
+// wrote valid pose libraries with all-RMSD=-1 and 0% success summaries because
+// the empty-reference path returned {-1,-1} silently. These tests pin the
+// machine-readable reason contract on the exact production function.
+// =============================================================================
+
+namespace {
+
+// Minimal pose PDB: three heavy atoms (C, C, N) with CONECT selecting all of
+// them. Element token is the trailing column per PDB 3.3.
+std::string write_pose_pdb(const fs::path& dir, const std::string& name,
+                           int serials) {
+    const auto p = dir / name;
+    std::ofstream ofs(p);
+    EXPECT_TRUE(ofs.is_open());  // EXPECT (not ASSERT): void return is illegal here
+    ofs << "HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00  0.00           C\n";
+    if (serials >= 2)
+        ofs << "HETATM    2  C2  LIG A   1       1.500   0.000   0.000  1.00  0.00           C\n";
+    if (serials >= 3)
+        ofs << "HETATM    3  N1  LIG A   1       3.000   0.000   0.000  1.00  0.00           N\n";
+    ofs << "CONECT    1    2\n";
+    if (serials >= 2) ofs << "CONECT    2    1   3\n";
+    if (serials >= 3) ofs << "CONECT    3    2\n";
+    ofs << "END\n";
+    return p.string();
+}
+
+} // namespace
+
+TEST(ComputePoseLigandRmsd, EmptyCrystalReferenceIsLabelledRefEmpty) {
+    // Short-circuits before any file I/O: the pose path need not exist. This is
+    // the previously-silent wholesale-failure path (arms 8/9/10 signature:
+    // every RMSD column -1 across every target while pose files were valid).
+    const auto out = dataset::compute_pose_ligand_rmsd(
+        "/nonexistent/pose.pdb", {}, {}, "TSTD", /*warn=*/false);
+    EXPECT_EQ(out.serial, -1.0f);
+    EXPECT_EQ(out.hungarian, -1.0f);
+    EXPECT_EQ(out.fail_reason, "ref_empty");
+}
+
+TEST(ComputePoseLigandRmsd, PoseWithoutSelectableLigandIsPoseBlockEmpty) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_rmsdreason_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_a");
+    fs::create_directories(tmp);
+    const auto pdb = tmp / "nolig.pdb";
+    {
+        // Receptor-like ATOM records only: no CONECT, no HETATM fallback hit.
+        std::ofstream ofs(pdb);
+        ofs << "ATOM      1  CA  ALA A   7       1.000   2.000   3.000  1.00  0.00           C\n";
+        ofs << "END\n";
+    }
+    std::vector<std::array<float,3>> xyz{{0.f,0.f,0.f}};
+    std::vector<std::string> elem{"C"};
+    const auto out = dataset::compute_pose_ligand_rmsd(
+        pdb.string(), xyz, elem, "TSTD", /*warn=*/false);
+    EXPECT_EQ(out.serial, -1.0f);
+    EXPECT_EQ(out.fail_reason, "pose_block_empty");
+    fs::remove_all(tmp);
+}
+
+TEST(ComputePoseLigandRmsd, CountMismatchIsFailClosedWithReason) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_rmsdreason_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_b");
+    fs::create_directories(tmp);
+    // Pose carries only two CONECT-selected heavy atoms vs a 3-atom crystal ref.
+    const std::string pose = write_pose_pdb(tmp, "two_atoms.pdb", 2);
+    std::vector<std::array<float,3>> xyz{
+        {0.f,0.f,0.f}, {1.5f,0.f,0.f}, {3.f,0.f,0.f}};
+    std::vector<std::string> elem{"C", "C", "N"};
+    const auto out = dataset::compute_pose_ligand_rmsd(
+        pose, xyz, elem, "TSTD", /*warn=*/false);
+    EXPECT_EQ(out.serial, -1.0f);
+    EXPECT_EQ(out.hungarian, -1.0f);
+    EXPECT_EQ(out.fail_reason, "count_mismatch");
+    fs::remove_all(tmp);
+}
+
+TEST(ComputePoseLigandRmsd, HappyPathReasonIsNone) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_rmsdreason_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_c");
+    fs::create_directories(tmp);
+    const std::string pose = write_pose_pdb(tmp, "ok.pdb", 3);
+    std::vector<std::array<float,3>> xyz{
+        {0.f,0.f,0.f}, {1.5f,0.f,0.f}, {3.f,0.f,0.f}};
+    std::vector<std::string> elem{"C", "C", "N"};
+    const auto out = dataset::compute_pose_ligand_rmsd(
+        pose, xyz, elem, "TSTD", /*warn=*/false);
+    EXPECT_NEAR(out.serial, 0.0f, 1e-5f);
+    EXPECT_NEAR(out.hungarian, 0.0f, 1e-5f);
+    EXPECT_EQ(out.fail_reason, "none");
+    fs::remove_all(tmp);
+}
+
+// =============================================================================
 // RMSD cross-check: engine calc_Hungarian_RMSD (groups by FlexAID/SYBYL atom
 // TYPE; writes the pose PDB REMARK) vs dataset::hungarian_rmsd (groups by ELEMENT
 // symbol; writes result.csv). The two are separate implementations of the same

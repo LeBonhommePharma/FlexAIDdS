@@ -14,6 +14,7 @@
 // =============================================================================
 
 #include "DatasetRunner.h"
+#include "DatasetRunnerStats.h"  // PoseRmsdOutcome / hungarian_rmsd declarations
 #include "DatasetThermoLog.h"
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
@@ -500,21 +501,35 @@ static bool parse_pdb_xyz_span(const std::string& line, std::array<float,3>& xyz
     return flexaids::pdb_coords::parse_xyz_span(line, xyz);
 }
 
-// Compute {serial-order RMSD, Hungarian RMSD} of the docked ligand in an emitted
-// pose PDB against the crystal ligand heavy-atom coordinates.  The docked ligand
-// is selected by CONECT membership (a position-independent fingerprint, immune to
-// resSeq/resname collisions with retained cofactors); hydrogens (element token
-// H/D/Du) are dropped to match the crystal heavy atoms.  Returns {999,999} on any
-// failure or atom-count mismatch.  Shared by the rank-0 RMSD report and the P4
-// best-of-N oracle-ceiling scan over all emitted cluster poses.
-static std::pair<float,float> compute_pose_ligand_rmsd(
+// Compute {serial-order RMSD, Hungarian RMSD, fail_reason} of the docked ligand
+// in an emitted pose PDB against the crystal ligand heavy-atom coordinates.  The
+// docked ligand is selected by CONECT membership (a position-independent
+// fingerprint, immune to resSeq/resname collisions with retained cofactors);
+// hydrogens (element token H/D/Du) are dropped to match the crystal heavy atoms.
+// On any failure both RMSDs are -1 and fail_reason names why (ref_empty,
+// pose_block_empty, count_mismatch, elem_mismatch, elem_order_mismatch); a bare
+// sentinel without a reason was the 2026-08-22 bug (arms 8/9/10 wrote valid
+// poses with all-RMSD=-1 and 0% success summaries).  Shared by the rank-0 RMSD
+// report, the P4 best-of-N oracle-ceiling scan over all emitted cluster poses,
+// and the authoritative elected-artifact recompute.
+PoseRmsdOutcome compute_pose_ligand_rmsd(
     const std::string& pose_pdb,
     const std::vector<std::array<float,3>>& crystal_xyz,
     const std::vector<std::string>& crystal_elem,
     const std::string& pdb_id,
     bool warn)
 {
-    if (crystal_xyz.empty()) return {-1.0f, -1.0f};
+    if (crystal_xyz.empty()) {
+        // Bug 2026-08-22: this return used to be silent. A wholesale -1 wall
+        // (arms 8/9/10: valid pose libraries, 0% summaries) is distinguishable
+        // ONLY by reason codes, so the empty-reference path is now labelled.
+        if (warn) {
+            std::cerr << "  [RMSD-FAIL] " << pdb_id
+                      << " crystal reference empty/unparseable — RMSD=-1"
+                      << " (reason=ref_empty)\n";
+        }
+        return {-1.0f, -1.0f, "ref_empty"};
+    }
 
     // Trailing element token (upper-first, rest lower: "C", "N", "Cl").
     auto get_elem_token = [](const std::string& line) -> std::string {
@@ -595,7 +610,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
         pose_xyz.push_back(std::get<1>(d));
         pose_elem.push_back(std::get<2>(d));
     }
-    if (pose_xyz.empty()) return {-1.0f, -1.0f};
+    if (pose_xyz.empty()) return {-1.0f, -1.0f, "pose_block_empty"};
 
     // Fail-closed whole-ligand heavy-atom count: no ±2 truncation (audit P0 #2).
     if (crystal_xyz.size() != pose_xyz.size()) {
@@ -605,7 +620,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
                       << " pose(docked-ligand)=" << pose_xyz.size()
                       << " — setting RMSD=-1 (fail-closed; no truncation)\n";
         }
-        return {-1.0f, -1.0f};
+        return {-1.0f, -1.0f, "count_mismatch"};
     }
     if (crystal_elem.size() != crystal_xyz.size() ||
         pose_elem.size() != pose_xyz.size()) {
@@ -613,7 +628,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
             std::cerr << "  [WARN] RMSD element vector length mismatch for "
                       << pdb_id << " — setting RMSD=-1\n";
         }
-        return {-1.0f, -1.0f};
+        return {-1.0f, -1.0f, "elem_mismatch"};
     }
 
     const int n = static_cast<int>(crystal_xyz.size());
@@ -630,6 +645,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
         }
     }
     float rc = -1.0f;
+    std::string reason = "none";
     if (elements_aligned) {
         double sum_sq = 0.0;
         for (int k = 0; k < n; k++) {
@@ -642,6 +658,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
     } else if (warn) {
         std::cerr << "  [WARN] ordered RMSD element sequence mismatch for "
                   << pdb_id << " — ordered RMSD=-1 (Hungarian diagnostic only)\n";
+        reason = "elem_order_mismatch";
     }
 
     // Element-only Hungarian is diagnostic symmetry metric only — never success.
@@ -656,7 +673,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
             datoms.push_back({pose_elem[k], pose_xyz[k]});
         rh = hungarian_rmsd(catoms, datoms);
     }
-    return {rc, rh};
+    return {rc, rh, reason};
 }
 
 // ── v50 Lever 3 support: load a docked pose's ligand heavy-atom coordinates ──
@@ -5576,6 +5593,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (entry.receptor_path.empty() || entry.ligand_path.empty()) {
             result.success = false;
             result.rmsd_to_crystal = -1.0f;
+            result.rmsd_fail_reason = "input_missing";
             report.results[idx] = result;
             return;
         }
@@ -5586,6 +5604,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                       << " lig=" << entry.ligand_path << "\n";
             result.success = false;
             result.rmsd_to_crystal = -1.0f;
+            result.rmsd_fail_reason = "input_missing";
             report.results[idx] = result;
             return;
         }
@@ -7273,8 +7292,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 {
                     auto r0 = compute_pose_ligand_rmsd(
                         best_pose_pdb, crystal_xyz, crystal_elem, entry.pdb_id, true);
-                    result.rmsd_to_crystal = r0.first;
-                    result.rmsd_hungarian  = r0.second;
+                    result.rmsd_to_crystal = r0.serial;
+                    result.rmsd_hungarian  = r0.hungarian;
+                    // Machine-readable failure reason (bug 2026-08-22). A bare
+                    // -1 here previously collapsed "pose failed" and "the whole
+                    // crystal reference never loaded" into the same value.
+                    result.rmsd_fail_reason = r0.fail_reason;
 
                     // P4: oracle best-of-N ceiling over all emitted cluster heads.
                     // FO dual-suffix: <prefix>_<minPts>_<rank>.pdb via shared helper
@@ -7287,7 +7310,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                 cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
                             // Pool ceiling uses ordered direct RMSD only (fail-closed).
                             // Hungarian remains diagnostic; never drives ceiling or claims.
-                            const float ceiling_r = rp.first;
+                            const float ceiling_r = rp.serial;
                             if (ceiling_r >= 0.0f &&
                                 (result.best_cluster_rmsd < 0.0f ||
                                  ceiling_r < result.best_cluster_rmsd)) {
@@ -7318,7 +7341,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                     }
                                     auto mr = compute_pose_ligand_rmsd(
                                         mcand, crystal_xyz, crystal_elem, entry.pdb_id, false);
-                                    const float m_ceil = mr.first;
+                                    const float m_ceil = mr.serial;
                                     if (m_ceil >= 0.0f &&
                                         (result.best_cluster_rmsd < 0.0f ||
                                          m_ceil < result.best_cluster_rmsd)) {
@@ -7334,8 +7357,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                         try {
                                             char rbuf[16];
                                             std::snprintf(rbuf, sizeof(rbuf), "%.2f",
-                                                          mr.first >= 0.0f ? mr.first
-                                                                           : mr.second);
+                                                          mr.serial >= 0.0f ? mr.serial
+                                                                           : mr.hungarian);
                                             fs::path dst = fs::path(mcand).parent_path() /
                                                 (entry.pdb_id + "_cluster" +
                                                  std::to_string(pi) +
@@ -7484,10 +7507,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 const auto canonical_rmsd = compute_pose_ligand_rmsd(
                     result.elected_pose_path, crystal_xyz, crystal_elem,
                     entry.pdb_id, true);
-                result.rmsd_to_crystal = canonical_rmsd.first;
-                result.rmsd_hungarian = canonical_rmsd.second;
+                result.rmsd_to_crystal = canonical_rmsd.serial;
+                result.rmsd_hungarian = canonical_rmsd.hungarian;
+                result.rmsd_fail_reason = canonical_rmsd.fail_reason;
                 result.rmsd_pose_sha256 =
                     flexaids::posebust::sha256_file(result.elected_pose_path);
+            } else {
+                // Bug 2026-08-22: this guard used to fall through silently,
+                // leaving rank-0 -1s with no explanation. Label it.
+                result.rmsd_fail_reason =
+                    crystal_xyz.empty() ? "ref_empty" : "elem_mismatch";
+                std::cerr << "  [RMSD-FAIL] " << entry.pdb_id
+                          << " authoritative RMSD skipped: reason="
+                          << result.rmsd_fail_reason << "\n";
             }
             // Fail-closed claim gate: ordered direct RMSD only.
             // Element-only Hungarian (result.rmsd_hungarian) is diagnostic and
@@ -7557,7 +7589,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             auto rr = compute_pose_ligand_rmsd(
                                 best_cf_path, crystal_xyz, crystal_elem,
                                 entry.pdb_id, false);
-                            result.cf_top1_rmsd = rr.first;
+                            result.cf_top1_rmsd = rr.serial;
                         }
                     }
                 }
@@ -7612,7 +7644,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << "  \"pose_sha256\": \"" << result.pose_sha256 << "\",\n"
                         << "  \"rmsd_pose_sha256\": \"" << result.rmsd_pose_sha256 << "\",\n"
                         << "  \"rmsd_to_crystal\": " << result.rmsd_to_crystal << ",\n"
-                        << "  \"rmsd_hungarian\": " << result.rmsd_hungarian << "\n"
+                        << "  \"rmsd_hungarian\": " << result.rmsd_hungarian << ",\n"
+                        << "  \"rmsd_fail_reason\": \"" << result.rmsd_fail_reason << "\"\n"
                         << "}\n";
                     std::cerr << "  [POSE-LEDGER] " << led_path << "\n";
                 }
@@ -7776,6 +7809,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "  \"pdb_id\": \"" << entry.pdb_id << "\",\n"
                    << "  \"pose_sha256\": \"" << result.pose_sha256 << "\",\n"
                    << "  \"rmsd_pose_sha256\": \"" << result.rmsd_pose_sha256 << "\",\n"
+                   << "  \"rmsd_fail_reason\": \"" << result.rmsd_fail_reason << "\",\n"
                    << "  \"posebusters_backend\": \"" << result.pb_backend << "\",\n"
                    << "  \"posebusters_pose_sha256\": \""
                    << result.posebusters_pose_sha256 << "\",\n"
@@ -7871,7 +7905,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
                            "cf_best_cluster,"
-                           "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z\n";
+                           "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z,"
+                           "rmsd_fail_reason\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -7955,7 +7990,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.thermo_I_ES << ","
                         << result.thermo_CF_r2s << ","
                         << "\"" << result.thermo_binding_regime << "\","
-                        << result.ensemble_log_Z << "\n";
+                        << result.ensemble_log_Z << ","
+                        << result.rmsd_fail_reason << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -8314,7 +8350,9 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             ofs << ",g_bind,h_vct,h_vct_raw,n_heavy,tds_shannon,tds_vib";
             ofs << ",report_T,i_es,cf_r2s,binding_regime";
         }
-        ofs << "\n";
+        // Appended at END (not mid-header): column names are position-stable
+        // for live campaigns; new diagnostics go last.
+        ofs << ",rmsd_fail_reason\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -8382,7 +8420,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                     << "," << r.thermo_CF_r2s
                     << ",\"" << r.thermo_binding_regime << "\"";
             }
-            ofs << "\n";
+            ofs << "," << r.rmsd_fail_reason << "\n";
         }
 
         ofs.close();
