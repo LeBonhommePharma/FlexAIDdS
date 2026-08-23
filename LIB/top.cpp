@@ -30,6 +30,7 @@
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 #include "native_score.h"
+#include "rescore_pool.h"
 #include "hbond_potential.h"
 #include "RngSeed.h"
 #include "ensemble_pipeline.h"
@@ -2530,6 +2531,19 @@ int main(int argc, char **argv){
 			if (native_proto.native_only) {
 				std::exit(0);  // native-only mode: bail before GA (does not write pose files)
 			}
+		}
+	}
+
+	// ── Offline pool rescoring (FLEXAIDDS_RESCORE_POOL=<dir>) ───────────────
+	// Score pre-emitted pose pools with the exact production CF. Full-complex
+	// coordinates are restored per pose (serial-mapped), so optimisable DoF on
+	// BOTH sides — receptor side chains and ligand torsions — are honoured
+	// exactly as docked. The process exits after scoring; the GA never runs.
+	// See LIB/rescore_pool.h for env vars and file conventions.
+	if (const char* rescore_pool_dir = std::getenv("FLEXAIDDS_RESCORE_POOL")) {
+		if (rescore_pool_dir[0] != '\0') {
+			rescore_pool_mode(FA, VC, atoms, residue, cleftgrid);
+			std::exit(0);  // rescore mode: scoring only, no docking
 		}
 	}
 
