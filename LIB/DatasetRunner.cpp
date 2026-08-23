@@ -8074,6 +8074,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     int success_rmsd_count = 0;
     int success_pb_count = 0;
     int claim_ready_count = 0;
+    int rows_with_any_poses = 0;
+    int rmsd_negative_rows = 0;
+    int rmsd_negative_wholesale = 0;
     std::vector<double> rmsds;
     std::vector<double> pred_affinities;
     std::vector<double> exp_affinities;
@@ -8084,6 +8087,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (r.success_rmsd) success_rmsd_count++;
         if (r.success_pb) success_pb_count++;
         if (r.claim_ready) claim_ready_count++;
+        if (r.num_poses > 0) rows_with_any_poses++;
+        if (r.rmsd_to_crystal < 0.0f) {
+            rmsd_negative_rows++;
+            if (r.rmsd_fail_reason == "ref_empty" ||
+                r.rmsd_fail_reason == "input_missing" ||
+                r.rmsd_fail_reason == "pose_block_empty") {
+                rmsd_negative_wholesale++;
+            }
+        }
         if (r.rmsd_to_crystal >= 0.0f) {
             rmsds.push_back(r.rmsd_to_crystal);
         }
@@ -8113,6 +8125,36 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     report.successful_rmsd = success_rmsd_count;
     report.successful_pb = success_pb_count;
     report.claim_ready_count = claim_ready_count;
+
+    // ── Zero-success plausibility gate (bug 2026-08-22) ─────────────────
+    // Never alters any count; only flags the summary for humans and tooling.
+    {
+        dataset::ZeroSuccessGateInput gate;
+        gate.total_systems = report.total_systems;
+        gate.successful_rmsd = success_rmsd_count;
+        gate.rows_with_any_poses = rows_with_any_poses;
+        gate.rmsd_negative_rows = rmsd_negative_rows;
+        gate.rmsd_negative_wholesale = rmsd_negative_wholesale;
+        report.suspect_zero_success =
+            dataset::zero_success_is_suspect(gate);
+        if (report.suspect_zero_success) {
+            std::cerr
+                << "  [SUMMARY-GATE] *** SUSPECT ZERO-SUCCESS SUMMARY ***\n"
+                << "  [SUMMARY-GATE] 0/" << report.total_systems
+                << " RMSD successes while " << rows_with_any_poses
+                << " rows produced poses and " << rmsd_negative_rows
+                << " RMSDs are -1 (" << rmsd_negative_wholesale
+                << " wholesale reasons: ref_empty/input_missing/"
+                << "pose_block_empty).\n"
+                << "  [SUMMARY-GATE] This pattern matched campaign arms "
+                << "8/9/10: valid pose libraries, broken crystal-reference "
+                << "resolution, 0% summaries.\n"
+                << "  [SUMMARY-GATE] Recompute from pose archives with "
+                << "scripts/backfill_inline_rmsd.py before quoting this "
+                << "summary. Column suspect_zero_success=1 marks the row.\n";
+        }
+    }
+
     report.affinity_pairs = static_cast<int>(pred_affinities.size());
     report.success_rate = (report.total_systems > 0)
         ? static_cast<double>(success_count) / report.total_systems : 0.0;
@@ -8434,12 +8476,15 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::ofstream ofs(summary_csv);
 
         // Headline: claim_ready. RMSD-only and pool ceiling stay diagnostic.
+        // suspect_zero_success is appended at END (position-stable header):
+        // 1 when the zero-success plausibility gate fired (bug 2026-08-22).
         ofs << "dataset,total_systems,"
                "claim_ready_count,claim_ready_rate,"
                "successful_pb,success_rate_pb,"
                "successful_rmsd,success_rate_rmsd,"
                "successful,success_rate,"
-               "mean_rmsd,median_rmsd,pearson_r,spearman_rho,kendall_tau\n";
+               "mean_rmsd,median_rmsd,pearson_r,spearman_rho,kendall_tau,"
+               "suspect_zero_success\n";
         ofs << std::fixed << std::setprecision(4)
             << report.dataset_name << ","
             << report.total_systems << ","
@@ -8455,7 +8500,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             << report.median_rmsd << ","
             << report.pearson_r << ","
             << report.spearman_rho << ","
-            << report.kendall_tau << "\n";
+            << report.kendall_tau << ","
+            << (report.suspect_zero_success ? 1 : 0) << "\n";
 
         ofs.close();
         std::cout << "  Summary CSV: " << summary_csv << "\n";

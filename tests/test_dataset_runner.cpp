@@ -543,6 +543,66 @@ TEST(ComputePoseLigandRmsd, HappyPathReasonIsNone) {
 }
 
 // =============================================================================
+// Zero-success plausibility gate (bug 2026-08-22: arms 8/9/10 wrote 0%
+// summaries over valid pose libraries). Pins the pure predicate.
+// =============================================================================
+
+TEST(ZeroSuccessGate, Arms8910SignatureIsSuspect) {
+    dataset::ZeroSuccessGateInput in;
+    in.total_systems = 85;
+    in.successful_rmsd = 0;
+    in.rows_with_any_poses = 85;      // every target produced modes
+    in.rmsd_negative_rows = 85;       // every RMSD is -1
+    in.rmsd_negative_wholesale = 85;  // ...all wholesale reasons (ref_empty)
+    EXPECT_TRUE(dataset::zero_success_is_suspect(in));
+}
+
+TEST(ZeroSuccessGate, GenuineAllFailIsNotSuspect) {
+    // True all-fail: docking ran, RMSDs are VALID but above threshold — no
+    // negative rows at all, so there is nothing measurement-side to blame.
+    dataset::ZeroSuccessGateInput in;
+    in.total_systems = 85;
+    in.successful_rmsd = 0;
+    in.rows_with_any_poses = 85;
+    in.rmsd_negative_rows = 0;
+    in.rmsd_negative_wholesale = 0;
+    EXPECT_FALSE(dataset::zero_success_is_suspect(in));
+}
+
+TEST(ZeroSuccessGate, NoPosesProducedIsNotSuspect) {
+    // If the GA produced no modes the run failed operationally, not at the
+    // reference layer; the summary is honest even though it is 0%.
+    dataset::ZeroSuccessGateInput in;
+    in.total_systems = 85;
+    in.successful_rmsd = 0;
+    in.rows_with_any_poses = 10;     // arm10 void signature (~100 poses total)
+    in.rmsd_negative_rows = 85;
+    in.rmsd_negative_wholesale = 85;
+    EXPECT_FALSE(dataset::zero_success_is_suspect(in));
+}
+
+TEST(ZeroSuccessGate, MixedReasonsAndSmallRunsNotSuspect) {
+    dataset::ZeroSuccessGateInput in;
+    in.total_systems = 85;
+    in.successful_rmsd = 0;
+    in.rows_with_any_poses = 85;
+    in.rmsd_negative_rows = 8;
+    in.rmsd_negative_wholesale = 3;  // minority wholesale → not systematic
+    EXPECT_FALSE(dataset::zero_success_is_suspect(in));
+
+    dataset::ZeroSuccessGateInput small = in;
+    small.total_systems = 4;         // below minimum meaningful N
+    small.rows_with_any_poses = 4;
+    small.rmsd_negative_rows = 4;
+    small.rmsd_negative_wholesale = 4;
+    EXPECT_FALSE(dataset::zero_success_is_suspect(small));
+
+    dataset::ZeroSuccessGateInput nonzero = in;  // any success ⇒ gate silent
+    nonzero.successful_rmsd = 1;
+    EXPECT_FALSE(dataset::zero_success_is_suspect(nonzero));
+}
+
+// =============================================================================
 // RMSD cross-check: engine calc_Hungarian_RMSD (groups by FlexAID/SYBYL atom
 // TYPE; writes the pose PDB REMARK) vs dataset::hungarian_rmsd (groups by ELEMENT
 // symbol; writes result.csv). The two are separate implementations of the same

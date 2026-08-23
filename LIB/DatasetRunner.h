@@ -332,6 +332,12 @@ struct BenchmarkReport {
     double claim_ready_rate{0.0};
     double mean_rmsd{0.0};
     double median_rmsd{0.0};
+    // Zero-success plausibility gate (DatasetRunnerStats.h): true when the
+    // summary would certify 0% while poses exist and negative RMSDs are
+    // dominated by wholesale measurement-side reasons (bug 2026-08-22,
+    // arms 8/9/10). Emitted as the trailing `suspect_zero_success` column of
+    // <dataset>_summary.csv; never alters any success count.
+    bool suspect_zero_success{false};
     int affinity_pairs{0};           // entries with both exp affinity and predicted_dG (F-est / CF fallback)
     double pearson_r{std::numeric_limits<double>::quiet_NaN()};   // predicted_dG-derived pKd vs experimental affinity
     double spearman_rho{std::numeric_limits<double>::quiet_NaN()};
