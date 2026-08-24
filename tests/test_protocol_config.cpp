@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <unistd.h>
 
@@ -71,6 +72,7 @@ struct ClearProtocolEnv {
         , boom("FLEXAIDDS_BOOM_FRAC", nullptr)
         , n_elite("FLEXAIDDS_N_ELITE", nullptr)
         , shannon("FLEXAIDDS_USE_SHANNON", nullptr)
+        , fitness_model("FLEXAIDDS_FITNESS_MODEL", nullptr)
         , thermo("FLEXAIDDS_THERMO", nullptr)
         , t_eff("FLEXAIDDS_T_EFF", nullptr)
         , tencom("FLEXAIDDS_TENCOM_SCALE", nullptr)
@@ -123,7 +125,7 @@ struct ClearProtocolEnv {
         , elect_sing("FLEXAIDDS_ELECTION_INCLUDE_SINGLETONS", nullptr) {}
 
     ScopedEnv seed_base, restarts, parallel, max_conc, vct_r0, vct_norm, vct_ew,
-              sharing, boom, n_elite, shannon, thermo, t_eff, tencom,
+              sharing, boom, n_elite, shannon, fitness_model, thermo, t_eff, tencom,
               data_dir, oracle_dir, oracle_site, cleft, cf_win, cluster,
               seed_elit, seed_delta, freqsel, freq_a, freq_r, consensus,
               cl_spread, cl_popfrac, cl_ctau, cl_ck, cl_prad,
@@ -151,6 +153,7 @@ TEST(ProtocolConfig, DefaultsMatchHistoricalFallbacks) {
     EXPECT_FALSE(e.boom_frac.has_value());
     EXPECT_EQ(e.n_elite, 1);
     EXPECT_FALSE(e.use_shannon);
+    EXPECT_EQ(e.fitness_model, "SMFREE");
     EXPECT_FALSE(e.thermo_enabled);
     EXPECT_FLOAT_EQ(e.t_eff, 0.596f);
     EXPECT_FLOAT_EQ(e.tencom_scale, 1.0f);
@@ -257,6 +260,44 @@ TEST(ProtocolConfig, PresenceFlagsAndParallelRestarts) {
     // Explicit parallel=1 but restarts==1 → parallel stays false.
     EXPECT_FALSE(cfg.parallel_restarts);
     EXPECT_TRUE(cfg.parallel_restarts_explicit);
+}
+
+TEST(ProtocolConfig, FitnessModelFromEnv) {
+    // Unset / empty → SMFREE (DatasetRunner historical hardcode; bit-identical default).
+    {
+        ClearProtocolEnv clear;
+        EXPECT_EQ(flexaids::ProtocolConfig::from_env().fitness_model, "SMFREE");
+        EXPECT_EQ(flexaids::ProtocolConfig::defaults().fitness_model, "SMFREE");
+    }
+    {
+        ClearProtocolEnv clear;
+        ScopedEnv empty("FLEXAIDDS_FITNESS_MODEL", "");
+        EXPECT_EQ(flexaids::ProtocolConfig::from_env().fitness_model, "SMFREE");
+    }
+    {
+        ClearProtocolEnv clear;
+        ScopedEnv pshare("FLEXAIDDS_FITNESS_MODEL", "PSHARE");
+        const auto cfg = flexaids::ProtocolConfig::from_env();
+        EXPECT_EQ(cfg.fitness_model, "PSHARE");
+        EXPECT_NE(cfg.to_json().find("\"fitness_model\":\"PSHARE\""), std::string::npos);
+        const auto round = flexaids::ProtocolConfig::from_json(cfg.to_json());
+        EXPECT_EQ(round.fitness_model, "PSHARE");
+    }
+    {
+        ClearProtocolEnv clear;
+        ScopedEnv smfree("FLEXAIDDS_FITNESS_MODEL", "SMFREE");
+        EXPECT_EQ(flexaids::ProtocolConfig::from_env().fitness_model, "SMFREE");
+    }
+    {
+        ClearProtocolEnv clear;
+        ScopedEnv typo("FLEXAIDDS_FITNESS_MODEL", "LINEAR");
+        EXPECT_THROW(flexaids::ProtocolConfig::from_env(), std::runtime_error);
+    }
+    {
+        ClearProtocolEnv clear;
+        ScopedEnv typo("FLEXAIDDS_FITNESS_MODEL", "pshare");
+        EXPECT_THROW(flexaids::ProtocolConfig::from_env(), std::runtime_error);
+    }
 }
 
 TEST(ProtocolConfig, MaxConcurrentRestartsFromEnvAndJsonRoundTrip) {

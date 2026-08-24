@@ -14,6 +14,7 @@
 // =============================================================================
 
 #include "DatasetRunner.h"
+#include "DatasetRunnerStats.h"  // PoseRmsdOutcome / hungarian_rmsd declarations
 #include "DatasetThermoLog.h"
 #include "AsyncPipeline.h"
 #include "BenchmarkRunner.h"
@@ -500,21 +501,35 @@ static bool parse_pdb_xyz_span(const std::string& line, std::array<float,3>& xyz
     return flexaids::pdb_coords::parse_xyz_span(line, xyz);
 }
 
-// Compute {serial-order RMSD, Hungarian RMSD} of the docked ligand in an emitted
-// pose PDB against the crystal ligand heavy-atom coordinates.  The docked ligand
-// is selected by CONECT membership (a position-independent fingerprint, immune to
-// resSeq/resname collisions with retained cofactors); hydrogens (element token
-// H/D/Du) are dropped to match the crystal heavy atoms.  Returns {999,999} on any
-// failure or atom-count mismatch.  Shared by the rank-0 RMSD report and the P4
-// best-of-N oracle-ceiling scan over all emitted cluster poses.
-static std::pair<float,float> compute_pose_ligand_rmsd(
+// Compute {serial-order RMSD, Hungarian RMSD, fail_reason} of the docked ligand
+// in an emitted pose PDB against the crystal ligand heavy-atom coordinates.  The
+// docked ligand is selected by CONECT membership (a position-independent
+// fingerprint, immune to resSeq/resname collisions with retained cofactors);
+// hydrogens (element token H/D/Du) are dropped to match the crystal heavy atoms.
+// On any failure both RMSDs are -1 and fail_reason names why (ref_empty,
+// pose_block_empty, count_mismatch, elem_mismatch, elem_order_mismatch); a bare
+// sentinel without a reason was the 2026-08-22 bug (arms 8/9/10 wrote valid
+// poses with all-RMSD=-1 and 0% success summaries).  Shared by the rank-0 RMSD
+// report, the P4 best-of-N oracle-ceiling scan over all emitted cluster poses,
+// and the authoritative elected-artifact recompute.
+PoseRmsdOutcome compute_pose_ligand_rmsd(
     const std::string& pose_pdb,
     const std::vector<std::array<float,3>>& crystal_xyz,
     const std::vector<std::string>& crystal_elem,
     const std::string& pdb_id,
     bool warn)
 {
-    if (crystal_xyz.empty()) return {-1.0f, -1.0f};
+    if (crystal_xyz.empty()) {
+        // Bug 2026-08-22: this return used to be silent. A wholesale -1 wall
+        // (arms 8/9/10: valid pose libraries, 0% summaries) is distinguishable
+        // ONLY by reason codes, so the empty-reference path is now labelled.
+        if (warn) {
+            std::cerr << "  [RMSD-FAIL] " << pdb_id
+                      << " crystal reference empty/unparseable — RMSD=-1"
+                      << " (reason=ref_empty)\n";
+        }
+        return {-1.0f, -1.0f, "ref_empty"};
+    }
 
     // Trailing element token (upper-first, rest lower: "C", "N", "Cl").
     auto get_elem_token = [](const std::string& line) -> std::string {
@@ -595,7 +610,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
         pose_xyz.push_back(std::get<1>(d));
         pose_elem.push_back(std::get<2>(d));
     }
-    if (pose_xyz.empty()) return {-1.0f, -1.0f};
+    if (pose_xyz.empty()) return {-1.0f, -1.0f, "pose_block_empty"};
 
     // Fail-closed whole-ligand heavy-atom count: no ±2 truncation (audit P0 #2).
     if (crystal_xyz.size() != pose_xyz.size()) {
@@ -605,7 +620,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
                       << " pose(docked-ligand)=" << pose_xyz.size()
                       << " — setting RMSD=-1 (fail-closed; no truncation)\n";
         }
-        return {-1.0f, -1.0f};
+        return {-1.0f, -1.0f, "count_mismatch"};
     }
     if (crystal_elem.size() != crystal_xyz.size() ||
         pose_elem.size() != pose_xyz.size()) {
@@ -613,7 +628,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
             std::cerr << "  [WARN] RMSD element vector length mismatch for "
                       << pdb_id << " — setting RMSD=-1\n";
         }
-        return {-1.0f, -1.0f};
+        return {-1.0f, -1.0f, "elem_mismatch"};
     }
 
     const int n = static_cast<int>(crystal_xyz.size());
@@ -630,6 +645,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
         }
     }
     float rc = -1.0f;
+    std::string reason = "none";
     if (elements_aligned) {
         double sum_sq = 0.0;
         for (int k = 0; k < n; k++) {
@@ -642,6 +658,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
     } else if (warn) {
         std::cerr << "  [WARN] ordered RMSD element sequence mismatch for "
                   << pdb_id << " — ordered RMSD=-1 (Hungarian diagnostic only)\n";
+        reason = "elem_order_mismatch";
     }
 
     // Element-only Hungarian is diagnostic symmetry metric only — never success.
@@ -656,7 +673,7 @@ static std::pair<float,float> compute_pose_ligand_rmsd(
             datoms.push_back({pose_elem[k], pose_xyz[k]});
         rh = hungarian_rmsd(catoms, datoms);
     }
-    return {rc, rh};
+    return {rc, rh, reason};
 }
 
 // ── v50 Lever 3 support: load a docked pose's ligand heavy-atom coordinates ──
@@ -4577,13 +4594,15 @@ std::vector<DatasetEntry> DatasetRunner::fetch_posebusters() {
     // Clone or update the PoseBusters benchmark repo
     std::string repo_dir = pb_dir + "/PoseBusters-Benchmark";
     if (!fs::exists(repo_dir)) {
-        std::string cmd = "git clone --depth 1 https://github.com/maabuu/posebusters_benchmark.git \""
-                          + repo_dir + "\" 2>&1";
+        // cache_dir_ is user-controlled (--cache); quote for /bin/sh -c via exec_cmd.
+        const std::string quoted_repo = shell_quote(repo_dir);
+        std::string cmd = "git clone --depth 1 https://github.com/maabuu/posebusters_benchmark.git "
+                          + quoted_repo + " 2>&1";
         int ret = exec_cmd(cmd);
         if (ret != 0) {
             // Try alternate URL
-            cmd = "git clone --depth 1 https://github.com/degrado-lab/PoseBusters-Benchmark.git \""
-                  + repo_dir + "\" 2>&1";
+            cmd = "git clone --depth 1 https://github.com/degrado-lab/PoseBusters-Benchmark.git "
+                  + quoted_repo + " 2>&1";
             exec_cmd(cmd);
         }
     }
@@ -5574,6 +5593,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (entry.receptor_path.empty() || entry.ligand_path.empty()) {
             result.success = false;
             result.rmsd_to_crystal = -1.0f;
+            result.rmsd_fail_reason = "input_missing";
             report.results[idx] = result;
             return;
         }
@@ -5584,6 +5604,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                       << " lig=" << entry.ligand_path << "\n";
             result.success = false;
             result.rmsd_to_crystal = -1.0f;
+            result.rmsd_fail_reason = "input_missing";
             report.results[idx] = result;
             return;
         }
@@ -6159,7 +6180,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // Shannon-ON vs default A/B is a single-flag toggle on the same
                    // binary — no source fork. The flag is echoed into the per-case
                    // dock_config.json so the experiment arm is greppable on disk.
-                   <<    "    \"fitness_model\": \"SMFREE\"";  // v121: SMFREE e^(-CF/kT) overflows at docking CF~-80,kT=0.596 -> fitness=1000 for all -> GA=random sampler. v50b 81.2% relied on this: crystal-seed+exploration+5r-consensus finds native. PSHARE (ee9db7f9) optimizes correctly but converges to CF false-min -> 41.2%.
+                   // FLEXAIDDS_FITNESS_MODEL: default SMFREE (unset/empty) so every
+                   // existing number stays bit-identical. PSHARE is the 2016
+                   // production model. Unknown values fail-closed in ProtocolConfig.
+                   // v121: SMFREE e^(-CF/kT) overflows at docking CF~-80,kT=0.596 ->
+                   // fitness=1000 for all -> GA=random sampler. v50b 81.2% relied on
+                   // this: crystal-seed+exploration+5r-consensus finds native.
+                   // PSHARE (ee9db7f9) optimizes correctly but converges to CF
+                   // false-min -> 41.2%.
+                   <<    "    \"fitness_model\": \"" << protocol_cfg_.fitness_model << "\"";
                 if (protocol_cfg_.use_shannon) {
                     jf << ",\n    \"use_shannon\": true";
                 }
@@ -6775,7 +6804,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         // ── Parse [NATIVE_CF] from stderr.log ────────────────────────────────
         // Line format (emitted by native_score.cpp):
-        //   [NATIVE_CF] cf=<total> breakdown=com:<v>,wal:<v>,sas:<v>,con:<v>
+        //   [NATIVE_CF] cf=<total> breakdown=com:<v>,wal:<v>,sas:<v>,con:<v>,...
+        //   (ten get_cf_evalue channels; parser reads only cf=)
         {
             std::string stderr_path = out_dir + "/stderr.log";
             std::ifstream nf(stderr_path);
@@ -7262,8 +7292,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 {
                     auto r0 = compute_pose_ligand_rmsd(
                         best_pose_pdb, crystal_xyz, crystal_elem, entry.pdb_id, true);
-                    result.rmsd_to_crystal = r0.first;
-                    result.rmsd_hungarian  = r0.second;
+                    result.rmsd_to_crystal = r0.serial;
+                    result.rmsd_hungarian  = r0.hungarian;
+                    // Machine-readable failure reason (bug 2026-08-22). A bare
+                    // -1 here previously collapsed "pose failed" and "the whole
+                    // crystal reference never loaded" into the same value.
+                    result.rmsd_fail_reason = r0.fail_reason;
 
                     // P4: oracle best-of-N ceiling over all emitted cluster heads.
                     // FO dual-suffix: <prefix>_<minPts>_<rank>.pdb via shared helper
@@ -7276,7 +7310,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                 cand, crystal_xyz, crystal_elem, entry.pdb_id, false);
                             // Pool ceiling uses ordered direct RMSD only (fail-closed).
                             // Hungarian remains diagnostic; never drives ceiling or claims.
-                            const float ceiling_r = rp.first;
+                            const float ceiling_r = rp.serial;
                             if (ceiling_r >= 0.0f &&
                                 (result.best_cluster_rmsd < 0.0f ||
                                  ceiling_r < result.best_cluster_rmsd)) {
@@ -7307,7 +7341,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                     }
                                     auto mr = compute_pose_ligand_rmsd(
                                         mcand, crystal_xyz, crystal_elem, entry.pdb_id, false);
-                                    const float m_ceil = mr.first;
+                                    const float m_ceil = mr.serial;
                                     if (m_ceil >= 0.0f &&
                                         (result.best_cluster_rmsd < 0.0f ||
                                          m_ceil < result.best_cluster_rmsd)) {
@@ -7323,8 +7357,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                                         try {
                                             char rbuf[16];
                                             std::snprintf(rbuf, sizeof(rbuf), "%.2f",
-                                                          mr.first >= 0.0f ? mr.first
-                                                                           : mr.second);
+                                                          mr.serial >= 0.0f ? mr.serial
+                                                                           : mr.hungarian);
                                             fs::path dst = fs::path(mcand).parent_path() /
                                                 (entry.pdb_id + "_cluster" +
                                                  std::to_string(pi) +
@@ -7473,10 +7507,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 const auto canonical_rmsd = compute_pose_ligand_rmsd(
                     result.elected_pose_path, crystal_xyz, crystal_elem,
                     entry.pdb_id, true);
-                result.rmsd_to_crystal = canonical_rmsd.first;
-                result.rmsd_hungarian = canonical_rmsd.second;
+                result.rmsd_to_crystal = canonical_rmsd.serial;
+                result.rmsd_hungarian = canonical_rmsd.hungarian;
+                result.rmsd_fail_reason = canonical_rmsd.fail_reason;
                 result.rmsd_pose_sha256 =
                     flexaids::posebust::sha256_file(result.elected_pose_path);
+            } else {
+                // Bug 2026-08-22: this guard used to fall through silently,
+                // leaving rank-0 -1s with no explanation. Label it.
+                result.rmsd_fail_reason =
+                    crystal_xyz.empty() ? "ref_empty" : "elem_mismatch";
+                std::cerr << "  [RMSD-FAIL] " << entry.pdb_id
+                          << " authoritative RMSD skipped: reason="
+                          << result.rmsd_fail_reason << "\n";
             }
             // Fail-closed claim gate: ordered direct RMSD only.
             // Element-only Hungarian (result.rmsd_hungarian) is diagnostic and
@@ -7546,7 +7589,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             auto rr = compute_pose_ligand_rmsd(
                                 best_cf_path, crystal_xyz, crystal_elem,
                                 entry.pdb_id, false);
-                            result.cf_top1_rmsd = rr.first;
+                            result.cf_top1_rmsd = rr.serial;
                         }
                     }
                 }
@@ -7601,7 +7644,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << "  \"pose_sha256\": \"" << result.pose_sha256 << "\",\n"
                         << "  \"rmsd_pose_sha256\": \"" << result.rmsd_pose_sha256 << "\",\n"
                         << "  \"rmsd_to_crystal\": " << result.rmsd_to_crystal << ",\n"
-                        << "  \"rmsd_hungarian\": " << result.rmsd_hungarian << "\n"
+                        << "  \"rmsd_hungarian\": " << result.rmsd_hungarian << ",\n"
+                        << "  \"rmsd_fail_reason\": \"" << result.rmsd_fail_reason << "\"\n"
                         << "}\n";
                     std::cerr << "  [POSE-LEDGER] " << led_path << "\n";
                 }
@@ -7741,6 +7785,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         // Publication gate: official PoseBusters and ligand tENCoM/Eigen must
         // all have consumed the exact elected pose represented by pose_sha256.
+        // Per-complex flag only. STRICT n/85 (numerator ∩ frozen Astex-85
+        // manifest) is aggregated in scripts/aggregate_claim_metrics.py.
         result.claim_ready =
             result.success_pb &&
             result.protocol_claim_eligible &&
@@ -7763,6 +7809,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "  \"pdb_id\": \"" << entry.pdb_id << "\",\n"
                    << "  \"pose_sha256\": \"" << result.pose_sha256 << "\",\n"
                    << "  \"rmsd_pose_sha256\": \"" << result.rmsd_pose_sha256 << "\",\n"
+                   << "  \"rmsd_fail_reason\": \"" << result.rmsd_fail_reason << "\",\n"
                    << "  \"posebusters_backend\": \"" << result.pb_backend << "\",\n"
                    << "  \"posebusters_pose_sha256\": \""
                    << result.posebusters_pose_sha256 << "\",\n"
@@ -7808,7 +7855,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     sess.log_Z = -static_cast<double>(result.predicted_dG) /
                                  (statmech::kB_kcal * static_cast<double>(config.temperature));
                 }
-                // TODO: best_center / conformer_populations from actual BindingMode data                ts_it2->second->register_result(sess);
+                // TODO: best_center / conformer_populations from actual BindingMode data.
+                // Live call — do not comment this out; GPF/TargetServer depends on it.
+                ts_it2->second->register_result(sess);
             }
         }
 
@@ -7856,7 +7905,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "G_bind,H_vct,H_vct_raw,n_heavy,TdS_shannon,TdS_vib,D_vib_thermo,"
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
                            "cf_best_cluster,"
-                           "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z\n";
+                           "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z,"
+                           "rmsd_fail_reason\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -7940,7 +7990,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.thermo_I_ES << ","
                         << result.thermo_CF_r2s << ","
                         << "\"" << result.thermo_binding_regime << "\","
-                        << result.ensemble_log_Z << "\n";
+                        << result.ensemble_log_Z << ","
+                        << result.rmsd_fail_reason << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -8023,6 +8074,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     int success_rmsd_count = 0;
     int success_pb_count = 0;
     int claim_ready_count = 0;
+    int rows_with_any_poses = 0;
+    int rmsd_negative_rows = 0;
+    int rmsd_negative_wholesale = 0;
     std::vector<double> rmsds;
     std::vector<double> pred_affinities;
     std::vector<double> exp_affinities;
@@ -8033,6 +8087,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (r.success_rmsd) success_rmsd_count++;
         if (r.success_pb) success_pb_count++;
         if (r.claim_ready) claim_ready_count++;
+        if (r.num_poses > 0) rows_with_any_poses++;
+        if (r.rmsd_to_crystal < 0.0f) {
+            rmsd_negative_rows++;
+            if (r.rmsd_fail_reason == "ref_empty" ||
+                r.rmsd_fail_reason == "input_missing" ||
+                r.rmsd_fail_reason == "pose_block_empty") {
+                rmsd_negative_wholesale++;
+            }
+        }
         if (r.rmsd_to_crystal >= 0.0f) {
             rmsds.push_back(r.rmsd_to_crystal);
         }
@@ -8062,6 +8125,36 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     report.successful_rmsd = success_rmsd_count;
     report.successful_pb = success_pb_count;
     report.claim_ready_count = claim_ready_count;
+
+    // ── Zero-success plausibility gate (bug 2026-08-22) ─────────────────
+    // Never alters any count; only flags the summary for humans and tooling.
+    {
+        dataset::ZeroSuccessGateInput gate;
+        gate.total_systems = report.total_systems;
+        gate.successful_rmsd = success_rmsd_count;
+        gate.rows_with_any_poses = rows_with_any_poses;
+        gate.rmsd_negative_rows = rmsd_negative_rows;
+        gate.rmsd_negative_wholesale = rmsd_negative_wholesale;
+        report.suspect_zero_success =
+            dataset::zero_success_is_suspect(gate);
+        if (report.suspect_zero_success) {
+            std::cerr
+                << "  [SUMMARY-GATE] *** SUSPECT ZERO-SUCCESS SUMMARY ***\n"
+                << "  [SUMMARY-GATE] 0/" << report.total_systems
+                << " RMSD successes while " << rows_with_any_poses
+                << " rows produced poses and " << rmsd_negative_rows
+                << " RMSDs are -1 (" << rmsd_negative_wholesale
+                << " wholesale reasons: ref_empty/input_missing/"
+                << "pose_block_empty).\n"
+                << "  [SUMMARY-GATE] This pattern matched campaign arms "
+                << "8/9/10: valid pose libraries, broken crystal-reference "
+                << "resolution, 0% summaries.\n"
+                << "  [SUMMARY-GATE] Recompute from pose archives with "
+                << "scripts/backfill_inline_rmsd.py before quoting this "
+                << "summary. Column suspect_zero_success=1 marks the row.\n";
+        }
+    }
+
     report.affinity_pairs = static_cast<int>(pred_affinities.size());
     report.success_rate = (report.total_systems > 0)
         ? static_cast<double>(success_count) / report.total_systems : 0.0;
@@ -8299,7 +8392,9 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             ofs << ",g_bind,h_vct,h_vct_raw,n_heavy,tds_shannon,tds_vib";
             ofs << ",report_T,i_es,cf_r2s,binding_regime";
         }
-        ofs << "\n";
+        // Appended at END (not mid-header): column names are position-stable
+        // for live campaigns; new diagnostics go last.
+        ofs << ",rmsd_fail_reason\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -8367,7 +8462,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                     << "," << r.thermo_CF_r2s
                     << ",\"" << r.thermo_binding_regime << "\"";
             }
-            ofs << "\n";
+            ofs << "," << r.rmsd_fail_reason << "\n";
         }
 
         ofs.close();
@@ -8381,12 +8476,15 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::ofstream ofs(summary_csv);
 
         // Headline: claim_ready. RMSD-only and pool ceiling stay diagnostic.
+        // suspect_zero_success is appended at END (position-stable header):
+        // 1 when the zero-success plausibility gate fired (bug 2026-08-22).
         ofs << "dataset,total_systems,"
                "claim_ready_count,claim_ready_rate,"
                "successful_pb,success_rate_pb,"
                "successful_rmsd,success_rate_rmsd,"
                "successful,success_rate,"
-               "mean_rmsd,median_rmsd,pearson_r,spearman_rho,kendall_tau\n";
+               "mean_rmsd,median_rmsd,pearson_r,spearman_rho,kendall_tau,"
+               "suspect_zero_success\n";
         ofs << std::fixed << std::setprecision(4)
             << report.dataset_name << ","
             << report.total_systems << ","
@@ -8402,7 +8500,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             << report.median_rmsd << ","
             << report.pearson_r << ","
             << report.spearman_rho << ","
-            << report.kendall_tau << "\n";
+            << report.kendall_tau << ","
+            << (report.suspect_zero_success ? 1 : 0) << "\n";
 
         ofs.close();
         std::cout << "  Summary CSV: " << summary_csv << "\n";

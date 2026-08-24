@@ -438,6 +438,171 @@ TEST(HungarianRMSD, EmptyIsSentinel) {
 }
 
 // =============================================================================
+// compute_pose_ligand_rmsd reason codes (bug 2026-08-22).
+// A bare rmsd_to_crystal == -1 used to be ambiguous between a per-pose failure
+// and a wholesale crystal-reference-resolution failure. Campaign arms 8/9/10
+// wrote valid pose libraries with all-RMSD=-1 and 0% success summaries because
+// the empty-reference path returned {-1,-1} silently. These tests pin the
+// machine-readable reason contract on the exact production function.
+// =============================================================================
+
+namespace {
+
+// Minimal pose PDB: three heavy atoms (C, C, N) with CONECT selecting all of
+// them. Element token is the trailing column per PDB 3.3.
+std::string write_pose_pdb(const fs::path& dir, const std::string& name,
+                           int serials) {
+    const auto p = dir / name;
+    std::ofstream ofs(p);
+    EXPECT_TRUE(ofs.is_open());  // EXPECT (not ASSERT): void return is illegal here
+    ofs << "HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00  0.00           C\n";
+    if (serials >= 2)
+        ofs << "HETATM    2  C2  LIG A   1       1.500   0.000   0.000  1.00  0.00           C\n";
+    if (serials >= 3)
+        ofs << "HETATM    3  N1  LIG A   1       3.000   0.000   0.000  1.00  0.00           N\n";
+    ofs << "CONECT    1    2\n";
+    if (serials >= 2) ofs << "CONECT    2    1   3\n";
+    if (serials >= 3) ofs << "CONECT    3    2\n";
+    ofs << "END\n";
+    return p.string();
+}
+
+} // namespace
+
+TEST(ComputePoseLigandRmsd, EmptyCrystalReferenceIsLabelledRefEmpty) {
+    // Short-circuits before any file I/O: the pose path need not exist. This is
+    // the previously-silent wholesale-failure path (arms 8/9/10 signature:
+    // every RMSD column -1 across every target while pose files were valid).
+    const auto out = dataset::compute_pose_ligand_rmsd(
+        "/nonexistent/pose.pdb", {}, {}, "TSTD", /*warn=*/false);
+    EXPECT_EQ(out.serial, -1.0f);
+    EXPECT_EQ(out.hungarian, -1.0f);
+    EXPECT_EQ(out.fail_reason, "ref_empty");
+}
+
+TEST(ComputePoseLigandRmsd, PoseWithoutSelectableLigandIsPoseBlockEmpty) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_rmsdreason_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_a");
+    fs::create_directories(tmp);
+    const auto pdb = tmp / "nolig.pdb";
+    {
+        // Receptor-like ATOM records only: no CONECT, no HETATM fallback hit.
+        std::ofstream ofs(pdb);
+        ofs << "ATOM      1  CA  ALA A   7       1.000   2.000   3.000  1.00  0.00           C\n";
+        ofs << "END\n";
+    }
+    std::vector<std::array<float,3>> xyz{{0.f,0.f,0.f}};
+    std::vector<std::string> elem{"C"};
+    const auto out = dataset::compute_pose_ligand_rmsd(
+        pdb.string(), xyz, elem, "TSTD", /*warn=*/false);
+    EXPECT_EQ(out.serial, -1.0f);
+    EXPECT_EQ(out.fail_reason, "pose_block_empty");
+    fs::remove_all(tmp);
+}
+
+TEST(ComputePoseLigandRmsd, CountMismatchIsFailClosedWithReason) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_rmsdreason_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_b");
+    fs::create_directories(tmp);
+    // Pose carries only two CONECT-selected heavy atoms vs a 3-atom crystal ref.
+    const std::string pose = write_pose_pdb(tmp, "two_atoms.pdb", 2);
+    std::vector<std::array<float,3>> xyz{
+        {0.f,0.f,0.f}, {1.5f,0.f,0.f}, {3.f,0.f,0.f}};
+    std::vector<std::string> elem{"C", "C", "N"};
+    const auto out = dataset::compute_pose_ligand_rmsd(
+        pose, xyz, elem, "TSTD", /*warn=*/false);
+    EXPECT_EQ(out.serial, -1.0f);
+    EXPECT_EQ(out.hungarian, -1.0f);
+    EXPECT_EQ(out.fail_reason, "count_mismatch");
+    fs::remove_all(tmp);
+}
+
+TEST(ComputePoseLigandRmsd, HappyPathReasonIsNone) {
+    const auto tmp = fs::temp_directory_path() /
+                     ("flexaidds_rmsdreason_" +
+                      std::to_string(
+                          std::chrono::steady_clock::now().time_since_epoch().count()) +
+                      "_c");
+    fs::create_directories(tmp);
+    const std::string pose = write_pose_pdb(tmp, "ok.pdb", 3);
+    std::vector<std::array<float,3>> xyz{
+        {0.f,0.f,0.f}, {1.5f,0.f,0.f}, {3.f,0.f,0.f}};
+    std::vector<std::string> elem{"C", "C", "N"};
+    const auto out = dataset::compute_pose_ligand_rmsd(
+        pose, xyz, elem, "TSTD", /*warn=*/false);
+    EXPECT_NEAR(out.serial, 0.0f, 1e-5f);
+    EXPECT_NEAR(out.hungarian, 0.0f, 1e-5f);
+    EXPECT_EQ(out.fail_reason, "none");
+    fs::remove_all(tmp);
+}
+
+// =============================================================================
+// Zero-success plausibility gate (bug 2026-08-22: arms 8/9/10 wrote 0%
+// summaries over valid pose libraries). Pins the pure predicate.
+// =============================================================================
+
+TEST(ZeroSuccessGate, Arms8910SignatureIsSuspect) {
+    dataset::ZeroSuccessGateInput in;
+    in.total_systems = 85;
+    in.successful_rmsd = 0;
+    in.rows_with_any_poses = 85;      // every target produced modes
+    in.rmsd_negative_rows = 85;       // every RMSD is -1
+    in.rmsd_negative_wholesale = 85;  // ...all wholesale reasons (ref_empty)
+    EXPECT_TRUE(dataset::zero_success_is_suspect(in));
+}
+
+TEST(ZeroSuccessGate, GenuineAllFailIsNotSuspect) {
+    // True all-fail: docking ran, RMSDs are VALID but above threshold — no
+    // negative rows at all, so there is nothing measurement-side to blame.
+    dataset::ZeroSuccessGateInput in;
+    in.total_systems = 85;
+    in.successful_rmsd = 0;
+    in.rows_with_any_poses = 85;
+    in.rmsd_negative_rows = 0;
+    in.rmsd_negative_wholesale = 0;
+    EXPECT_FALSE(dataset::zero_success_is_suspect(in));
+}
+
+TEST(ZeroSuccessGate, NoPosesProducedIsNotSuspect) {
+    // If the GA produced no modes the run failed operationally, not at the
+    // reference layer; the summary is honest even though it is 0%.
+    dataset::ZeroSuccessGateInput in;
+    in.total_systems = 85;
+    in.successful_rmsd = 0;
+    in.rows_with_any_poses = 10;     // arm10 void signature (~100 poses total)
+    in.rmsd_negative_rows = 85;
+    in.rmsd_negative_wholesale = 85;
+    EXPECT_FALSE(dataset::zero_success_is_suspect(in));
+}
+
+TEST(ZeroSuccessGate, MixedReasonsAndSmallRunsNotSuspect) {
+    dataset::ZeroSuccessGateInput in;
+    in.total_systems = 85;
+    in.successful_rmsd = 0;
+    in.rows_with_any_poses = 85;
+    in.rmsd_negative_rows = 8;
+    in.rmsd_negative_wholesale = 3;  // minority wholesale → not systematic
+    EXPECT_FALSE(dataset::zero_success_is_suspect(in));
+
+    dataset::ZeroSuccessGateInput small = in;
+    small.total_systems = 4;         // below minimum meaningful N
+    small.rows_with_any_poses = 4;
+    small.rmsd_negative_rows = 4;
+    small.rmsd_negative_wholesale = 4;
+    EXPECT_FALSE(dataset::zero_success_is_suspect(small));
+
+    dataset::ZeroSuccessGateInput nonzero = in;  // any success ⇒ gate silent
+    nonzero.successful_rmsd = 1;
+    EXPECT_FALSE(dataset::zero_success_is_suspect(nonzero));
+}
+
+// =============================================================================
 // RMSD cross-check: engine calc_Hungarian_RMSD (groups by FlexAID/SYBYL atom
 // TYPE; writes the pose PDB REMARK) vs dataset::hungarian_rmsd (groups by ELEMENT
 // symbol; writes result.csv). The two are separate implementations of the same
@@ -510,6 +675,52 @@ TEST(RmsdCrossCheck, OneTypeSpansElements_InvertsTheInequality) {
     EXPECT_NEAR(eng, 0.0f, 1e-3f);
     EXPECT_NEAR(dat, 10.0f, 1e-3f);
     EXPECT_LT(eng, dat);  // inversion: a shared type flatters the engine, not the dataset metric
+}
+
+// METHODOLOGY.md §0 claim cutoff: rank-0 in-place RMSD <= 2.0 Å.
+// Methods 4 (engine Hungarian / REMARK) and 5 (DatasetRunner Hungarian / CSV)
+// must agree on success/failure for an asymmetric translation (one type per
+// element, so the partitions coincide). Superposition is not applied here.
+namespace {
+constexpr float kClaimRmsdA = 2.0f;
+bool claim_success(float rmsd) { return rmsd <= kClaimRmsdA; }
+
+std::vector<AtomSpec> translated_asymmetric(float dx) {
+    return {
+        {4, "C", {dx, 0, 0}, {0, 0, 0}},
+        {7, "N", {1.0f + dx, 0, 0}, {1, 0, 0}},
+        {8, "O", {dx, 1.0f, 0}, {0, 1, 0}},
+    };
+}
+}  // namespace
+
+TEST(RmsdClaimCutoff, Rank0InPlaceHitAt1p5A) {
+    const auto a = translated_asymmetric(1.5f);
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, dat, 1e-4f);
+    EXPECT_NEAR(eng, 1.5f, 1e-3f);
+    EXPECT_TRUE(claim_success(eng));
+    EXPECT_TRUE(claim_success(dat));
+}
+
+TEST(RmsdClaimCutoff, Rank0InPlaceInclusiveTwoAngstrom) {
+    const auto a = translated_asymmetric(2.0f);
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, 2.0f, 1e-3f);
+    EXPECT_TRUE(claim_success(eng));
+    EXPECT_TRUE(claim_success(dat));
+}
+
+TEST(RmsdClaimCutoff, Rank0InPlaceMissAt2p5A) {
+    const auto a = translated_asymmetric(2.5f);
+    const float eng = crosscheck::engine_hungarian_rmsd(a);
+    const float dat = dataset::hungarian_rmsd(cc_ref(a), cc_pose(a));
+    EXPECT_NEAR(eng, dat, 1e-4f);
+    EXPECT_NEAR(eng, 2.5f, 1e-3f);
+    EXPECT_FALSE(claim_success(eng));
+    EXPECT_FALSE(claim_success(dat));
 }
 
 // =============================================================================

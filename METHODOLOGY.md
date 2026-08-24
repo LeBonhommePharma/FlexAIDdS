@@ -74,11 +74,13 @@ numbers into other files — reference `METHODOLOGY.md §N`.
      SEPARATE implementation with its own solver (`munkres_solve`, `:397`). Feeds
      `compute_pose_ligand_rmsd` / `pose_pose_rmsd`. **This is what `result.csv` carries.**
   - 🔴 **4 and 5 are two independent implementations of the same algorithm, each with its own
-    test file (`tests/test_hungarian_rmsd_bounds.cpp` and `tests/test_dataset_runner.cpp`), and
-    NO test compares them to each other.** A pose PDB can therefore carry a `REMARK RMSD` from
-    one while the `result.csv` row beside it carries a number from the other. Until a
-    cross-check exists, **never mix a REMARK RMSD and a CSV RMSD in the same table**, and say
-    which file a quoted number came from.
+    test file (`tests/test_hungarian_rmsd_bounds.cpp` and `tests/test_dataset_runner.cpp`).**
+    They group atoms differently (SYBYL type vs element), so a REMARK RMSD and a `result.csv`
+    RMSD can legitimately differ. The five-way harness (`scripts/rmsd_five_way_crosscheck.py`
+    plus `RmsdCrossCheck` / `RmsdClaimCutoff` in `tests/test_dataset_runner.cpp`) pins that
+    **claim success is rank-0 in-place RMSD `<= 2.0 Å`** and compares 4 vs 5 on shared
+    assignments. Still never mix an unlabelled REMARK RMSD and a CSV RMSD in the same table,
+    and say which file a quoted number came from.
 
 ---
 
@@ -184,6 +186,12 @@ Purpose: prove a determinism/perf change does not regress docking accuracy.
 - **Metric:** top-1 rank-0 RMSD, 2.0 Å, in-place. Success ⇔ rank-0 in-place RMSD **`<= 2.0 Å`**.
   Name the instrument (§0: in-repo metric vs
   `score_reference.py`) — an unlabelled RMSD is not reportable.
+- **Blind republish protocol (no % without a receipt):**
+  `scripts/blind_astex85_receipt_protocol.py`. Fixed 85, `native_pose_seeded=0`,
+  `seed_echo=0`, matrix MD5 `72d7c7396702331d96ff12d18f831796`. Default
+  `SEED_ELITISM=0` / `NATIVE_SEED_FRAC=0`. `claim` refuses to print a success %
+  without `RUN_RECEIPT.json`. Do not treat `--oracle-ceiling` as docking power.
+  `scripts/reproduce_astex85.sh --dry-run` writes a receipt and does not dock.
 - **Acceptance:** candidate within noise of baseline; **no target flips success→fail** attributable
   to the change. A full landing decision uses the full 85 × 10-restart protocol; a fast pre-check
   may use a documented subset.

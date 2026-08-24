@@ -33,7 +33,8 @@ struct BustCliResult {
     std::string raw_csv_sha256;    // SHA-256 of raw_csv body
 };
 
-/// Resolve bust binary: FLEXAIDDS_POSEBUSTERS_BIN, else PATH, else
+/// Resolve bust binary: FLEXAIDDS_POSEBUSTERS_BIN (explicit pin; miss is
+/// fail-closed — does not fall through to PATH), else PATH, else
 /// $FLEXAIDDS_ROOT/.venv-posebusters/bin/bust, else repo-relative.
 [[nodiscard]] std::string resolve_bust_binary();
 

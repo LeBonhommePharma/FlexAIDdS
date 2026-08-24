@@ -169,6 +169,17 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="K",
         help="Simulation temperature in Kelvin (default: 300).",
     )
+    p.add_argument(
+        "--entry-timeout-seconds",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Per-entry FlexAID wall-time cap in seconds (default: 3600, "
+            "matching the C++ runner's --job-timeout-seconds). "
+            "Env override: FLEXAIDDS_ENTRY_TIMEOUT_SECONDS."
+        ),
+    )
 
     # --- Bootstrap CIs ---
     p.add_argument(
@@ -255,8 +266,23 @@ def _benchmark_inconclusive_reasons(datasets) -> list[str]:
         resumed = getattr(dr, "resumed", 0)
         # 1. Liveness — every FlexAID invocation must exit 0.
         if dr.flexaid_crashes > 0:
-            codes = ", ".join(
-                f"{k}={v}" for k, v in list(dr.entry_exit_codes.items())[:5]
+            # Same science verdict for every failure class (a crash is a crash
+            # to the gate), but the reason names the class because CI triage
+            # differs: a crash implicates the PR, a timeout at the cap usually
+            # implicates the job budget (WO-4). entry_timeouts carries the cap
+            # seconds for entries killed by it; None without a timeout record
+            # is an exec failure; anything else is a real exit code.
+            timeouts = dict(getattr(dr, "entry_timeouts", None) or {})
+
+            def _classify(entry: str, code) -> str:
+                if entry in timeouts:
+                    return f"{entry} TIMED OUT at {timeouts[entry]} s"
+                if code is None:
+                    return f"{entry} EXEC FAILURE (no exit code produced)"
+                return f"{entry} CRASHED with code {code}"
+
+            codes = "; ".join(
+                _classify(k, v) for k, v in list(dr.entry_exit_codes.items())[:5]
             )
             # "did not complete" rather than "non-zero exit": entry_exit_codes
             # records None for an invocation that produced no exit code at all —
@@ -354,6 +380,7 @@ def main(argv: list[str] | None = None) -> int:
         resume=args.resume,
         command_line=full_command,
         default_conc_M=getattr(args, 'default_conc_M', 1.0),
+        entry_timeout_seconds=getattr(args, 'entry_timeout_seconds', None),
     )
     if args.datasets_dir is not None:
         runner_kwargs["datasets_dir"] = args.datasets_dir

@@ -46,12 +46,48 @@ tier1_subset_size: 4
 # the first N, so coverage rotates instead of leaving 83 of the 85 codes untested.
 # The draw is seeded and logged: re-run with FLEXAIDDS_TIER1_SEED=<logged seed> to
 # reproduce a draw exactly. Seed precedence: FLEXAIDDS_TIER1_SEED > tier1_seed >
-# UTC date (YYYYMMDD), so the set rotates daily but is stable within a run.
+# UTC date (YYYYMMDD).
 #
 # CONSEQUENCE: metrics below are target-dependent, so two runs with DIFFERENT
 # seeds are not comparable to each other and a regression flag from a fresh draw
 # is not evidence on its own. Compare only runs reporting the same seed.
 tier1_selection: random
+# Pin the library-path seed so a local / workflow_dispatch reproduction without
+# FLEXAIDDS_TIER1_SEED still matches the CI gate. CI's env var overrides this.
+# Rotate this value and .github/workflows/benchmark-tier1.yml
+# FLEXAIDDS_TIER1_SEED together; never one without the other.
+tier1_seed: 20260816
+
+# WALL-TIME exclusions (NOT science exclusions). Targets are removed from the
+# eligible pool before selection in BOTH fixed and random modes. This says
+# "too slow for this job budget", never "too hard": excluded targets remain
+# fully eligible for tier-2 and campaign runs.
+#
+# Screened by RECEPTOR SIZE (apo ATOM+HETATM count), not by timeout incidents.
+# Timeout-only exclusion of 2bys left the next oversized target (1of6, larger
+# than 2bys) eligible. Counts measured 2026-08-16 from
+# $FLEXAIDDS_LOCAL_ROOT/cache_v2/astex_diverse/<PDB>/<PDB>_apo.pdb (85 targets).
+#
+#   n=85  min=1614  median=3729  Q3=5747  IQR=3117
+#   Tukey outer fence Q3+3·IQR = 15098  (4× median = 14916)
+#   Threshold: apo atoms > 15098 (extreme outliers).
+#
+#   1of6  21501  (5.77× median)  excluded
+#   2bys  18241  (4.89× median)  excluded; also timed out at 3600 s on 2026-08-16
+#   1n1m  12843  (3.44×)  KEPT — inner fence only; unmeasured wall time
+#   1u1c  11775  (3.16×)  KEPT
+#   1q1g  11523  (3.09×)  KEPT
+#   1sq5  10535  (2.83×)  KEPT
+#   1t9b  10458  (2.80×)  KEPT
+#   1gpk   4782           KEPT — anchor; ran 1619 s
+#   1x8x   2762           KEPT — ran 1219 s
+#   2c3i   2403           KEPT — newly pinned; unmeasured wall; ~1mq6 size
+#   1mq6   2385           KEPT — anchor; ran 2455 s (ligand DoF, not size)
+#
+# Re-admission requires a clean run under the CURRENT 5400 s CI cap.
+tier1_wall_time_exclusions:
+  - 1of6
+  - 2bys
 
 # Anchor targets: pinned into EVERY draw, so a fixed core of each run stays
 # directly comparable run-to-run while the remaining slots rotate for coverage.

@@ -59,3 +59,22 @@ def test_cluster_dump_still_gated_on_refstructure_and_env():
     assert ".pop.tsv" in cl
     # Gate remains dual: refstructure AND env
     assert "FA->refstructure == 1" in cl
+
+
+def test_native_score_sums_all_get_cf_evalue_channels():
+    """cf_native must accumulate the same ten terms as ic2cf / get_cf_evalue.
+
+    Hygiene only: metal_coord (and elec, gist_desolv, entropy) were omitted
+    from native_score while pose CF_total already included them.
+    """
+    cpp = (ROOT / "LIB" / "native_score.cpp").read_text(encoding="utf-8")
+    loop = cpp.split("for (int i = 0; i < FA->num_optres; ++i)")[1].split("}")[0]
+    for term in (
+        "com", "wal", "sas", "con", "elec", "hbond",
+        "gist_desolv", "metal_coord", "entropy", "pb_clash",
+    ):
+        needle = f"cf.{term} += FA->optres[i].cf.{term}"
+        assert needle in loop, f"native_score optres loop missing {needle}"
+    ic2cf = (ROOT / "LIB" / "ic2cf.cpp").read_text(encoding="utf-8")
+    for term in ("elec", "gist_desolv", "metal_coord", "entropy"):
+        assert f"cf.{term} += FA->optres[i].cf.{term}" in ic2cf

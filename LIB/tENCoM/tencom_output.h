@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <cstddef>
 
 namespace tencom_output {
 
@@ -46,6 +47,11 @@ struct FlexMode {
 
     int n_modes   = 0;          // number of non-trivial normal modes
     int n_residues = 0;
+
+    // Index into the parallel CalphaStructure vector at construction.
+    // Survives sort_by_free_energy() so PDB/JSON writers pair coordinates to
+    // the mode they were computed from (N>2 permutes modes[1:]).
+    std::size_t structure_index = 0;
 };
 
 // Population of FlexModes — analogous to BindingPopulation
@@ -56,6 +62,11 @@ struct FlexPopulation {
 
     // Sort modes by delta_F_vib (ascending, most stabilizing first)
     void sort_by_free_energy();
+
+    // Resolve the Cα structure this mode was built from (stable across sort).
+    static const tencom_pdb::CalphaStructure*
+    paired_structure(const FlexMode& mode,
+                     const std::vector<tencom_pdb::CalphaStructure>& structures);
 
     // Write PDB file for a given mode with REMARK thermodynamic metadata
     void write_mode_pdb(const FlexMode& mode,

@@ -144,6 +144,7 @@ void seed_runtime_gates() {
         "FLEXAIDDS_HBOND_RANK",
         "FLEXAIDDS_HVIB",
         "FLEXAIDDS_IGNORE_CACHE",
+        "FLEXAIDDS_LEDGER_TENCOM_LAMBDA",
         "FLEXAIDDS_MEMETIC",
         "FLEXAIDDS_MUTATION_GRANULAR",
         "FLEXAIDDS_NAN_RANK_GUARD",
@@ -178,6 +179,7 @@ void seed_runtime_gates() {
     };
     static const char* kEnum[] = {
         "FLEXAIDDS_CLUSTER_REP",
+        "FLEXAIDDS_FITNESS_MODEL",
         "FLEXAIDDS_SEARCH",
         "FLEXAIDDS_POSEBUST_BACKEND",
         "FLEXAIDDS_NEW_SEARCH_ARCH",

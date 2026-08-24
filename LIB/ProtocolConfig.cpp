@@ -75,6 +75,17 @@ void json_bool(std::ostringstream& o, const char* key, bool v, bool trailing_com
     if (trailing_comma) o << ',';
 }
 
+// DatasetRunner historically hardcoded ga.fitness_model = SMFREE. The env gate
+// keeps that default; PSHARE is the 2016 production model. Unknown values
+// fail-closed so a typo cannot silently run a third, unimplemented arm.
+std::string parse_fitness_model(const char* e) {
+    if (!e || e[0] == '\0') return "SMFREE";
+    if (std::strcmp(e, "SMFREE") == 0 || std::strcmp(e, "PSHARE") == 0) return e;
+    throw std::runtime_error(
+        std::string("FLEXAIDDS_FITNESS_MODEL: unknown value '") + e +
+        "' (accepted: SMFREE, PSHARE)");
+}
+
 }  // namespace
 
 ProtocolConfig ProtocolConfig::defaults() {
@@ -126,6 +137,7 @@ ProtocolConfig ProtocolConfig::from_env() {
     }
     // Historical DatasetRunner: presence of FLEXAIDDS_USE_SHANNON enables.
     cfg.use_shannon = env_present("FLEXAIDDS_USE_SHANNON");
+    cfg.fitness_model = parse_fitness_model(env_raw("FLEXAIDDS_FITNESS_MODEL"));
 
     // Ranking / emission + GA ablation (config_parser historical getenv sites).
     // Presence-only: unset keeps JSON/defaults; set applies override.
@@ -376,6 +388,7 @@ std::string ProtocolConfig::to_json() const {
         o << "\"diversity_monitoring\":null,";
     }
     json_bool(o, "use_shannon", use_shannon);
+    o << "\"fitness_model\":\"" << json_escape(fitness_model) << "\",";
     json_bool(o, "thermo_enabled", thermo_enabled);
     o << "\"t_eff\":" << t_eff << ',';
     o << "\"tencom_scale\":" << tencom_scale << ',';
@@ -470,6 +483,10 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
         cfg.diversity_monitoring = root["diversity_monitoring"].as_bool(true);
     if (!root["use_shannon"].is_null())
         cfg.use_shannon = root["use_shannon"].as_bool(false);
+    if (!root["fitness_model"].is_null()) {
+        const std::string fm = root["fitness_model"].as_string("SMFREE");
+        cfg.fitness_model = parse_fitness_model(fm.c_str());
+    }
     if (!root["thermo_enabled"].is_null())
         cfg.thermo_enabled = root["thermo_enabled"].as_bool(false);
     if (!root["t_eff"].is_null())

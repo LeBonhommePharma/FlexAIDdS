@@ -178,6 +178,8 @@ set(FLEXAID_CORE_SOURCES
     tENCoM/tencm_cpu_fallback.cpp
     # ── Native-pose CF scoring diagnostic (DatasetRunner IdealPopulation) ──
     native_score.cpp
+    # ── Offline pool rescoring (FLEXAIDDS_RESCORE_POOL) ────────────────────
+    rescore_pool.cpp
 )
 
 if(FLEXAIDS_GRAND_CANONICAL)

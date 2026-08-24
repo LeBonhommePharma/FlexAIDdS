@@ -9,8 +9,44 @@
 #include "../LIB/encom.h"
 #include "../LIB/gaboom.h"
 #include <cmath>
+#include <cstdlib>
 #include <string>
 #include <vector>
+
+namespace {
+class ScopedEnv {
+public:
+    ScopedEnv(const char* name, const char* value) : name_(name) {
+        const char* prev = std::getenv(name);
+        if (prev) {
+            had_prev_ = true;
+            prev_ = prev;
+        }
+#if defined(_WIN32)
+        if (value) _putenv_s(name, value);
+        else _putenv_s(name, "");
+#else
+        if (value) setenv(name, value, 1);
+        else unsetenv(name);
+#endif
+    }
+    ~ScopedEnv() {
+#if defined(_WIN32)
+        if (had_prev_) _putenv_s(name_.c_str(), prev_.c_str());
+        else _putenv_s(name_.c_str(), "");
+#else
+        if (had_prev_) setenv(name_.c_str(), prev_.c_str(), 1);
+        else unsetenv(name_.c_str());
+#endif
+    }
+    ScopedEnv(const ScopedEnv&) = delete;
+    ScopedEnv& operator=(const ScopedEnv&) = delete;
+private:
+    std::string name_;
+    std::string prev_;
+    bool had_prev_ = false;
+};
+}  // namespace
 
 // ===========================================================================
 // Test-accessible subclass to reach protected methods
@@ -410,27 +446,52 @@ TEST_F(BindingModeVibrationalTest, ManyPosesVibrationalCorrectionFinite) {
     EXPECT_NEAR(correction, 0.0, EPSILON);
 }
 
-TEST_F(BindingModeVibrationalTest, FailClosedRemarkAlwaysEmittedAtZero) {
-    char buf[512];
-    format_vibrational_diagnostic_remark(buf, sizeof(buf), 0.0);
-    const std::string line(buf);
-    EXPECT_NE(line.find("REMARK Vibrational diagnostic = 0.0000"), std::string::npos);
-    EXPECT_NE(line.find("fail_closed: no eigenvalue channel"), std::string::npos);
-    EXPECT_NE(line.find("atom::eigen is eigenvectors"), std::string::npos);
-    EXPECT_NE(line.find("proxy_only"), std::string::npos);
-    EXPECT_NE(line.find("inert"), std::string::npos);
+TEST_F(BindingModeVibrationalTest, LedgerTencomLambdaFlagDoesNotChangeElectionEnergy) {
+    TestableBindingMode mode_off(test_population);
+    Pose p = create_mock_pose(-11.5, 0);
+    mode_off.add_Pose(p);
 
-    format_vibrational_diagnostic_remark(buf, sizeof(buf), 1e-15);
-    EXPECT_NE(std::string(buf).find("fail_closed"), std::string::npos);
+    double energy_off;
+    double vib_off;
+    {
+        ScopedEnv off("FLEXAIDDS_LEDGER_TENCOM_LAMBDA", "0");
+        energy_off = mode_off.compute_energy();
+        vib_off = mode_off.compute_vibrational_correction();
+    }
+    double energy_on;
+    double vib_on;
+    {
+        ScopedEnv on("FLEXAIDDS_LEDGER_TENCOM_LAMBDA", "1");
+        energy_on = mode_off.compute_energy();
+        vib_on = mode_off.compute_vibrational_correction();
+    }
+    EXPECT_NEAR(energy_off, energy_on, EPSILON);
+    EXPECT_NEAR(vib_off, 0.0, EPSILON);
+    EXPECT_NEAR(vib_on, 0.0, EPSILON);
 }
 
-TEST_F(BindingModeVibrationalTest, NonzeroRemarkStillProxyOnlyNotElection) {
-    char buf[512];
-    format_vibrational_diagnostic_remark(buf, sizeof(buf), -1.25);
-    const std::string line(buf);
-    EXPECT_NE(line.find("REMARK Vibrational diagnostic = -1.2500"), std::string::npos);
-    EXPECT_NE(line.find("proxy_only"), std::string::npos);
-    EXPECT_NE(line.find("not used for election"), std::string::npos);
+TEST_F(BindingModeVibrationalTest, LedgerTencomLambdaFlagDoesNotFlipElectedMode) {
+    TestableBindingMode better(test_population), worse(test_population);
+    Pose pb = create_mock_pose(-16.0, 0);
+    Pose pw = create_mock_pose(-7.0, 1);
+    better.add_Pose(pb);
+    worse.add_Pose(pw);
+
+    double off_better, off_worse, on_better, on_worse;
+    {
+        ScopedEnv off("FLEXAIDDS_LEDGER_TENCOM_LAMBDA", "0");
+        off_better = better.compute_energy();
+        off_worse = worse.compute_energy();
+    }
+    {
+        ScopedEnv on("FLEXAIDDS_LEDGER_TENCOM_LAMBDA", "1");
+        on_better = better.compute_energy();
+        on_worse = worse.compute_energy();
+    }
+    EXPECT_LT(off_better, off_worse);
+    EXPECT_LT(on_better, on_worse);
+    EXPECT_NEAR(off_better, on_better, EPSILON);
+    EXPECT_NEAR(off_worse, on_worse, EPSILON);
 }
 
 // ===========================================================================

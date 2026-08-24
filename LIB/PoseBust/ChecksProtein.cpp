@@ -222,8 +222,8 @@ struct DistClashResult {
             }
         }
         if (!r.has_pair) {
-            // Nothing inside any neighbourhood ⇒ separation ≳ cell size.
-            r.min_dist     = kCellSizeA;
+            // Nothing inside any neighbourhood. Leave min_dist as +inf;
+            // pass/fail uses has_pair / n_clashes, not this sentinel.
             r.no_vdw_clash = true;
         }
     }
@@ -426,15 +426,17 @@ void check_volume_overlap(const Molecule& ligand,
         out.push_back(std::move(item));
     }
 
-    // Cofactor / water distance+volume: apo receptors have none → vacuous pass.
-    // Keys must still be emitted so native suite covers full upstream dock list.
+    // Cofactor / water distance+volume: apo protein crop has no separate
+    // entities. Emit the 27-key names so reports stay comparable, but skip
+    // them (passed=false) so they cannot inflate native all_passed().
     auto vacuous = [&](const char* key, const char* label) {
         CheckItem item;
         item.key = key;
         item.label = label;
-        item.passed = true;
+        item.passed = false;
+        item.skipped = true;
         item.detail =
-            "vacuous pass: no separate organic/inorganic cofactor or water "
+            "skipped: no separate organic/inorganic cofactor or water "
             "entities in condition (apo protein crop only)";
         item.n_checked = 0;
         item.n_failed = 0;

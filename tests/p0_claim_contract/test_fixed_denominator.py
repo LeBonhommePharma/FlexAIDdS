@@ -79,6 +79,12 @@ rep3 = agg.aggregate_rows(extra, PIN, "test", fixed_denominator=True)
 check("denominator stays 85 with an off-manifest extra row",
       rep3["N_denominator"] == 85)
 
+# --- Invariant 5: off-manifest success must not inflate STRICT numerator ------
+check("STRICT n stays 85 (off-manifest extra does not inflate numerator)",
+      rep3["metrics"]["STRICT"]["n"] == 85)
+check("STRICT ids exclude off-manifest 9XXX",
+      "9XXX" not in {str(x).upper() for x in rep3["metrics"]["STRICT"]["ids"]})
+
 print(f"\n{'ALL PASS' if not failures else f'{len(failures)} FAILURES: {failures}'}")
 
 # Only exit the interpreter when run as a script. Under pytest this module is
