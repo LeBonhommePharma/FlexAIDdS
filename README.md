@@ -42,6 +42,8 @@ CF = CF.com  +  CF.wal  +  CF.sas  +  CF.elec  +  CF.hbond  +  CF.pb_clash  +  C
 
 where `CF.com` is the Voronoi contact complementarity, `CF.wal` is the soft-wall steric repulsion (capped at 50 CF units per contact to prevent numerical blow-up), `CF.sas` is an accessible-surface area term, `CF.elec` is an optional electrostatic term, `CF.hbond` a hydrogen-bond term, `CF.pb_clash` an optional all-pairs intermolecular clash *penalty* inside the search (default weight 0; **not** a PoseBusters pass), and `CF.con` a distance-constraint term. Post-election physical validity is a separate validator — see [PoseBust](LIB/PoseBust/README.md).
 
+On the default **claim path** those optional channels are **gated / inert**: `CF.elec` is off (`use_elec` / `electrostatics_enabled` default false), `CF.con` applies only when distance restraints are defined, and **GIST is hard-disabled** (scoring would use `gist_desolv` if enabled; REMARK `CF.gist` is an unused channel). Do not treat `CF.elec` / `gist` / `con` as live scoring terms on current claim runs. Grand-canonical `p_bind` is likewise **proxy_only** / `p_bind_like` (CF-proxy ensemble Z, not calibrated occupancy).
+
 The energy matrix maps atom-type pairs to statistical potentials derived from contact frequencies in the PDB. A pair that appears more often in real binding sites than in a random background gets a negative entry (stabilizing); one that appears less often gets a positive entry (destabilizing). With 40 atom types and full symmetry, there are 820 unique interaction parameters. See [docs/SCORING.md](docs/SCORING.md) for the full derivation.
 
 ### Why min(CF) Is Not Enough

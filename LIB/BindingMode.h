@@ -7,6 +7,8 @@
 #include "encom.h"     // ENCoM vibrational entropy (Phase 3)
 #include "ShannonThermoStack/ShannonThermoStack.h"  // Shannon configurational entropy
 
+#include <cstddef>
+
 //#define UNDEFINED_DIST FLT_MAX // Defined in FOPTICS as > than +INF
 #define UNDEFINED_DIST -0.1f // Defined in FOPTICS as > than +INF
 #define isUndefinedDist(a) ((a - UNDEFINED_DIST) <= FLT_EPSILON)
@@ -18,6 +20,10 @@ class BindingPopulation; // forward-declaration in order to access BindingPopula
 /// Replaces trailing `.pdb` with `.mcf`. Returns true if the file was written.
 bool write_mcf_sidecar(const char* pdb_path,
                        const std::vector<double>& app_evalues_head_first);
+
+/// Always emit a vibrational REMARK, including fail-closed 0.0.
+/// Surface honesty only: this does not invent an eigenvalue channel or elect poses.
+void format_vibrational_diagnostic_remark(char* buf, size_t buflen, double vib_corr);
 
 /*****************************************\
 			  Pose
@@ -148,7 +154,7 @@ class BindingMode // aggregation of poses (Cluster)
 				double S_ligand;         // marginal ligand pose entropy
 				double S_receptor;       // marginal receptor conformer entropy
 				double I_mutual;         // mutual information (coupling)
-				double S_vibrational;    // from ENCoM/tENCoM modes
+				double S_vibrational;    // fail-closed 0.0 on ranking path (no eigenvalue channel)
 			};
 			EntropyDecomposition decompose_entropy() const;
 
@@ -164,9 +170,10 @@ class BindingMode // aggregation of poses (Cluster)
 
 		void	set_energy();                         // updates cached energy value
 		void	rebuild_engine() const;               // populates engine_ from Poses (called on-demand)
-		double	compute_vibrational_correction() const; // Phase 3: -T*S_vib from ENCoM modes
+		double	compute_vibrational_correction() const; // fail-closed 0.0; atom::eigen is eigenvectors
 		// Classic FlexAID soft-β ranking when T>0 && !FA->force_cf_rank_emission.
-		// Ranking F also adds ENCoM vib correction (FlexAIDdS). Rollback: force_cf_rank_emission.
+		// Live objective is configurational (soft-β) only. Vib is called but
+		// fail-closes to 0.0 and does not elect. Rollback: force_cf_rank_emission.
 		bool	use_classic_entropy_ranking() const noexcept;
 
 	private:

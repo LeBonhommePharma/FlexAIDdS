@@ -32,13 +32,15 @@ CF = CF.com + CF.wal + CF.sas + CF.elec + CF.hbond + CF.pb_clash + CF.con
 
 **CF.sas** — Solvent-accessible surface penalty. Ligand surface not in contact with the receptor contributes a desolvation cost (exposing non-polar surface to solvent is unfavorable relative to burial in a hydrophobic pocket).
 
-**CF.elec** — Optional Coulomb electrostatic term, gated in the configuration. When active, uses the KCOULOMB = 332.0637 kcal·Å/(mol·e²) constant.
+**CF.elec** — Optional Coulomb electrostatic term, gated in the configuration (`use_elec` / `electrostatics_enabled`). **Default off; inert on the claim path.** When active, uses the KCOULOMB = 332.0637 kcal·Å/(mol·e²) constant.
 
 **CF.hbond** — Hydrogen-bond term. Evaluated by `HBondEvaluator`; default weight −2.5 (`FLEXAIDDS_HBOND_WEIGHT`). A negative value rewards correctly directed H-bonds; the weight is negative because H-bonds stabilize binding.
 
 **CF.pb_clash** — PoseBusters intermolecular clash penalty. All-pairs check at a distance threshold of 0.75 × (vdW_i + vdW_j) (`pb_clash_ratio = 0.75`). Any atom pair below this threshold contributes `pb_clash_weight × severity^pb_clash_exponent` to CF. This term is **uncapped** by design — it must be able to overcome CF.com over-packing, unlike the WAL term which is capped. The receptor clash grid is built **once per dock session** (hoisted out of the per-eval loop) because the receptor is rigid; this hoist reduced wall-clock time for clash checking from O(N_evals × N_rec) to O(1 + N_evals × N_lig). Disabled by default (weight = 0.0); set `FLEXAIDDS_PB_CLASH_WEIGHT=1.0` to enable.
 
-**CF.con** — Distance constraint penalty. Applied when constraints are defined in the configuration (e.g., pharmacophoric distance restraints). Each violated constraint adds KDIST to CF.
+**CF.con** — Distance constraint penalty. Applied only when constraints are defined (e.g. pharmacophoric restraints). **Idle / inert on unconstrained claim runs.** Each violated constraint adds KDIST to CF.
+
+**GIST (`gist_desolv` / REMARK `CF.gist`)** — Grid-based desolvation is **hard-disabled**. The scoring channel, if it were enabled, is `gist_desolv`; REMARK `CF.gist` is an unused field. Do not treat either as a live claim-path term.
 
 ### 1.3 Implementation Notes
 

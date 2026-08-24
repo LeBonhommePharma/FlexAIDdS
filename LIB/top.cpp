@@ -2585,6 +2585,13 @@ int main(int argc, char **argv){
 		safe_remark_cat(remark,tmpremark,&remark_len);
 		snprintf(tmpremark,MAX_REMARK,"REMARK CF.hbond=%8.5f\n",cf_ptr->hbond);
 		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.elec=%8.5f\n",cf_ptr->elec);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.gist_desolv=%8.5f\n",cf_ptr->gist_desolv);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,
+			"REMARK CF.elec_gist_con_status = gated_inert_on_claim_path (use_elec default off; GIST hard-disabled; con constraints-only; CF.gist unused vs gist_desolv)\n");
+		safe_remark_cat(remark,tmpremark,&remark_len);
 		snprintf(tmpremark,MAX_REMARK,"REMARK Residue has an overall SAS of %.3f\n",cf_ptr->totsas);
 		safe_remark_cat(remark,tmpremark,&remark_len);
 		
@@ -3138,16 +3145,17 @@ int main(int argc, char **argv){
 				cluster(FA,GB,VC,chrom_snapshot,gene_lim,atoms,residue,cleftgrid,n_chrom_snapshot,end_strfile,tmp_end_strfile,dockinp,gainp, active_ts, "ga-ligand");
 			}
 
-			// P1/P5: augment output with grand canonical info if ts active (per-ligand p_bind, Xi etc.)
+			// P1/P5: augment output with grand canonical info if ts active.
 			// LigandRank fields: name, log_Z, dG, p_bound (see GrandPartitionFunction.h).
+			// p_bound is CF-proxy occupancy (p_bind_like), not calibrated ΔG occupancy.
 			if (active_ts) {
-				printf("[GRAND] sessions=%d\n", active_ts->completed_sessions());
+				printf("[GRAND] sessions=%d claim_validity=proxy_only\n", active_ts->completed_sessions());
 				auto ranks = active_ts->rank_ligands();
 				for (const auto& r : ranks) {
-					printf("[GRAND] %s: log_Z=%.6g p_bind=%.6g dG=%.6g\n",
-					       r.name.c_str(), r.log_Z, r.p_bound, r.dG);
+					printf("[GRAND] %s: log_Z=%.6g p_bind_like=%.6g p_bind=%.6g dG=%.6g claim_validity=proxy_only\n",
+					       r.name.c_str(), r.log_Z, r.p_bound, r.p_bound, r.dG);
 				}
-				// P5: write sidecar .grand.txt for richer output (Xi, p_bind per ligand)
+				// P5: write sidecar .grand.txt for richer output (Xi, p_bind_like per ligand)
 				char grandfile[512];
 				// end_strfile is a stack array, so it is never null; it is
 				// initialized to "flexaid" at declaration, which is where the
@@ -3156,18 +3164,18 @@ int main(int argc, char **argv){
 				snprintf(grandfile, sizeof(grandfile), "%s.grand.txt", end_strfile);
 				FILE* gf = fopen(grandfile, "w");
 				if (gf) {
-					fprintf(gf, "# Grand canonical summary (P3/P5)\n");
+					fprintf(gf, "# Grand canonical summary (P3/P5) claim_validity=proxy_only (CF-proxy Z; p_bind_like)\n");
 					for (const auto& r : ranks) {
-						fprintf(gf, "ligand=%s log_Z=%.6g p_bind=%.6g dG=%.6g\n",
-						        r.name.c_str(), r.log_Z, r.p_bound, r.dG);
+						fprintf(gf, "ligand=%s log_Z=%.6g p_bind_like=%.6g p_bind=%.6g dG=%.6g claim_validity=proxy_only\n",
+						        r.name.c_str(), r.log_Z, r.p_bound, r.p_bound, r.dG);
 					}
 					fclose(gf);
 				}
 				// P5: also emit as REMARK GRAND for parsers (per plan)
-				printf("REMARK GRAND_SESSIONS %d\n", active_ts->completed_sessions());
+				printf("REMARK GRAND_SESSIONS %d claim_validity=proxy_only\n", active_ts->completed_sessions());
 				for (const auto& r : ranks) {
-					printf("REMARK GRAND %s log_Z=%.6g p_bind=%.6g dG=%.6g\n",
-					       r.name.c_str(), r.log_Z, r.p_bound, r.dG);
+					printf("REMARK GRAND %s log_Z=%.6g p_bind_like=%.6g p_bind=%.6g dG=%.6g claim_validity=proxy_only\n",
+					       r.name.c_str(), r.log_Z, r.p_bound, r.p_bound, r.dG);
 				}
 			}
 

@@ -904,12 +904,13 @@ class BenchmarkReport:
                 "",
             ]
 
-        # P3: grand canonical summary emission (Ξ, p_bind etc) if present
+        # P3: grand canonical summary emission (Ξ, p_bind_like etc) if present
         if dr.grand_summary:
-            lines += ["### Grand Canonical Summary (P3)", ""]
-            lines += ["| Ligand | log_Z | conc_M | log_Xi | p_bind |", "|--------|-------|--------|--------|--------|"]
+            lines += ["### Grand Canonical Summary (P3, proxy_only / p_bind_like)", ""]
+            lines += ["| Ligand | log_Z | conc_M | log_Xi | p_bind_like |", "|--------|-------|--------|--------|-------------|"]
             for lid, info in sorted(dr.grand_summary.items()):
-                lines.append(f"| {lid} | {info.get('log_Z', 0):.4f} | {info.get('conc_M', 1):.2e} | {info.get('log_Xi', 0):.4f} | {info.get('p_bind', 0):.4f} |")
+                p_like = info.get("p_bind_like", info.get("p_bind", 0))
+                lines.append(f"| {lid} | {info.get('log_Z', 0):.4f} | {info.get('conc_M', 1):.2e} | {info.get('log_Xi', 0):.4f} | {p_like:.4f} |")
             lines.append("")
 
         if dr.targets_failed:
@@ -2380,7 +2381,8 @@ class DatasetRunner:
                             'log_Z': logz,
                             'conc_M': conc,
                             'log_Xi': g.log_Xi(),
-                            'p_bind': p_bind,
+                            'p_bind': p_bind,  # legacy alias of p_bind_like
+                            'p_bind_like': p_bind,  # CF-proxy occupancy; not calibrated ΔG
                         }
                     except Exception as e:
                         logger.debug("P3 grand summary compute skip for %s: %s", target_id, e)
@@ -2647,7 +2649,7 @@ class DatasetRunner:
                 rows = []
                 for lid, info in sorted(dr.grand_summary.items()):
                     row = {"ligand": lid}
-                    row.update({k: info.get(k) for k in ("log_Z", "conc_M", "log_Xi", "p_bind") if k in info})
+                    row.update({k: info.get(k) for k in ("log_Z", "conc_M", "log_Xi", "p_bind", "p_bind_like") if k in info})
                     rows.append(row)
                 if rows:
                     with open(csv_path, "w", newline="") as fh:
