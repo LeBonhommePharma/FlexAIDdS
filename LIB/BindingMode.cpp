@@ -65,6 +65,23 @@ void format_vibrational_diagnostic_remark(char* buf, size_t buflen, double vib_c
 		vib_corr);
 }
 
+namespace {
+
+// Ledger-only tENCoM λ REMARK. Must not be called from compute_energy().
+void append_tencom_lambda_ledger_remark(
+    char* remark, size_t* remark_len,
+    atom* atoms, resid* residue, int res_cnt)
+{
+    if (!flexaids::ledger_tencom_lambda_enabled()) return;
+    const flexaids::TencomLambdaLedger rec =
+        flexaids::collect_tencom_lambda_from_atoms(atoms, residue, res_cnt);
+    const std::string line = flexaids::format_tencom_lambda_remark(rec);
+    if (!line.empty())
+        safe_remark_cat(remark, line.c_str(), remark_len);
+}
+
+}  // namespace
+
 static void append_gated_cf_term_remarks(char* remark, size_t* remark_len,
                                          char* tmpremark, const cfstr* pCF)
 {
