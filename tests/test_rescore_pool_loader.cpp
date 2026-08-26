@@ -251,6 +251,25 @@ TEST(RescorePoolLoader, Utf8BomBeforeFirstRecordHandled)
     EXPECT_FLOAT_EQ(coor[4 * 3 + 0], 7.0f);
 }
 
+TEST(RescorePoolLoader, PartialSerialFieldIsRejected)
+{
+    // Columns 7–11 are "   1A". strtol would yield 1; map serial 1 so a
+    // prefix-accepting loader would write slot 0.
+    const std::string pdb =
+        "HETATM   1A C1  LIG B   1       9.000   9.000   9.000  1.00  0.00           C\n"
+        "HETATM   2  N1  LIG B   1       1.000   1.000   1.000  1.00  0.00           N\n";
+    const std::string path = write_temp("rescore_partial_serial.pdb", pdb);
+    std::unordered_map<int,int> m{{1, 0}, {2, 1}};
+    float coor[2 * 3] = {};
+    int matched = -1, skipped = -1;
+    ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(matched, 1);
+    EXPECT_EQ(skipped, 1);
+    EXPECT_FLOAT_EQ(coor[0], 0.0f);
+    EXPECT_FLOAT_EQ(coor[1 * 3 + 0], 1.0f);
+}
+
 TEST(RescorePoolLoader, UnreadableFileFailsClosed)
 {
     const std::string path = write_temp("rescore_unreadable.pdb",

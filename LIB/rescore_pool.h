@@ -101,6 +101,14 @@ inline bool load_complex_coor_from_pdb(const char* pdb_path,
         char* endp = nullptr;
         const long serial = std::strtol(serial_buf, &endp, 10);
         if (endp == serial_buf) { ++skipped; continue; }
+        // strtol stops at the first non-digit. "   1A" would otherwise become
+        // serial 1 and pass ligand-completeness. Trailing field bytes must
+        // be spaces only (PDB right-justified serials).
+        bool rest_ok = true;
+        for (const char* p = endp; *p != '\0'; ++p) {
+            if (*p != ' ') { rest_ok = false; break; }
+        }
+        if (!rest_ok) { ++skipped; continue; }
         // PDB serials are 1-based. Refuse 0/negative and values that would
         // wrap on an int cast (the 5-column field cannot exceed INT_MAX, but
         // keep the bound so a wider parse cannot poison slot 1).
@@ -118,6 +126,7 @@ inline bool load_complex_coor_from_pdb(const char* pdb_path,
         float x, y, z;
         if (std::sscanf(buf + 30, "%f%f%f", &x, &y, &z) != 3) { ++skipped; continue; }
         const int slot = it->second;
+        if (slot < 0) { ++skipped; continue; }
         coor_out[slot * 3 + 0] = x;
         coor_out[slot * 3 + 1] = y;
         coor_out[slot * 3 + 2] = z;
