@@ -814,6 +814,14 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	safe_remark_cat(remark, tmpremark, &remark_len);
 	snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", Rep->chrom->app_evalue);
 	safe_remark_cat(remark, tmpremark, &remark_len);
+	// Before per-residue CF blocks: those can fill the 5k REMARK cap and
+	// silently drop a trailing ledger line (safe_remark_cat is fail-closed).
+	if (this->Population && this->Population->FA) {
+		append_tencom_lambda_ledger_remark(
+			remark, &remark_len,
+			this->Population->atoms, this->Population->residue,
+			this->Population->FA->res_cnt);
+	}
 
 	for (int j = 0; j < this->Population->FA->num_optres; ++j)
 	{
@@ -891,12 +899,6 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = 1\n");
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		if (this->Population && this->Population->FA) {
-			append_tencom_lambda_ledger_remark(
-				remark, &remark_len,
-				this->Population->atoms, this->Population->residue,
-				this->Population->FA->res_cnt);
-		}
 	}
 	for (int j = 0; j < this->Population->FA->npar; ++j)
 	{
@@ -984,6 +986,12 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", Pose->chrom->app_evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		if (this->Population && this->Population->FA) {
+			append_tencom_lambda_ledger_remark(
+				remark, &remark_len,
+				this->Population->atoms, this->Population->residue,
+				this->Population->FA->res_cnt);
+		}
 
 		for (int j = 0; j < this->Population->FA->num_optres; ++j)
 		{
@@ -1059,12 +1067,6 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = %d\n", nModel);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			if (this->Population && this->Population->FA) {
-				append_tencom_lambda_ledger_remark(
-					remark, &remark_len,
-					this->Population->atoms, this->Population->residue,
-					this->Population->FA->res_cnt);
-			}
 		}
 
 		for (int j = 0; j < this->Population->FA->npar; ++j)
