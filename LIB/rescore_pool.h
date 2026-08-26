@@ -90,16 +90,21 @@ inline bool load_complex_coor_from_pdb(const char* pdb_path,
         if (!is_atom && !truncated) continue;
         if (!is_atom) { continue; }  // drained non-record tail counts as nothing
         if (std::strlen(buf) < 54) { ++skipped; continue; }
+        // PDB atom serial is columns 7–11. A digit in column 12 means the
+        // writer overflowed the field (e.g. HETATM4294967297); do not accept
+        // the truncated 5-byte prefix, which would otherwise collide with a
+        // legitimate serial (42949) and poison that slot.
+        if (buf[11] >= '0' && buf[11] <= '9') { ++skipped; continue; }
         char serial_buf[8];
         std::memcpy(serial_buf, buf + 6, 5);
         serial_buf[5] = '\0';
         char* endp = nullptr;
         const long serial = std::strtol(serial_buf, &endp, 10);
         if (endp == serial_buf) { ++skipped; continue; }
-        // Worst-case guard: out-of-int-range serials must NOT be truncated by
-        // the int cast (e.g. 4294967297 would wrap onto serial 1 and silently
-        // poison a mapped slot's coordinates).
-        if (serial < -2147483647L - 1 || serial > 2147483647L) { ++skipped; continue; }
+        // PDB serials are 1-based. Refuse 0/negative and values that would
+        // wrap on an int cast (the 5-column field cannot exceed INT_MAX, but
+        // keep the bound so a wider parse cannot poison slot 1).
+        if (serial < 1 || serial > 2147483647L) { ++skipped; continue; }
         auto it = serial_to_slot.find(static_cast<int>(serial));
         if (it == serial_to_slot.end()) {
             ++skipped;
