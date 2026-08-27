@@ -1312,6 +1312,13 @@ if(BUILD_TESTING)
         TEST_NAME TencomLedgerTests
     )
 
+    # test_rescore_pool_loader — serial-mapped pose PDB → coordinate-slot loader
+    # (header-only flexaids::load_complex_coor_from_pdb; no engine state).
+    flexaids_add_unit_test(test_rescore_pool_loader
+        SOURCES tests/test_rescore_pool_loader.cpp
+        TEST_NAME RescorePoolLoaderTests
+    )
+
     # test_json_config — JSON parser & config defaults tests (zero dependencies)
     flexaids_add_unit_test(test_json_config
         SOURCES tests/test_json_config.cpp

@@ -18,10 +18,11 @@
 
 #include "rescore_pool.h"
 
+#include <cstdio>
 #include <cstdlib>
-#include <sys/stat.h>
 #include <fstream>
 #include <string>
+#include <sys/stat.h>
 #include <unordered_map>
 
 namespace {
@@ -53,7 +54,7 @@ TEST(RescorePoolLoader, MapsSerialsToSlotsAndSkipsUnknowns)
     // Deliberately sparse map: serial 5 is unmapped and must be SKIPPED, not
     // silently compacted — a compaction bug would shift every later atom.
     std::unordered_map<int,int> m{{1, 7}, {100, 0}, {102, 3}};
-    float coor[4 * 3] = {};
+    float coor[8 * 3] = {};  // slot 7 is in-range; 4 slots would OOB under ASan
     int matched = -1, skipped = -1;
 
     const std::string path = write_temp("rescore_loader_ok.pdb", kPosePdb);
@@ -112,21 +113,22 @@ TEST(RescorePoolLoader, MalformedCoordinateLineIsSkippedNotFatal)
 
 TEST(RescorePoolLoader, OutOfIntRangeSerialDoesNotPoisonMappedSlot)
 {
-    // 4294967297 mod 2^32 == 1: a naive int cast would collide with serial 1
-    // and overwrite slot A's coordinates with garbage.
+    // 5-column parse of HETATM4294967297 is 42949. Put that key in the map so
+    // accepting the truncated prefix would write -9 into slot 2.
     const std::string pdb =
         "HETATM   1  N1  LIG B   1       1.000   2.000   3.000  1.00  0.00           N\n"
         "HETATM4294967297  XX  LIG B   1     -9.000  -9.000  -9.000  1.00  0.00           C\n";
     const std::string path = write_temp("rescore_overflow.pdb", pdb);
-    std::unordered_map<int,int> m{{1, 5}};
+    std::unordered_map<int,int> m{{1, 5}, {42949, 2}};
     float coor[6 * 3] = {};
     int matched = -1, skipped = -1;
     ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
         path.c_str(), m, coor, &matched, &skipped));
     EXPECT_EQ(matched, 1);
-    EXPECT_EQ(skipped, 1);  // the overflowing serial is refused, not wrapped
+    EXPECT_EQ(skipped, 1);  // overlong serial field is refused, not truncated
     EXPECT_FLOAT_EQ(coor[5 * 3 + 0], 1.0f);
     EXPECT_FLOAT_EQ(coor[5 * 3 + 1], 2.0f);
+    EXPECT_FLOAT_EQ(coor[2 * 3 + 0], 0.0f);  // collision slot stays empty
 }
 
 TEST(RescorePoolLoader, NegativeSerialIsSkipped)
@@ -135,14 +137,16 @@ TEST(RescorePoolLoader, NegativeSerialIsSkipped)
         "HETATM  -7  X1  LIG B   1       9.000   9.000   9.000  1.00  0.00           C\n"
         "HETATM   2  N1  LIG B   1       1.000   1.000   1.000  1.00  0.00           N\n";
     const std::string path = write_temp("rescore_neg.pdb", pdb);
-    std::unordered_map<int,int> m{{2, 0}};
-    float coor[3] = {};
+    // Include -7 so a loader that only skips unmapped keys would write slot 1.
+    std::unordered_map<int,int> m{{2, 0}, {-7, 1}};
+    float coor[2 * 3] = {};
     int matched = -1, skipped = -1;
     ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
         path.c_str(), m, coor, &matched, &skipped));
     EXPECT_EQ(matched, 1);
     EXPECT_EQ(skipped, 1);
     EXPECT_FLOAT_EQ(coor[0], 1.0f);
+    EXPECT_FLOAT_EQ(coor[1 * 3 + 0], 0.0f);
 }
 
 TEST(RescorePoolLoader, DuplicateSerialsLastWriteWinsAndCountsBoth)
@@ -247,11 +251,36 @@ TEST(RescorePoolLoader, Utf8BomBeforeFirstRecordHandled)
     EXPECT_FLOAT_EQ(coor[4 * 3 + 0], 7.0f);
 }
 
+TEST(RescorePoolLoader, PartialSerialFieldIsRejected)
+{
+    // Columns 7–11 are "   1A". strtol would yield 1; map serial 1 so a
+    // prefix-accepting loader would write slot 0.
+    const std::string pdb =
+        "HETATM   1A C1  LIG B   1       9.000   9.000   9.000  1.00  0.00           C\n"
+        "HETATM   2  N1  LIG B   1       1.000   1.000   1.000  1.00  0.00           N\n";
+    const std::string path = write_temp("rescore_partial_serial.pdb", pdb);
+    std::unordered_map<int,int> m{{1, 0}, {2, 1}};
+    float coor[2 * 3] = {};
+    int matched = -1, skipped = -1;
+    ASSERT_TRUE(flexaids::load_complex_coor_from_pdb(
+        path.c_str(), m, coor, &matched, &skipped));
+    EXPECT_EQ(matched, 1);
+    EXPECT_EQ(skipped, 1);
+    EXPECT_FLOAT_EQ(coor[0], 0.0f);
+    EXPECT_FLOAT_EQ(coor[1 * 3 + 0], 1.0f);
+}
+
 TEST(RescorePoolLoader, UnreadableFileFailsClosed)
 {
     const std::string path = write_temp("rescore_unreadable.pdb",
                                         "HETATM   1  C   LIG B   1       0.000   0.000   0.000\n");
     ::chmod(path.c_str(), 0000);
+    if (FILE* probe = std::fopen(path.c_str(), "r")) {
+        std::fclose(probe);
+        ::chmod(path.c_str(), 0644);
+        GTEST_SKIP() << "process can open chmod 000 files (privileged); "
+                        "EACCES path is not testable here";
+    }
     std::unordered_map<int,int> m{{1, 0}};
     float coor[3] = {};
     int matched = -1, skipped = -1;
