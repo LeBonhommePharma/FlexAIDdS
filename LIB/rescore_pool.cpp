@@ -11,6 +11,7 @@
 // =============================================================================
 
 #include "rescore_pool.h"
+#include "local_orient.h"
 #include "flexaid.h"
 #include "Vcontacts.h"
 
@@ -92,7 +93,16 @@ void rescore_pool_mode(FA_Global* FA, VC_Global* VC, atom* atoms,
 
     std::string dir = std::string(root_env) + "/" + target;
     if (!dir_exists(dir)) dir = root_env;
-    const auto files = list_pose_pdbs(dir);
+    auto files = list_pose_pdbs(dir);
+    if (files.empty() && dir != root_env) {
+        // Worst-case trap: an empty <root>/<label> shadowing a populated root
+        // would silently score nothing. Fall back to the root itself.
+        files = list_pose_pdbs(root_env);
+        if (!files.empty())
+            std::fprintf(stderr,
+                "[RESCORE] note: %s held no poses; fell back to pool root\n",
+                dir.c_str());
+    }
     if (files.empty()) {
         std::fprintf(stderr, "[RESCORE] no pose files for target %s in %s\n",
                      target.c_str(), dir.c_str());
@@ -115,6 +125,29 @@ void rescore_pool_mode(FA_Global* FA, VC_Global* VC, atom* atoms,
             std::fprintf(csv, "target,file,total,com,wal,sas,con,elec,hbond,"
                               "gist_desolv,metal_coord,entropy,pb_clash,rclash,"
                               "n_intraclashes,n_matched,n_skipped\n");
+    }
+
+    // ── WO-LOCALORIENT-1 setup (all inert unless FLEXAIDDS_LOCAL_ORIENT=1) ──
+    const auto lo_cfg = flexaids::local_orient::config_from_env();
+    const char* lo_dir = std::getenv("FLEXAIDDS_LOCAL_ORIENT_DIR");
+    FILE* lo_out = nullptr;
+    int lo_ran = 0, lo_improved = 0;
+    if (lo_cfg.enabled) {
+        if (const char* o = std::getenv("FLEXAIDDS_LOCAL_ORIENT_CSV")) {
+            if (o[0] != '\0') lo_out = std::fopen(o, "w");
+            if (lo_out)
+                std::fprintf(lo_out,
+                    "target,file,mode,cf_before,cf_after,cf_delta,evals,"
+                    "applied_x,applied_y,applied_z,magnitude,centroid_shift,"
+                    "max_bond_drift\n");
+        }
+        std::fprintf(stderr,
+            "[LOCAL-ORIENT] enabled mode=%s budget=%d step0=%.3f min_step=%.3f "
+            "out_dir=%s\n",
+            (lo_cfg.mode == flexaids::local_orient::Mode::Orient ? "orient"
+                                                                 : "jitter"),
+            lo_cfg.budget, lo_cfg.step0, lo_cfg.min_step,
+            (lo_dir && lo_dir[0]) ? lo_dir : "<none>");
     }
 
     int done = 0, refused = 0;
@@ -154,6 +187,66 @@ void rescore_pool_mode(FA_Global* FA, VC_Global* VC, atom* atoms,
                 atoms[i].coor[2] = coor[static_cast<size_t>(i) * 3 + 2];
             }
         }
+        // ── WO-LOCALORIENT-1: optional local ORIENTATION refinement ─────────
+        // Gate default OFF; when unset, lo.ran is false and not one coordinate
+        // has moved, so the scoring below is bit-identical to prior behaviour.
+        // When ON, atoms[] holds the refined pose and the CF assembled below is
+        // the REFINED pose's CF — the receipt records both.
+        const auto lo = flexaids::local_orient::refine(lo_cfg, FA, VC, atoms,
+                                                       residue, fa, la);
+        if (lo.ran) {
+            ++lo_ran;
+            if (lo.cf_after < lo.cf_before - 1e-9) ++lo_improved;
+            std::fprintf(stderr,
+                "[LOCAL-ORIENT] file=%s mode=%s cf_before=%.6f cf_after=%.6f "
+                "delta=%.6f evals=%d magnitude=%.3f%s centroid_shift=%.6f "
+                "max_bond_drift=%.6f\n",
+                basename_of(f).c_str(),
+                (lo_cfg.mode == flexaids::local_orient::Mode::Orient ? "orient"
+                                                                     : "jitter"),
+                lo.cf_before, lo.cf_after, lo.cf_after - lo.cf_before,
+                lo.evals_used, lo.magnitude,
+                (lo_cfg.mode == flexaids::local_orient::Mode::Orient ? "deg" : "A"),
+                lo.centroid_shift, lo.max_bond_drift);
+            // Fail LOUD, not silently: in orient mode a moved centroid or a
+            // changed internal distance means the stage did something other
+            // than a rigid rotation, and every downstream number would be
+            // attributed to the wrong degree of freedom.
+            if (lo_cfg.mode == flexaids::local_orient::Mode::Orient &&
+                lo.centroid_shift > 1e-3) {
+                std::fprintf(stderr,
+                    "[LOCAL-ORIENT] FATAL: centroid moved %.6f A in orient mode "
+                    "(must be 0)\n", lo.centroid_shift);
+                std::exit(5);
+            }
+            if (lo.max_bond_drift > 1e-2) {
+                std::fprintf(stderr,
+                    "[LOCAL-ORIENT] FATAL: internal distance drifted %.6f A "
+                    "(transform is not rigid; torsions must be frozen)\n",
+                    lo.max_bond_drift);
+                std::exit(5);
+            }
+            if (lo_out) {
+                std::fprintf(lo_out,
+                    "%s,%s,%s,%.6f,%.6f,%.6f,%d,%.4f,%.4f,%.4f,%.4f,%.6f,%.6f\n",
+                    target.c_str(), basename_of(f).c_str(),
+                    (lo_cfg.mode == flexaids::local_orient::Mode::Orient
+                         ? "orient" : "jitter"),
+                    lo.cf_before, lo.cf_after, lo.cf_after - lo.cf_before,
+                    lo.evals_used, lo.applied[0], lo.applied[1], lo.applied[2],
+                    lo.magnitude, lo.centroid_shift, lo.max_bond_drift);
+            }
+            // Refined pose is written ALONGSIDE the original, never over it.
+            if (lo_dir && lo_dir[0]) {
+                const std::string dst =
+                    std::string(lo_dir) + "/" + basename_of(f);
+                if (!flexaids::local_orient::write_refined_pdb(
+                        f.c_str(), dst.c_str(), atoms, fa, la))
+                    std::fprintf(stderr,
+                        "[LOCAL-ORIENT] WARN: could not write %s\n", dst.c_str());
+            }
+        }
+
         std::vector<std::pair<int,int>> intraclashes;
         bool error = false;
         const double penalty =
@@ -211,6 +304,15 @@ void rescore_pool_mode(FA_Global* FA, VC_Global* VC, atom* atoms,
     }
 
     if (csv) std::fclose(csv);
+    if (lo_out) std::fclose(lo_out);
+    if (lo_cfg.enabled) {
+        std::fprintf(stderr,
+            "[LOCAL-ORIENT] done target=%s mode=%s refined=%d improved_cf=%d\n",
+            target.c_str(),
+            (lo_cfg.mode == flexaids::local_orient::Mode::Orient ? "orient"
+                                                                 : "jitter"),
+            lo_ran, lo_improved);
+    }
     std::fprintf(stderr,
         "[RESCORE] done target=%s scored=%d refused=%d (GA skipped)\n",
         target.c_str(), done, refused);
