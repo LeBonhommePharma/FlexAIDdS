@@ -10,6 +10,7 @@
 #include "SdfReader.h"
 #include "CifReader.h"
 #include "CleftDetector.h"
+#include "site_confine.h"
 #include "statmech.h"
 #include "TargetServer.h"  // P1: for grand canonical TargetServer context in cluster paths
 #include "ProcessLigand/ProcessLigand.h"
@@ -1052,7 +1053,25 @@ int main(int argc, char **argv){
 			// Snapshot protocol once for apply_config (no mid-apply getenv dual path).
 			const flexaids::ProtocolConfig apply_proto = flexaids::ProtocolConfig::from_env();
 			apply_config(config, FA, GB, &apply_proto);
-			if (GB->seed != 0) {
+			if (GB->seed == 0) {
+				std::uint64_t env = 0;
+				if (flexaids_rng::has_master_seed()) {
+					const auto ms = static_cast<unsigned int>(flexaids_rng::master_seed() & 0x7fffffffu);
+					GB->seed = ms ? static_cast<int>(ms) : 1;
+				} else if (flexaids_rng::env_seed(env)) {
+					const auto es = static_cast<unsigned int>(env & 0x7fffffffu);
+					GB->seed = es ? static_cast<int>(es) : 1;
+					flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
+				} else {
+					const std::string key = !redock_pdb_id.empty()
+					    ? (std::string("redock:") + redock_pdb_id)
+					    : (receptor_path + "|" + ligand_path);
+					GB->seed = flexaids_rng::deterministic_seed_from_key(key.c_str());
+					flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
+					printf("[SEED] ga.seed=0; assigned deterministic seed %d from '%s'\n",
+					       GB->seed, key.c_str());
+				}
+			} else {
 				flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
 			}
 
@@ -1970,6 +1989,36 @@ int main(int argc, char **argv){
 				}
 			}
 
+			// --redock: the extracted cognate ligand is already loaded at crystal
+			// coordinates. Use that centroid as the oracle so SURFNET + SITE-CONFINE
+			// target the known pocket (FLEXAIDDS_ORACLE_SITE not required).
+			if (!using_oracle && !using_explicit_cleft && !redock_pdb_id.empty()) {
+				const int lig_res = FA->res_cnt;
+				if (lig_res >= 1 && residue[lig_res].fatm && residue[lig_res].latm) {
+					const int fa = residue[lig_res].fatm[0];
+					const int la = residue[lig_res].latm[0];
+					if (la >= fa) {
+						double sx = 0, sy = 0, sz = 0;
+						int nn = 0;
+						for (int a = fa; a <= la; ++a) {
+							sx += atoms[a].coor[0];
+							sy += atoms[a].coor[1];
+							sz += atoms[a].coor[2];
+							++nn;
+						}
+						if (nn > 0) {
+							oracle_cx = static_cast<float>(sx / nn);
+							oracle_cy = static_cast<float>(sy / nn);
+							oracle_cz = static_cast<float>(sz / nn);
+							using_oracle = true;
+							printf("[REDOCK] oracle centroid from cognate ligand: "
+							       "%.2f %.2f %.2f (%d atoms)\n",
+							       oracle_cx, oracle_cy, oracle_cz, nn);
+						}
+					}
+				}
+			}
+
 			// Always run SURFNET void-space detection (probes placed in void between atoms)
 			// unless a child process was given one explicit cleft sphere file.
 			// In oracle mode, spatially pre-filter atoms to the oracle centroid sphere so
@@ -2110,7 +2159,7 @@ int main(int argc, char **argv){
 						printf("SITE-CONFINE: sparse-pocket retry to %.1f A -> %d pts\n",
 						       rcut, (int)keep.size());
 					}
-					if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID && (int)keep.size() < FA->num_grd - 1) {
+					if (flexaids::site_confine_should_rebuild((int)keep.size(), FA->num_grd - 1)) {
 						gridpoint* confined = nullptr;
 						int new_count = mif::rebuild_cleftgrid(cleftgrid, FA->num_grd, keep, &confined);
 						if (confined && new_count > 0) {
@@ -2122,7 +2171,7 @@ int main(int argc, char **argv){
 							printf("SITE-CONFINE: %d pts within %.1f A of cognate centroid (expanded from %.1f A, %d->%d grid pts)\n",
 							       new_count - 1, rcut, rcut_initial, old_count - 1, new_count - 1);
 							if ((int)keep.size() < MIN_SITE_GRID) {
-								printf("SITE-CONFINE: WARNING confined to only %d pts (< MIN_SITE_GRID=%d) after expanding to %.1f A\n",
+								printf("SITE-CONFINE: WARNING confined to only %d pts (< MIN_SITE_GRID=%d) after expanding to %.1f A — keeping pocket grid (not full-grid fallback)\n",
 								       new_count - 1, MIN_SITE_GRID, rcut);
 							}
 						}
@@ -2158,8 +2207,7 @@ int main(int argc, char **argv){
 				       "n_spheres=%d rcut=%.1f keep=%d/%d\n",
 				       cx, cy, cz, cleft_geom.extent_A, cleft_geom.n_spheres,
 				       rcut, (int)keep.size(), FA->num_grd - 1);
-				if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID
-				    && (int)keep.size() < FA->num_grd - 1) {
+				if (flexaids::site_confine_should_rebuild((int)keep.size(), FA->num_grd - 1)) {
 					gridpoint* confined = nullptr;
 					int new_count = mif::rebuild_cleftgrid(
 						cleftgrid, FA->num_grd, keep, &confined);

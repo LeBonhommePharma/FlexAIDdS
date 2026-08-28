@@ -7,7 +7,9 @@
  * Implements a SURFNET-style gap-sphere algorithm (the same geometric
  * principle used by GetCleft):
  *   1. For every pair of protein surface atoms within a distance cutoff,
- *      place a probe sphere midway between them.
+ *      place a probe sphere midway between them. Ligand / HETATM residues
+ *      (residue.type == 1) are excluded so a loaded cognate ligand cannot
+ *      occupy the pocket during SURFNET (required for --redock).
  *   2. Shrink the probe until no other protein atom penetrates it
  *      (or discard if radius falls below a minimum).
  *   3. Cluster surviving spheres by spatial proximity (single-linkage)
