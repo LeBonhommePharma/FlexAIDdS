@@ -351,14 +351,21 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		if (flexaids_rng::has_master_seed()) {
 			tt = static_cast<unsigned int>(flexaids_rng::master_seed());
 		} else {
-			tt = static_cast<unsigned int>(time(0));
+			std::uint64_t env_seed = 0;
+			if (flexaids_rng::env_seed(env_seed)) {
+				tt = static_cast<unsigned int>(env_seed);
+			} else {
+				fprintf(stderr,
+				        "ERROR: GA seed is 0 and FLEXAID_SEED is unset. "
+				        "Refusing time(0) fallback (non-reproducible). "
+				        "Set GB->seed or FLEXAID_SEED.\n");
+				Terminate(1);
+			}
 		}
 	} else {
 		tt = GB->seed;
 	}
-	//tt = (unsigned)1;
 	printf("srand=%u\n", tt);
-	srand(tt);
 	flexaids_rng::set_master_seed(static_cast<std::uint64_t>(tt));
 	std::mt19937 rng(tt);
 

@@ -53,7 +53,7 @@ struct BinaryFileHeader {
 /// Single snapshot record — header + coordinate payload.
 /// On disk: score(4B) + generation(4B) + coords(12*n_atoms B)
 struct BinarySnapshotRecord {
-    float    score;          ///< energy / CF score (kcal/mol)
+    float    score;          ///< CF/contact-function scoring proxy (a.u., not kcal/mol)
     uint32_t generation;     ///< GA generation index
     // Followed by float coords[3 * n_atoms] — NOT packed inline
     // because the array length is variable (depends on header.n_atoms).

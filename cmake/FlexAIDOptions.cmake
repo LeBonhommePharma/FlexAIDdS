@@ -74,11 +74,11 @@ option(FLEXAIDS_USE_SOA_DISTANCES "Route Voronoi hot-path distances through Atom
 # NOT guaranteed bit-identical across CPU tunings even though this flag does
 # not itself relax IEEE semantics the way -ffast-math does. The resulting
 # binary is also NOT portable: it may refuse to run, or silently use a
-# codegen path unverified on a different Apple Silicon SKU. Default ON for
-# local performance work on the machine that will also run the binary; set
-# OFF for portable builds or when byte-for-byte parity with a reference
-# build (e.g. CI, another reviewer's machine) is required.
-option(FLEXAIDS_MCPU_NATIVE "Compile flexaid_core with -mcpu=native on Apple/Clang arm64 (perf; not portable across machines, may change FP codegen under -ffast-math)" ON)
+# codegen path unverified on a different Apple Silicon SKU.
+# Default OFF to match BUILD_FLEXAID_FAST and METHODOLOGY §1 (engine SHA
+# comparable across machines). Set ON explicitly for local perf work on the
+# machine that will also run the binary.
+option(FLEXAIDS_MCPU_NATIVE "Compile flexaid_core with -mcpu=native on Apple/Clang arm64 (perf; not portable across machines, may change FP codegen under -ffast-math)" OFF)
 
 # Parallelism & core libs
 option(FLEXAIDS_USE_OPENMP  "Enable OpenMP thread parallelism"    ON)

@@ -239,9 +239,8 @@ else()
     # this OBJECT library only. Not portable across machines; may shift FP
     # codegen (FMA contraction, vector width) under the -ffast-math already
     # enabled above, so a build with this ON is not guaranteed bit-identical
-    # to one with it OFF. Default ON here matches local perf-tuning use;
-    # portable/reproducible builds should configure with
-    # -DFLEXAIDS_MCPU_NATIVE=OFF.
+    # to one with it OFF. Default OFF (METHODOLOGY §1 / portable engine SHA).
+    # Local perf work: configure with -DFLEXAIDS_MCPU_NATIVE=ON.
     if(FLEXAIDS_MCPU_NATIVE)
         target_compile_options(flexaid_core PRIVATE
             $<$<AND:$<CXX_COMPILER_ID:AppleClang,Clang>,$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},arm64>>:-mcpu=native>)

@@ -10,6 +10,7 @@
 #include <cmath>
 #include <numeric>
 #include <random>
+#include <thread>
 #include <vector>
 
 static constexpr double EPSILON = 1e-6;
@@ -51,6 +52,19 @@ TEST(HardwareDetection, HardwareReportIsNonEmpty) {
     EXPECT_GT(report.size(), 50u);
     EXPECT_NE(report.find("CPU:"), std::string::npos);
     EXPECT_NE(report.find("Cores:"), std::string::npos);
+}
+
+TEST(HardwareDetection, ConcurrentDetectDoesNotCrash) {
+    auto& d = hw::UnifiedHardwareDispatch::instance();
+    std::vector<std::thread> threads;
+    threads.reserve(8);
+    for (int i = 0; i < 8; ++i) {
+        threads.emplace_back([&d] {
+            EXPECT_NO_THROW(d.detect());
+            EXPECT_TRUE(d.is_available(hw::Backend::SCALAR));
+        });
+    }
+    for (auto& t : threads) t.join();
 }
 
 TEST(HardwareDetection, BackendNameIsValid) {

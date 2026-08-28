@@ -15,6 +15,7 @@
 #include <array>
 #include <functional>
 #include <chrono>
+#include <mutex>
 #include <cstdint>
 #include <span>
 #include <optional>
@@ -212,9 +213,10 @@ public:
 private:
     UnifiedHardwareDispatch() = default;
 
-    HardwareInfo info_;
-    bool         detected_  = false;
-    Backend      override_  = Backend::AUTO;
+    HardwareInfo     info_;
+    std::once_flag   detect_once_;
+    bool             detected_  = false;
+    Backend          override_  = Backend::AUTO;
 
     // Internal detection helpers
     void detect_cpu();

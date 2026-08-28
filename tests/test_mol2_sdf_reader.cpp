@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include "../LIB/Mol2Reader.h"
 #include "../LIB/SdfReader.h"
+#include "../LIB/CifReader.h"
 #include "../LIB/fileio.h"
 #include "../LIB/LigandRingFlex/LigandRingFlex.h"  // complete RingFlexGenes for delete
 #include <algorithm>
@@ -964,6 +965,105 @@ TEST_F(SdfReaderTest, Real1M2Z_SdfReadBuildlistBuildccGeometryPreserved) {
     }
 
     cleanup_fa(&FA, atoms, residue);
+}
+
+// ===========================================================================
+// CIF READER — Cartn must not silently become the origin
+// ===========================================================================
+
+static const char* kMinimalCifHeader =
+    "data_test\n"
+    "loop_\n"
+    "_atom_site.group_PDB\n"
+    "_atom_site.id\n"
+    "_atom_site.type_symbol\n"
+    "_atom_site.label_atom_id\n"
+    "_atom_site.label_alt_id\n"
+    "_atom_site.label_comp_id\n"
+    "_atom_site.label_asym_id\n"
+    "_atom_site.label_seq_id\n"
+    "_atom_site.Cartn_x\n"
+    "_atom_site.Cartn_y\n"
+    "_atom_site.Cartn_z\n"
+    "_atom_site.occupancy\n"
+    "_atom_site.B_iso_or_equiv\n";
+
+TEST(CifReaderTest, ReadsFiniteCoordinates) {
+    const std::string path =
+        std::filesystem::temp_directory_path().string() + "/flexaids_cif_ok.cif";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.good());
+        out << kMinimalCifHeader
+            << "ATOM 1 C CA . ALA A 1 1.000 2.000 3.000 1.00 20.00\n";
+    }
+
+    FA_Global FA{};
+    FA.MIN_NUM_ATOM = 32;
+    FA.MIN_NUM_RESIDUE = 8;
+    FA.MIN_ROTAMER = 1;
+    FA.MIN_FLEX_BONDS = 5;
+    FA.ntypes = 40;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+
+    EXPECT_EQ(read_cif_receptor(&FA, &atoms, &residue, path.c_str()), 1);
+    ASSERT_GE(FA.atm_cnt, 1);
+    EXPECT_NEAR(atoms[1].coor[0], 1.0f, 1e-4f);
+    EXPECT_NEAR(atoms[1].coor[1], 2.0f, 1e-4f);
+    EXPECT_NEAR(atoms[1].coor[2], 3.0f, 1e-4f);
+
+    for (int r = 0; r <= FA.res_cnt; ++r) {
+        free(residue[r].fatm);
+        free(residue[r].latm);
+        free(residue[r].bond);
+    }
+    free(FA.num_atm);
+    free(atoms);
+    free(residue);
+    std::filesystem::remove(path);
+}
+
+TEST(CifReaderTest, MissingCartnDoesNotOriginFill) {
+    const std::string path =
+        std::filesystem::temp_directory_path().string() + "/flexaids_cif_missing.cif";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.good());
+        out << kMinimalCifHeader
+            << "ATOM 1 C CA . ALA A 1 ? 2.000 3.000 1.00 20.00\n";
+    }
+
+    FA_Global FA{};
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+
+    EXPECT_EQ(read_cif_receptor(&FA, &atoms, &residue, path.c_str()), 0);
+
+    cleanup_fa(&FA, atoms, residue);
+    std::filesystem::remove(path);
+}
+
+TEST(CifReaderTest, GarbageCartnDoesNotOriginFill) {
+    const std::string path =
+        std::filesystem::temp_directory_path().string() + "/flexaids_cif_garbage.cif";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.good());
+        out << kMinimalCifHeader
+            << "ATOM 1 C CA . ALA A 1 not_a_number 2.000 3.000 1.00 20.00\n";
+    }
+
+    FA_Global FA{};
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    init_fa_for_reader(&FA, &atoms, &residue);
+
+    EXPECT_EQ(read_cif_receptor(&FA, &atoms, &residue, path.c_str()), 0);
+
+    cleanup_fa(&FA, atoms, residue);
+    std::filesystem::remove(path);
 }
 
 // ===========================================================================

@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <cmath>
 #include <cerrno>
 #include <string>
 #include <vector>
@@ -131,11 +132,27 @@ static std::string get_val(const std::vector<std::string>& toks, int col_idx) {
     return toks[col_idx];
 }
 
-// Get float value, return 0.0 if missing
+// Occupancy / B-factor: missing or unparsable → 0.0 (conventional PDB default).
+// NEVER use this for Cartn_*; a silent 0.0 coordinate places the atom at the
+// origin and corrupts Voronoi contacts, CF scores, and RMSD.
 static float get_float(const std::vector<std::string>& toks, int col_idx) {
     std::string v = get_val(toks, col_idx);
     if (v == "?" || v == ".") return 0.0f;
     return static_cast<float>(std::atof(v.c_str()));
+}
+
+// Strict Cartesian parse. Rejects missing ("?"/"."), empty, non-numeric, and
+// range errors. Callers must fail the file rather than origin-fill.
+static bool parse_cif_coord(const std::string& v, float& out) {
+    if (v.empty() || v == "?" || v == ".") return false;
+    char* end = nullptr;
+    errno = 0;
+    const double x = std::strtod(v.c_str(), &end);
+    if (end == v.c_str() || errno == ERANGE || !std::isfinite(x)) return false;
+    while (end && *end && std::isspace(static_cast<unsigned char>(*end))) ++end;
+    if (end && *end != '\0') return false;
+    out = static_cast<float>(x);
+    return true;
 }
 
 // Get int value, return 0 if missing
@@ -274,6 +291,7 @@ static int parse_cif_atom_site(
     };
 
     std::vector<CifAtom> cif_atoms;
+    bool coord_error = false;
 
     // Process the current line (first data line) and continue
     auto process_line = [&](const std::string& line) {
@@ -330,9 +348,16 @@ static int parse_cif_atom_site(
         std::string ins = get_val(toks, cols.pdbx_PDB_ins_code);
         a.ins_code = (ins == "?" || ins == ".") ? ' ' : ins[0];
 
-        a.x = get_float(toks, cols.Cartn_x);
-        a.y = get_float(toks, cols.Cartn_y);
-        a.z = get_float(toks, cols.Cartn_z);
+        if (!parse_cif_coord(get_val(toks, cols.Cartn_x), a.x) ||
+            !parse_cif_coord(get_val(toks, cols.Cartn_y), a.y) ||
+            !parse_cif_coord(get_val(toks, cols.Cartn_z), a.z)) {
+            fprintf(stderr,
+                    "ERROR: CIF atom serial %d has missing or unparsable Cartn_x/y/z in %s "
+                    "(refusing origin-fill)\n",
+                    a.serial, cif_file);
+            coord_error = true;
+            return true;
+        }
         a.occupancy = get_float(toks, cols.occupancy);
         a.bfactor   = get_float(toks, cols.B_iso_or_equiv);
         a.charge    = get_int(toks, cols.pdbx_formal_charge);
@@ -367,6 +392,11 @@ static int parse_cif_atom_site(
     }
 
     fclose(fp);
+
+    if (coord_error) {
+        fprintf(stderr, "ERROR: Rejecting CIF file with unparsable coordinates: %s\n", cif_file);
+        return 0;
+    }
 
     if (cif_atoms.empty()) {
         fprintf(stderr, "ERROR: No atoms found in CIF file: %s\n", cif_file);
@@ -705,6 +735,7 @@ int read_multi_model_cif(FA_Global* FA, atom** atoms, resid** residue,
     };
     std::vector<CifModelAtom> all_atoms;
     std::map<int, int> model_map;  // model_num -> sequential index
+    bool coord_error = false;
 
     auto process = [&](const std::string& line) -> bool {
         if (line.empty() || line[0] == '#' || line[0] == '_' || line == "loop_")
@@ -723,9 +754,16 @@ int read_multi_model_cif(FA_Global* FA, atom** atoms, resid** residue,
         CifModelAtom a;
         a.model = get_int(toks, cols.pdbx_PDB_model_num);
         if (a.model <= 0) a.model = 1;
-        a.x = get_float(toks, cols.Cartn_x);
-        a.y = get_float(toks, cols.Cartn_y);
-        a.z = get_float(toks, cols.Cartn_z);
+        if (!parse_cif_coord(get_val(toks, cols.Cartn_x), a.x) ||
+            !parse_cif_coord(get_val(toks, cols.Cartn_y), a.y) ||
+            !parse_cif_coord(get_val(toks, cols.Cartn_z), a.z)) {
+            fprintf(stderr,
+                    "ERROR: CIF multi-model atom has missing or unparsable Cartn_x/y/z in %s "
+                    "(refusing origin-fill)\n",
+                    cif_file);
+            coord_error = true;
+            return true;
+        }
         all_atoms.push_back(a);
 
         if (model_map.find(a.model) == model_map.end()) {
@@ -750,6 +788,12 @@ int read_multi_model_cif(FA_Global* FA, atom** atoms, resid** residue,
         if (!process(line)) break;
     }
     fclose(fp);
+
+    if (coord_error) {
+        fprintf(stderr, "ERROR: Rejecting CIF multi-model file with unparsable coordinates: %s\n",
+                cif_file);
+        return 0;
+    }
 
     int n_models = static_cast<int>(model_map.size());
     if (n_models == 0) {

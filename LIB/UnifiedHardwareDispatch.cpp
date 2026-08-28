@@ -70,11 +70,12 @@ UnifiedHardwareDispatch& UnifiedHardwareDispatch::instance() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 void UnifiedHardwareDispatch::detect() {
-    if (detected_) return;
-    detect_cpu();
-    detect_gpu();
-    detect_libraries();
-    detected_ = true;
+    std::call_once(detect_once_, [this] {
+        detect_cpu();
+        detect_gpu();
+        detect_libraries();
+        detected_ = true;
+    });
 }
 
 void UnifiedHardwareDispatch::detect_cpu() {

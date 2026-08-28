@@ -27,8 +27,10 @@
 
 namespace {
 
-// Boltzmann constant kcal/mol/K (matches kB_kcal convention in engine)
-constexpr double kB_kcal = 0.001987204258;
+// Boltzmann constant kcal/mol/K — MUST match statmech::kB_kcal (0.001987206).
+// Local copy: this TU is also linked into the mock CMA-ES test without
+// flexaid_core / statmech.h. Do not drift this literal.
+constexpr double kB_kcal = 0.001987206;
 constexpr double kT_300  = kB_kcal * 300.0;  // ≈ 0.596
 
 // ── Small dense linear algebra (no Eigen dependency for adapter isolation) ───
