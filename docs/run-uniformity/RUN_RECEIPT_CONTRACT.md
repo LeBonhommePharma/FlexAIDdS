@@ -202,8 +202,45 @@ on disk are the corpus every existing analysis script walks; a fix that leaves
 them ambiguous has not fixed the problem those scripts have. Two renames buy
 correctness for all 476.
 
-**Approved by LP, then held on three findings surfaced by the pre-rename
-checks. Not applied. The files are still named `RUN_RECEIPT.json` on disk.**
+### Applied 2026-08-28 by Grok Bot
+
+Both files are now `PREREGISTRATION.json`. Verified: `find` returns two
+`PREREGISTRATION.json`, and `grep -L schema_version --include=RUN_RECEIPT.json`
+across the whole corpus returns **nothing** — every remaining `RUN_RECEIPT.json`
+is engine dialect. The filename collision described above no longer exists.
+
+Post-rename census:
+
+```
+RUN_RECEIPT.json        476   all engine dialect
+PREREGISTRATION.json      2   campaign dialect
+```
+
+(476 rather than 474 because the live campaign added two engine receipts while
+the two campaign files were being renamed out of the count.)
+
+**The rename is invisible to git.** `~/flexaidds_results` is not a repository, so
+there is no commit, no diff, and no record of it beyond this paragraph and the
+filesystem mtime — which `mv` preserved, so even that points at 2026-08-27 rather
+than at the rename. This paragraph is the only durable record that it happened.
+That is worth noticing: the change was made to improve provenance and is itself
+unprovenanced.
+
+**The by-name consumer was fixed in the same pass**, and the fix is now
+load-bearing rather than preventative — before it, pointing
+`scripts/check_run_receipt.py` at either directory raised `FileNotFoundError`.
+It now resolves `PREREGISTRATION.json`, classifies the dialect structurally, and
+validates the campaign dialect against its own contract. Both real files pass
+(`OK [campaign dialect]`), and `--require-engine-dialect` reports the mismatch in
+one clear line instead of a pile of missing-key errors. Covered by
+`tests/test_check_run_receipt.py` against fixtures of both dialects.
+
+---
+
+The reasoning that preceded the rename is kept below, because the checks are the
+reusable part.
+
+**Three findings from the pre-rename checks:**
 
 1. **A by-name consumer exists.** `scripts/check_run_receipt.py:36-45` resolves
    `RUN_RECEIPT.json` by filename inside a campaign directory given as a
@@ -222,17 +259,13 @@ checks. Not applied. The files are still named `RUN_RECEIPT.json` on disk.**
    execution, but the stated preference was to act in a gap, and 1SQ5 S0 had
    launched by the time the checks completed.
 
-None of these makes the rename wrong. The retroactive-census argument above
-stands. They make it a change to schedule deliberately — with `check_run_receipt.py`
-taught to recognise the campaign dialect first, both paths named explicitly, and
-a quiet window — rather than one to land opportunistically.
-
-**If it is applied, it will be invisible to history.** Both files live under
-`~/flexaidds_results`, which is not a git repository. A rename there leaves no
-commit, no diff, and no record beyond this paragraph and the filesystem mtime.
-That is itself an argument for doing it deliberately: an untracked rename is
-exactly the kind of change that becomes unattributable three weeks later, which
-is the failure mode this entire document exists to describe.
+None of these made the rename wrong — the retroactive-census argument stands, and
+the rename has since been applied. They made it a change to *schedule*: teach
+`check_run_receipt.py` the campaign dialect, name both paths explicitly, act in a
+quiet window. Finding 1 in particular is the reusable lesson. A rename is safe
+only when nothing consumes the old name, and "nothing hardcodes this path" is not
+the same test as "nothing resolves this filename" — the consumer here did the
+second, which a search for the batch name would never have found.
 
 Note also that the collision **predates this work**. It is the state of the
 corpus as found on 2026-08-28, not something Phase 0 or Phase 1 introduces.

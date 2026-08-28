@@ -159,3 +159,157 @@ Not writing it costs the ability to ever distinguish a completed arm from a
 killed one — retroactively, permanently, for every run in that shape. The
 `--redock` receipt gap on 2026-08-28 is the same trade already resolved the wrong
 way once: the missing write was free, and its absence was unrecoverable.
+
+---
+
+# `DONE` — normative specification
+
+**This section is normative.** Everything above it is rationale; this is the
+contract an implementer conforms to. Frozen 2026-08-28 ahead of its first real
+implementer.
+
+The keywords MUST, MUST NOT and SHOULD carry their usual force.
+
+## Location and name
+
+The file MUST be named exactly `DONE`, with no extension, at the **run root** —
+the same directory that holds `bin/` and `run/`, i.e. the directory `new_run_dir`
+returns.
+
+## Contents
+
+Plain text, one `key=value` per line, LF-terminated, UTF-8. Same lexical rules as
+`KIND` (see `KIND_SCHEMA.md`): no quoting, no comments, no blank lines, order not
+significant, readers MUST ignore unknown keys.
+
+```
+status=ok
+rc=0
+targets_done=2
+targets_total=2
+finished_utc=2026-08-28T21:14:07Z
+engine_sha=5ecbb89eebede8cba9271cbdd386496583bfbe2178cd9ded3db0f5512f11b511
+run=gan2vsq5_20260828_162000/S1_1SQ5
+```
+
+| Key | Required | Value | Meaning |
+|---|---|---|---|
+| `status` | yes | `ok` \| `partial` \| `failed` | The runner's verdict on its own work |
+| `rc` | yes | integer | Runner process exit code, verbatim |
+| `targets_done` | yes | integer | Targets that produced **real output** — see below |
+| `targets_total` | yes | integer | Targets the run was asked to do |
+| `finished_utc` | yes | ISO-8601 UTC, `%Y-%m-%dT%H:%M:%SZ` | When the runner reached its end |
+| `engine_sha` | yes | 64 lowercase hex | SHA-256 of the binary **actually invoked** |
+| `run` | yes | string | Batch/arm identifier, e.g. `<batch>/<arm>` |
+
+### `targets_done` counts poses, not rows
+
+`targets_done` MUST count targets that produced at least one real pose with a
+non-sentinel RMSD. It MUST NOT be a count of `result.csv` files or of rows in
+them.
+
+This is not pedantry. arm10 once recorded `rc=0 85/85` while 83 of the 85 targets
+held zero poses and `-1.0000` sentinels — a `result.csv` existed for every
+target and every one of them was empty. `run_t13_twotarget.sh:243-252` implements
+the correct test per target; a conforming writer does the same.
+
+### `status` values
+
+| Value | Condition |
+|---|---|
+| `ok` | `rc == 0` **and** `targets_done == targets_total` |
+| `partial` | The runner finished, but `targets_done < targets_total` |
+| `failed` | `rc != 0`, or the run produced no usable output at all |
+
+`status=ok` with `targets_done < targets_total` is a contract violation. A reader
+that sees it MUST treat the file as untrustworthy rather than believing the
+`status` field, because the two claims cannot both be true and the count is the
+one derived from evidence.
+
+## The three rules
+
+These are the specification. The field list above is just how it is spelled.
+
+**1 · `DONE` MUST be written last**, after every other output the run produces.
+
+If it can be written before the work completes, it degenerates into
+`RUN_RECEIPT.json` — which this codebase writes at `DatasetRunner.cpp:5395`,
+ten lines before docking starts, making it a statement of intent that proves
+nothing about completion (see `RUN_RECEIPT_CONTRACT.md` §5). That failure already
+exists here. Do not reproduce it.
+
+**2 · `DONE` MUST be written atomically** — write a temp file in the same
+directory, then `rename()` it into place.
+
+`rename(2)` within a filesystem is atomic; a plain `>` redirect is not. A crash
+midway through a non-atomic write leaves a truncated `DONE` that still parses as
+far as a naive reader gets, which reads as completion. A partial completion
+marker is worse than none, because none is honest.
+
+**3 · `DONE` MUST be written whenever the runner reaches its end, including on
+failure.** It is not a success marker.
+
+Therefore, and this is the only thing a reader needs to remember:
+
+> **Absence means "died or still running." Presence means "the runner finished —
+> see `status` for the outcome."**
+
+Those are different claims, and conflating them is what made this document
+necessary. A writer that emits `DONE` only on success collapses them again: its
+absence would then mean "died, still running, *or* finished badly", which is not
+a signal.
+
+## Why nothing else can substitute
+
+`DONE` is the **only durable killed-versus-finished signal**. Every cheaper
+candidate fails the same way — it is a fact about the *artifacts*, and completion
+is a fact about the *process*:
+
+| Candidate | Why it fails |
+|---|---|
+| directory `mtime` | One scalar. Finished, killed, never-started and still-running all produce a last-write time. Not injective — the four states share the observable. |
+| `result.csv` present | Written per target as the run proceeds. Present long before the run ends, and present in full for arm10's 83 empty targets. |
+| receipt `binary_sha256` | Identifies *which engine*, written before docking starts. Says nothing about whether it ran to completion. |
+| pose count | Cannot distinguish "all poses written" from "killed after the last one it happened to write". |
+| process absent | True of both a finished run and a killed one. Also unobservable retroactively. |
+
+Grok Bot currently uses `result.csv` + receipt sha as a stand-in for exactly this
+reason: they are the best available proxies, and they are proxies. They answer
+"what artifacts exist", never "did the runner reach its end". Only a token
+written *by code that ran after the work* answers that, because only such a token
+is evidence of reaching a line.
+
+## Relationship to `KIND` and `SKIPPED`
+
+Three files, three different claims. They are not redundant:
+
+- **`DONE`** — primary evidence, written by the runner. What the process did.
+- **`KIND.status`** — the index, in a fixed vocabulary a census reads without
+  parsing free text. What the directory is worth.
+- **`SKIPPED`** — never started. A missing observation, not a biased one.
+
+Mapping, for a driver sealing `KIND` after writing `DONE`:
+
+| `DONE` | → `KIND.status` |
+|---|---|
+| `status=ok` | `ok` |
+| `status=partial` | `partial` |
+| `status=failed`, `targets_done == 0` | `void` |
+| `status=failed`, `targets_done > 0` | `partial` |
+| *(no `DONE`, `SKIPPED` present)* | `unknown` |
+| *(no `DONE`, no `SKIPPED`)* | `unknown` — died or still running |
+
+The two vocabularies differ on purpose. `DONE` has no `void` or `unknown`:
+writing it is itself the evidence, so `unknown` is unreachable, and `void` is a
+judgement about scientific worth rather than about what the runner did. `KIND`
+has no `failed` for the same reason in reverse — a census asks whether results
+are usable, not how the process exited. **When they disagree, `DONE` wins and the
+index is stale.**
+
+## Compatibility
+
+`ga1jd0_20260828_005342/DONE` and `ga1jd0_20260828_012729/DONE` predate this
+specification and use an earlier informal single-line form
+(`DONE <ISO8601>`). They are grandfathered, not retrofitted. A reader
+encountering a `DONE` with no `=` on its first line MUST treat it as the legacy
+form: presence still means the runner finished, and no other field is available.

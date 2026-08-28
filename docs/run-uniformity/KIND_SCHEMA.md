@@ -84,6 +84,12 @@ directory that has produced nothing yet has not earned `ok`. Sealing it is the
 driver's job at end of run, alongside `DONE`. Backfill defaults to `unknown` and
 promotes only on positive evidence.
 
+`DONE` uses a different vocabulary (`ok|partial|failed`) on purpose — it reports
+what the *runner* did, where `status` reports what the *directory is worth*. The
+normative mapping between them is in `CONVENTION.md`, under
+"`DONE` — normative specification". Where the two disagree, `DONE` is primary
+evidence and `status` is a stale index.
+
 ### `by` — carried, pending LP's ruling
 
 LP has not ruled on whether seat attribution belongs in the schema. It is
