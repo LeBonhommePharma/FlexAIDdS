@@ -1,3 +1,4 @@
+#include "TuiColor.h"
 #include "gaboom.h"
 #include "top_helpers.h"
 #include "fileio.h"
@@ -352,7 +353,7 @@ static bool prepare_redock_from_rcsb(const std::string& pdb_id,
 }
 
 static void print_usage(const char* progname) {
-	printf("FlexAIDdS — Entropy-driven molecular docking\n\n");
+	tui::brand(); printf(" %s—%s Entropy-driven molecular docking\n\n", tui::muted(), tui::reset());
 	printf("Usage:\n");
 	printf("  %s <receptor> <ligand> [options]\n\n", progname);
 	printf("  Files can be in any order. FlexAIDdS auto-detects which is\n");
@@ -1062,9 +1063,9 @@ int main(int argc, char **argv){
 					fprintf(stderr, "[GRID-CACHE] grid_file=%s\n", cached_grid_path.c_str());
 			}
 
-			printf("FlexAIDdS config: T=%uK, ligand_flex=%s, intramolecular=%s, "
+			printf("%sFlexAIDdS config:%s %sT=%uK%s, ligand_flex=%s, intramolecular=%s, "
 			       "scoring=%s, intermolecular_clash_ratio=%.3f\n",
-				FA->temperature,
+				tui::muted(), tui::reset(), tui::T(), FA->temperature, tui::reset(),
 				FA->deelig_flex ? "ON" : "OFF",
 				FA->intramolecular ? "ON" : "OFF",
 				FA->complf,
@@ -1156,7 +1157,7 @@ int main(int argc, char **argv){
 						        stem.c_str(), rc);
 					}
 				}
-				fprintf(stderr, "[BATCH] complete: %d/%d ligand(s) succeeded\n",
+				fprintf(stderr, "%s[BATCH]%s complete: %d/%d ligand(s) succeeded\n", tui::strawberry(), tui::reset(),
 				        n_ok, M);
 				Terminate(0);
 			}
@@ -2380,7 +2381,7 @@ int main(int argc, char **argv){
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "NM");
 
 		if (FA->translational && FA->num_grd == 1) {
-			fprintf(stderr, "ERROR: the binding-site has no anchor points\n");
+			fprintf(stderr, "%sERROR:%s the binding-site has no anchor points\n", tui::failtext(), tui::reset());
 			Terminate(2);
 		}
 
@@ -2678,7 +2679,7 @@ int main(int argc, char **argv){
 
 		if (use_parallel_dock) {
 			// ── ParallelDock: grid-decomposed parallel GA instances ──
-			printf("=== ParallelDock mode: %d spatial regions ===\n", parallel_dock_regions);
+			printf("%s=== ParallelDock mode: %d spatial regions ===%s\n", tui::violet(), parallel_dock_regions, tui::reset());
 
 			ParallelDockConfig pdcfg;
 			pdcfg.target_regions = parallel_dock_regions;
@@ -2771,7 +2772,7 @@ int main(int argc, char **argv){
 			}
 		} else if (use_campaign) {
 			// ── ParallelCampaign: multi-ligand virtual screening ──
-			printf("=== Campaign mode: parallel virtual screening ===\n");
+			printf("%s=== Campaign mode: parallel virtual screening ===%s\n", tui::violet(), tui::reset());
 
 			auto ccfg = campaign::auto_configure(
 				"", "",  // paths already loaded in FA globals
@@ -2795,13 +2796,13 @@ int main(int argc, char **argv){
 					fflush(stdout);
 				}
 			);
-			printf("\nCampaign complete: %d/%d successful, %.0f ligands/hour\n",
+			printf("\n%sCampaign complete:%s %d/%d successful, %.0f ligands/hour\n", tui::mint(), tui::reset(),
 			       summary.successful, summary.total_ligands, summary.throughput_per_hour);
 			n_chrom_snapshot = summary.successful;
 		} else if (use_screen) {
 			// ── CoarseScreen / optional Stage-2 hook (default: Stage 1 only) ──
-			printf("=== CoarseScreen mode: cube screening (top %d)%s ===\n",
-			       screen_top_n, use_screen_dock ? " + Stage-2 hook" : "");
+			printf("%s=== CoarseScreen mode: cube screening (top %d)%s ===%s\n",
+			       tui::violet(), screen_top_n, use_screen_dock ? " + Stage-2 hook" : "", tui::reset());
 
 			const std::string target_mol2 = !screen_target_mol2.empty()
 				? screen_target_mol2 : screen_receptor_path;
@@ -3111,7 +3112,8 @@ int main(int argc, char **argv){
 						post_engine.add_sample(chrom_snapshot[si].evalue);
 					}
 					auto post_thermo = post_engine.compute();
-					printf("\n======= Post-GA CF-proxy ensemble diagnostics (T parameter=%uK) =======\n", FA->temperature);
+					printf("\n%s======= Post-GA CF-proxy ensemble diagnostics (%sT parameter=%uK%s) =======%s\n",
+					       tui::tangerine(), tui::T(), FA->temperature, tui::tangerine(), tui::reset());
 					printf("  claim_validity = proxy_only\n");
 					printf("  F-like proxy   = %10.4f [legacy transform]\n", post_thermo.free_energy);
 					printf("  Mean CF       = %10.4f [CF units]\n", post_thermo.mean_energy);
@@ -3120,7 +3122,7 @@ int main(int argc, char **argv){
 					printf("  Heat capacity  = %10.4f\n", post_thermo.heat_capacity);
 					printf("  CF std dev     = %10.4f [CF units]\n", post_thermo.std_energy);
 					printf("  Ensemble size  = %d\n", n_chrom_snapshot);
-					printf("========================================================\n\n");
+					printf("%s========================================================%s\n\n", tui::tangerine(), tui::reset());
 				}
 
 			printf("clustering all individuals in GA...");
@@ -3394,7 +3396,7 @@ int main(int argc, char **argv){
 	return (0);
   } catch (const FlexAIDException& e) {
 	if (e.exit_code() == 0) return 0;
-	fprintf(stderr, "FlexAID Error: %s\n", e.what());
+	fprintf(stderr, "%sFlexAID Error:%s %s\n", tui::failtext(), tui::reset(), e.what());
 	return e.exit_code();
   } catch (const std::exception& e) {
 	fprintf(stderr, "Fatal error: %s\n", e.what());

@@ -24,6 +24,7 @@
 //   – AVX-512 / AVX2 / Eigen / OpenMP propagated via TransloconInsertion
 //   – RibosomeElongation uses Eigen VectorXd for the tridiagonal ODE
 //   – ShannonThermoStack / compute_growth_entropy uses AVX-512 histogramming
+#include "TuiColor.h"
 #include "NATURaLDualAssembly.h"
 #include "RibosomeElongation.h"
 #include "TransloconInsertion.h"
@@ -181,7 +182,7 @@ NATURaLConfig auto_configure(const atom*  atoms,
         // Nucleic acid receptors never use the translocon model.
         cfg.model_tm_insertion = !nucl_rec && has_membrane_topology(residues, n_residues);
 
-        std::cout << "[NATURaL] "
+        std::cout << tui::strawberry() << "[NATURaL]" << tui::reset() << " "
                   << (nucl_rec ? "Nucleic acid" : "Protein")
                   << " receptor detected → co-"
                   << (cfg.use_ribosome_speed ? "translational (ribosome)"
@@ -707,7 +708,7 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
         }
 
         if (!nseeds.empty()) {
-            std::cout << "[NATURaL] Nucleation seeds detected: "
+            std::cout << tui::strawberry() << "[NATURaL]" << tui::reset() << " Nucleation seeds detected: "
                       << nseeds.size() << " (";
             int rna_h=0, rna_g=0, pro_hx=0, pro_hp=0;
             for (const auto& s : nseeds) {
@@ -730,7 +731,7 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
         int max_bs = 0;
         for (const auto& bu : burst_units)
             max_bs = std::max(max_bs, bu.n_residues);
-        std::cout << "[NATURaL] Burst elongation units: "
+        std::cout << tui::strawberry() << "[NATURaL]" << tui::reset() << " Burst elongation units: "
                   << burst_units.size()
                   << " (max " << max_bs << " residues/burst)\n";
     }
@@ -879,7 +880,8 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
             std::min(n_residues_, 60),
             config_.organism);
         if (!vr.passed) {
-            std::cerr << "[NATURaL] WARNING: " << vr.message << "\n";
+            std::cerr << tui::strawberry() << "[NATURaL] WARNING:" << tui::reset()
+                      << " " << vr.message << "\n";
         }
     }
 

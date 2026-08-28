@@ -13,6 +13,7 @@
 // Copyright 2026 Le Bonhomme Pharma. Licensed under Apache-2.0.
 // =============================================================================
 
+#include "TuiColor.h"
 #include "DatasetRunner.h"
 #include "DatasetRunnerStats.h"  // PoseRmsdOutcome / hungarian_rmsd declarations
 #include "DatasetThermoLog.h"
@@ -2306,7 +2307,7 @@ bool DatasetRunner::download_pdb(const std::string& pdb_id, const std::string& o
                    [](unsigned char c) { return std::toupper(c); });
 
     std::string url = "https://files.rcsb.org/download/" + upper_id + ".pdb";
-    std::cout << "  Downloading " << upper_id << ".pdb ...\n";
+    std::cout << tui::muted() << "  Downloading " << tui::reset() << upper_id << ".pdb ...\n";
 
     if (!http_download(url, out_path)) {
         // Try lowercase
@@ -2343,7 +2344,7 @@ bool DatasetRunner::download_cif(const std::string& pdb_id, const std::string& o
                    [](unsigned char c) { return std::toupper(c); });
 
     std::string url = "https://files.rcsb.org/download/" + upper_id + ".cif";
-    std::cout << "  Downloading " << upper_id << ".cif ...\n";
+    std::cout << tui::muted() << "  Downloading " << tui::reset() << upper_id << ".cif ...\n";
     if (!http_download(url, out_path)) return false;
     if (!valid_cached_cif_file(out_path)) {
         std::cerr << "  [ERROR] Got HTML or invalid mmCIF for " << pdb_id << "\n";
@@ -4098,7 +4099,7 @@ std::vector<std::string> DatasetRunner::astex_diverse_codes() {
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
-    std::cout << "[DatasetRunner] Preparing Astex Diverse 85 dataset\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing Astex Diverse 85 dataset\n";
     auto codes = astex_diverse_codes();
     std::vector<DatasetEntry> entries;
     entries.reserve(codes.size());
@@ -4159,7 +4160,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
         entries.push_back(std::move(entry));
     }
 
-    std::cout << "  Prepared " << entries.size() << " / " << codes.size()
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " / " << codes.size()
               << " entries (" << oracle_count << " with oracle binding site)\n";
 
     // ── Fix 1: hard abort on a 0-oracle Astex run ─────────────────────────
@@ -4289,7 +4290,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
     // Receptor coordinates are fetched as mmCIF first; PDB is only fallback.
     // ─────────────────────────────────────────────────────────────────────────
 
-    std::cout << "[DatasetRunner] Preparing Astex Non-Native cross-docking dataset\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing Astex Non-Native cross-docking dataset\n";
     auto targets = astex_nonnative_targets();
 
     std::vector<DatasetEntry> entries;
@@ -4387,7 +4388,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
         }
     }
 
-    std::cout << "  Prepared " << entries.size() << " cross-docking pairs across "
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " cross-docking pairs across "
               << targets.size() << " protein families\n";
     return entries;
 }
@@ -4415,7 +4416,7 @@ std::vector<std::string> DatasetRunner::hap2_codes() {
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_hap2() {
-    std::cout << "[DatasetRunner] Preparing HAP2 dataset (59 targets; FlexAID JCIM 2015)\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing HAP2 dataset (59 targets; FlexAID JCIM 2015)\n";
     auto codes = hap2_codes();
     std::vector<DatasetEntry> entries;
     entries.reserve(codes.size());
@@ -4426,7 +4427,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_hap2() {
         entries.push_back(std::move(entry));
     }
 
-    std::cout << "  Prepared " << entries.size() << " / " << codes.size()
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " / " << codes.size()
               << " entries\n";
     return entries;
 }
@@ -4485,7 +4486,7 @@ std::vector<std::string> DatasetRunner::casf2016_codes() {
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_casf2016() {
-    std::cout << "[DatasetRunner] Preparing CASF-2016 dataset (285 complexes)\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing CASF-2016 dataset (285 complexes)\n";
     auto codes = casf2016_codes();
     std::vector<DatasetEntry> entries;
     entries.reserve(codes.size());
@@ -4496,7 +4497,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_casf2016() {
         entries.push_back(std::move(entry));
     }
 
-    std::cout << "  Prepared " << entries.size() << " / " << codes.size()
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " / " << codes.size()
               << " entries\n";
     return entries;
 }
@@ -4532,7 +4533,7 @@ std::vector<std::string> DatasetRunner::dude_targets() {
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_dud_e() {
-    std::cout << "[DatasetRunner] Preparing DUD-E dataset (102 targets)\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing DUD-E dataset (102 targets)\n";
 
     // DUD-E provides target structures and actives/decoys
     // We download the crystal structures from the DUD-E website
@@ -4578,7 +4579,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_dud_e() {
         entries.push_back(std::move(entry));
     }
 
-    std::cout << "  Prepared " << entries.size() << " targets\n";
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " targets\n";
     return entries;
 }
 
@@ -4587,7 +4588,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_dud_e() {
 // =============================================================================
 
 std::vector<DatasetEntry> DatasetRunner::fetch_posebusters() {
-    std::cout << "[DatasetRunner] Preparing PoseBusters dataset\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing PoseBusters dataset\n";
     std::string pb_dir = cache_dir_ + "/posebusters";
     ensure_dir(pb_dir);
 
@@ -4658,7 +4659,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_posebusters() {
         std::cout << "  Visit https://github.com/maabuu/posebusters_benchmark for the full set.\n";
     }
 
-    std::cout << "  Prepared " << entries.size() << " entries\n";
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " entries\n";
     return entries;
 }
 
@@ -4667,7 +4668,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_posebusters() {
 // =============================================================================
 
 std::vector<DatasetEntry> DatasetRunner::fetch_bindingdb_itc() {
-    std::cout << "[DatasetRunner] Preparing BindingDB-ITC dataset\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing BindingDB-ITC dataset\n";
     std::string itc_dir = cache_dir_ + "/bindingdb_itc";
     ensure_dir(itc_dir);
 
@@ -4850,7 +4851,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_bindingdb_itc() {
                   << "Download manually from https://www.bindingdb.org/bind/downloads.jsp\n";
     }
 
-    std::cout << "  Prepared " << entries.size() << " entries with ITC data\n";
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " entries with ITC data\n";
     return entries;
 }
 
@@ -4859,7 +4860,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_bindingdb_itc() {
 // =============================================================================
 
 std::vector<DatasetEntry> DatasetRunner::fetch_sampl6() {
-    std::cout << "[DatasetRunner] Preparing SAMPL6 Host-Guest dataset\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing SAMPL6 Host-Guest dataset\n";
     std::string sampl_dir = cache_dir_ + "/sampl6";
     ensure_dir(sampl_dir);
 
@@ -4942,7 +4943,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_sampl6() {
         entries.push_back(std::move(entry));
     }
 
-    std::cout << "  Prepared " << entries.size() << " host-guest entries with ITC data\n";
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " host-guest entries with ITC data\n";
     return entries;
 }
 
@@ -4951,7 +4952,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_sampl6() {
 // =============================================================================
 
 std::vector<DatasetEntry> DatasetRunner::fetch_sampl7() {
-    std::cout << "[DatasetRunner] Preparing SAMPL7 Host-Guest dataset\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing SAMPL7 Host-Guest dataset\n";
     std::string sampl_dir = cache_dir_ + "/sampl7";
     ensure_dir(sampl_dir);
 
@@ -5016,7 +5017,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_sampl7() {
         entries.push_back(std::move(entry));
     }
 
-    std::cout << "  Prepared " << entries.size() << " host-guest entries with ITC data\n";
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " host-guest entries with ITC data\n";
     return entries;
 }
 
@@ -5025,7 +5026,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_sampl7() {
 // =============================================================================
 
 std::vector<DatasetEntry> DatasetRunner::fetch_pdbbind_refined() {
-    std::cout << "[DatasetRunner] Preparing PDBbind Refined dataset\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing PDBbind Refined dataset\n";
     std::string pdbbind_dir = cache_dir_ + "/pdbbind_refined";
     ensure_dir(pdbbind_dir);
 
@@ -5152,13 +5153,13 @@ std::vector<DatasetEntry> DatasetRunner::prepare(BenchmarkSet set) {
         case BenchmarkSet::SAMPL7_HG:        return fetch_sampl7();
         case BenchmarkSet::PDBBIND_REFINED:  return fetch_pdbbind_refined();
         default:
-            std::cerr << "[DatasetRunner] Unknown benchmark set\n";
+            std::cerr << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Unknown benchmark set\n";
             return {};
     }
 }
 
 std::vector<DatasetEntry> DatasetRunner::prepare_from_doi(const std::string& doi) {
-    std::cout << "[DatasetRunner] Preparing dataset from DOI: " << doi << "\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing dataset from DOI: " << doi << "\n";
     auto codes = extract_pdb_codes_from_doi(doi);
     std::cout << "  Extracted " << codes.size() << " PDB codes from DOI\n";
 
@@ -5171,7 +5172,7 @@ std::vector<DatasetEntry> DatasetRunner::prepare_from_doi(const std::string& doi
 }
 
 std::vector<DatasetEntry> DatasetRunner::prepare_from_pdb_list(const std::string& file_path) {
-    std::cout << "[DatasetRunner] Preparing dataset from PDB list: " << file_path << "\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing dataset from PDB list: " << file_path << "\n";
 
     std::ifstream ifs(file_path);
     if (!ifs) {
@@ -5200,7 +5201,7 @@ std::vector<DatasetEntry> DatasetRunner::prepare_from_pdb_list(const std::string
         }
     }
 
-    std::cout << "  Prepared " << entries.size() << " entries\n";
+    std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " entries\n";
     return entries;
 }
 
@@ -5230,7 +5231,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
     const std::string effective_clustering_algo =
         protocol_cfg_.use_dp ? "DP" : config.clustering_algorithm;
     if (effective_clustering_algo != config.clustering_algorithm) {
-        std::cout << "[DatasetRunner] FLEXAIDDS_USE_DP=1 → clustering_algorithm overridden to DP\n";
+        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " FLEXAIDDS_USE_DP=1 → clustering_algorithm overridden to DP\n";
     }
 
     // ── Locate FlexAIDdS docking binary ─────────────────────────────────
@@ -5281,7 +5282,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             "or place FlexAID/FlexAIDdS in FLEXAIDDS_BUILD before running benchmarks.");
     }
 
-    std::cout << "[DatasetRunner] Using docking binary: " << flexaidds_bin << "\n";
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Using docking binary: " << flexaidds_bin << "\n";
     // Layer 1: log BenchmarkMode for provenance
     {
         const char* mode_label =
@@ -5289,7 +5290,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             (config.mode == BenchmarkMode::DEFINED_CLEFT_REDOCK) ? "defined-cleft-redock" :
             (config.mode == BenchmarkMode::AUTONOMOUS)           ? "autonomous" :
                                                                    "unset (env-var)";
-        std::cout << "[DatasetRunner] BenchmarkMode:    " << mode_label << "\n";
+        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " BenchmarkMode:    " << mode_label << "\n";
     }
 
     // ── RUN_RECEIPT.json + legacy provenance.json ─────────────────────────
@@ -5393,7 +5394,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         if (flexaids::write_run_receipt(config.output_dir, receipt,
                                         /*also_write_provenance_json=*/true)) {
-            std::cout << "[DatasetRunner] Wrote RUN_RECEIPT.json + provenance.json → "
+            std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Wrote RUN_RECEIPT.json + provenance.json → "
                       << config.output_dir << "\n";
         } else {
             std::cerr << "[WARN] Could not write RUN_RECEIPT.json to "
@@ -5401,7 +5402,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
     }
 
-    std::cout << "[DatasetRunner] Docking " << entries.size() << " entries ("
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Docking " << entries.size() << " entries ("
               << config.num_threads << " threads)...\n";
 
     // ── TargetServer: one per unique receptor ───────────────────────────
@@ -5470,7 +5471,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
     }
     if (!target_servers_.empty()) {
-        std::cout << "[DatasetRunner] TargetServer: "
+        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " TargetServer: "
                   << target_servers_.size() << " unique receptor(s), "
                   << entries.size() << " ligand(s)\n";
     }
@@ -5551,7 +5552,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
         if (multi_ligand_receptors > 0) {
             size_t est_mb_saved = grid_reuse_eligible * 200;  // ~200 MB per grid reload
-            std::cout << "[DatasetRunner] Receptor sharing: "
+            std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Receptor sharing: "
                       << multi_ligand_receptors << " receptor(s) shared across "
                       << (grid_reuse_eligible + multi_ligand_receptors) << " ligands — "
                       << grid_reuse_eligible << " ~200 MB grid reloads avoidable ("
@@ -5962,13 +5963,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             double sas_weight = 0.40;
             if (const char* env_sas = std::getenv("FLEXAIDDS_SAS_WEIGHT")) {
                 sas_weight = std::atof(env_sas);
-                std::cout << "[DatasetRunner] FLEXAIDDS_SAS_WEIGHT=" << sas_weight
+                std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " FLEXAIDDS_SAS_WEIGHT=" << sas_weight
                           << " (default 0.40)\n";
             }
             bool hbond_rank = true;
             if (const char* env_hbr = std::getenv("FLEXAIDDS_HBOND_RANK")) {
                 hbond_rank = (std::atoi(env_hbr) != 0);
-                std::cout << "[DatasetRunner] FLEXAIDDS_HBOND_RANK="
+                std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " FLEXAIDDS_HBOND_RANK="
                           << (hbond_rank ? "1" : "0") << " (default 1)\n";
             }
             // Coarse-init grid resolution (Å). Configurable per-target via env so
@@ -5977,7 +5978,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             float grid_step = 3.0f;
             if (const char* gs_env = std::getenv("FLEXAIDDS_COARSE_GRID_STEP")) {
                 grid_step = std::max(0.5f, static_cast<float>(std::atof(gs_env)));
-                std::cout << "[DatasetRunner] FLEXAIDDS_COARSE_GRID_STEP=" << grid_step
+                std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " FLEXAIDDS_COARSE_GRID_STEP=" << grid_step
                           << " (default 3.0)\n";
             }
             {

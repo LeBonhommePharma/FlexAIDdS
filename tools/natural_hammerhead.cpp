@@ -35,26 +35,30 @@
 #include <string>
 #include <vector>
 
-// ─── Terminal colours (ANSI, disabled when NO_COLOUR is defined) ───────────────
-#ifndef NO_COLOUR
-#  define COL_RESET  "\033[0m"
-#  define COL_BOLD   "\033[1m"
-#  define COL_RED    "\033[31m"
-#  define COL_GREEN  "\033[32m"
-#  define COL_YELLOW "\033[33m"
-#  define COL_BLUE   "\033[34m"
-#  define COL_CYAN   "\033[36m"
-#  define COL_WHITE  "\033[37m"
-#else
-#  define COL_RESET  ""
-#  define COL_BOLD   ""
-#  define COL_RED    ""
-#  define COL_GREEN  ""
-#  define COL_YELLOW ""
-#  define COL_BLUE   ""
-#  define COL_CYAN   ""
-#  define COL_WHITE  ""
-#endif
+#include "TuiColor.h"
+
+// ─── Terminal colours ─────────────────────────────────────────────────────────
+// These were raw 8-colour ANSI behind a COMPILE-TIME `NO_COLOUR` guard and no
+// isatty() anywhere, so `natural_hammerhead > run.log` wrote literal \033[3xm
+// bytes into the log. They now resolve through TuiColor.h, which returns "" the
+// moment stdout is not a terminal — redirects and pipes come out clean.
+//
+// The hues are the design system's, and each keeps ONE meaning:
+//   tunnel / Stem III  -> aqua        (was blue)
+//   pause site / Loop  -> strawberry  (was yellow — a retired colour)
+//   folded / PASS      -> mint        (was green)
+//   FAIL               -> fail text   (was red)
+//   run complete       -> tangerine   (was cyan — also retired)
+// The legend below names the colour it shows, so those words move too — a
+// legend that says "Yellow" beside a strawberry swatch is just wrong.
+#define COL_RESET  tui::reset()
+#define COL_BOLD   tui::bold()
+#define COL_RED    tui::failtext()
+#define COL_GREEN  tui::mint()
+#define COL_YELLOW tui::strawberry()
+#define COL_BLUE   tui::aqua()
+#define COL_CYAN   tui::tangerine()
+#define COL_WHITE  tui::fg()
 
 // ─── Hammerhead Ribozyme ────────────────────────────────────────────────────────
 //
@@ -319,12 +323,12 @@ static void print_trajectory(const std::vector<GrowthStep>& traj,
 
     // Legend
     std::cout << "\n  Legend:\n"
-              << "    " << COL_BLUE   << "Blue"   << COL_RESET << "   = inside RNAP RNA:DNA hybrid tunnel (first "
+              << "    " << COL_BLUE   << "Aqua"   << COL_RESET << "   = inside RNAP RNA:DNA hybrid tunnel (first "
                         << static_cast<int>(ribosome::RNAP_TUNNEL_NT) << " nt)\n"
-              << "    " << COL_YELLOW << "Yellow" << COL_RESET << " = RNAP pause site (k_el < "
+              << "    " << COL_YELLOW << "Strawberry" << COL_RESET << " = RNAP pause site (k_el < "
                         << static_cast<int>(ribosome::RNAP_PAUSE_THRESHOLD * 100) << "% of harmonic mean "
                         << std::fixed << std::setprecision(1) << hmean_rate << " nt/s) → co-transcriptional folding window\n"
-              << "    " << COL_GREEN  << "Green"  << COL_RESET << "  = significant co-transcriptional folding probability (P_fold > 5%)\n"
+              << "    " << COL_GREEN  << "Mint"  << COL_RESET << "  = significant co-transcriptional folding probability (P_fold > 5%)\n"
               << "\n";
 }
 
@@ -384,7 +388,8 @@ static void print_summary(const std::vector<GrowthStep>& traj,
               << "    ODE T       : " << std::fixed << std::setprecision(4) << valid.ode_T      << " s\n"
               << "    Relative err: " << std::fixed << std::setprecision(2)
               << (valid.relative_error * 100.0) << "%  → "
-              << (valid.passed ? COL_GREEN "PASS" COL_RESET : COL_RED "FAIL" COL_RESET) << "\n";
+              << (valid.passed ? COL_GREEN : COL_RED) << (valid.passed ? "PASS" : "FAIL")
+              << COL_RESET << "\n";
 
     std::cout << "  " << std::string(60, '=') << "\n";
 }

@@ -21,6 +21,7 @@ from typing import Optional
 
 from .__version__ import __version__
 from .results import load_results
+from . import _tui as tui
 from .__version__ import __version__
 
 
@@ -40,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Emit machine-readable JSON instead of a human summary.",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable coloured output (also honours NO_COLOR / FLEXAIDDS_NO_COLOR).",
     )
     parser.add_argument(
         "--csv",
@@ -122,6 +128,9 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
+    if args.no_color or args.json or args.csv is not None:
+        tui.set_enabled(False)
+
     # Handle update flags first
     if args.check_update or args.self_update:
         from .updater import check_for_updates, update_pip
@@ -160,7 +169,7 @@ def main() -> int:
     if getattr(args, "best_only", False) or getattr(args, "best_mode", False):  # --best-only / --best-mode
         top = result.top_mode()
         if top is None:
-            print("No binding modes found.")
+            print(tui.warn("No binding modes found."))
             return 1
         # The election objective (soft_beta_G) is what the engine ranked on;
         # free_energy is a legacy ensemble transform whose units/interpretation
@@ -169,14 +178,18 @@ def main() -> int:
             "Best BindingMode (engine election objective soft_beta_G, "
             f"falling back to the legacy ensemble transform; T={result.temperature} K):"
         )
-        print(f"  mode_id={top.mode_id} rank={top.rank} n_poses={top.n_poses}")
+        print("  " + tui.kv("mode_id", top.mode_id) + " "
+              + tui.kv("rank", top.rank) + " " + tui.kv("n_poses", top.n_poses))
         print(f"  claim_validity={top.claim_validity.value}")
         print(
-            f"  soft_beta_G={top.soft_beta_G} "
-            f"proxy_free_energy={top.proxy_free_energy} free_energy={top.free_energy}"
+            "  " + tui.kv("soft_beta_G", top.soft_beta_G, tui.dG()) + " "
+            + tui.kv("proxy_free_energy", top.proxy_free_energy, tui.dG()) + " "
+            + tui.kv("free_energy", top.free_energy, tui.dG())
         )
-        print(f"  enthalpy={top.enthalpy} entropy={top.entropy}")
-        print(f"  temperature={top.temperature} best_cf={top.best_cf}")
+        print("  " + tui.kv("enthalpy", top.enthalpy, tui.dH()) + " "
+              + tui.kv("entropy", top.entropy, tui.dS()))
+        print("  " + tui.kv("temperature", top.temperature, tui.T()) + " "
+              + tui.kv("best_cf", top.best_cf, tui.mint()))
         # Suggest the artifact path (common layout)
         print(f"  (Look for corresponding *_mode_{top.mode_id}_*.pdb or rank 1 pose in {result.source_dir} subdirs for full REMARK thermo + coords)")
         return 0
@@ -190,10 +203,11 @@ def main() -> int:
         print(f"Wrote {result.n_modes} binding mode(s) to {args.csv}")
         return 0
 
-    print(f"Results directory: {result.source_dir}")
-    print(f"Binding modes: {result.n_modes}")
+    print(tui.brand() + "  " + tui.muted() + "binding-mode summary" + tui.reset())
+    print("  " + tui.kv("results directory", result.source_dir))
+    print("  " + tui.kv("binding modes", result.n_modes, tui.mint()))
     if result.temperature is not None:
-        print(f"Temperature: {result.temperature} K")
+        print("  " + tui.kv("temperature", f"{result.temperature} K", tui.T()))
     print()
 
     if not result.binding_modes:
