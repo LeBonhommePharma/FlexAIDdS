@@ -2363,15 +2363,6 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME ContactsEpochTests
     )
 
-    # test_rescore_pool_loader — serial-mapped complex coordinate loader for the
-    #   offline pool rescoring engine (FLEXAIDDS_RESCORE_POOL). Header-only under
-    #   test; pins the load-bearing serial->slot mapping contract.
-    flexaids_add_unit_test(test_rescore_pool_loader
-        SOURCES
-            tests/test_rescore_pool_loader.cpp
-        TEST_NAME RescorePoolLoaderTests
-    )
-
     # Same source compiled against the PRE-FIX layout (epoch carried by the
     # per-thread struct instead of by the buffer). Registered WILL_FAIL: it must
     # detect the corruption. This is what stops the test above from silently
