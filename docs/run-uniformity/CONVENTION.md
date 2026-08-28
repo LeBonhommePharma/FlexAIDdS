@@ -195,12 +195,13 @@ run=gan2vsq5_20260828_162000/S1_1SQ5
 | Key | Required | Value | Meaning |
 |---|---|---|---|
 | `status` | yes | `ok` \| `partial` \| `failed` | The runner's verdict on its own work |
-| `rc` | yes | integer | Runner process exit code, verbatim |
+| `rc` | yes | integer, or `unknown` | Runner process exit code, verbatim. `unknown` **only** in a reconstructed `DONE` — see *Attestation* |
 | `targets_done` | yes | integer | Targets that produced **real output** — see below |
 | `targets_total` | yes | integer | Targets the run was asked to do |
 | `finished_utc` | yes | ISO-8601 UTC, `%Y-%m-%dT%H:%M:%SZ` | When the runner reached its end |
 | `engine_sha` | yes | 64 lowercase hex | SHA-256 of the binary **actually invoked** |
 | `run` | yes | string | Batch/arm identifier, e.g. `<batch>/<arm>` |
+| `source` | no | `runner` \| `reconstructed` | Who wrote this file. Absence means `runner` — see *Attestation* |
 
 ### `targets_done` counts poses, not rows
 
@@ -225,6 +226,11 @@ the correct test per target; a conforming writer does the same.
 that sees it MUST treat the file as untrustworthy rather than believing the
 `status` field, because the two claims cannot both be true and the count is the
 one derived from evidence.
+
+Note that `ok` is already unreachable for a reconstructed `DONE` without adding a
+rule: `ok` requires `rc == 0`, and a reconstructed `DONE` MUST carry
+`rc=unknown`, which is not `0`. The prohibition in *Attestation* below is an
+entailment of this table, not a new constraint bolted onto it.
 
 ## The three rules
 
@@ -258,6 +264,68 @@ Those are different claims, and conflating them is what made this document
 necessary. A writer that emits `DONE` only on success collapses them again: its
 absence would then mean "died, still running, *or* finished badly", which is not
 a signal.
+
+## Attestation — testimony versus reconstruction
+
+*Amendment ratified 2026-08-28, after the freeze above. Normative.*
+
+Everything in this document so far assumes the runner wrote its own `DONE`. That
+assumption is what makes the token worth anything: a `DONE` is **testimony** — a
+claim by the process that did the work, and evidence that a specific line of code
+was reached. Rule 1 is not really about ordering, it is about that. A file
+written by an observer after the fact, reading the artifacts on disk and
+inferring what must have happened, is **inference**. It looks identical on disk.
+
+Both are legitimate. A reconstruction is often the only record obtainable for a
+run whose driver died, and refusing to write one loses information. What is not
+legitimate is silently formatting inference as testimony, because the reader has
+no way to tell them apart and the whole discrimination this file exists to make
+collapses.
+
+The `rc` rule follows directly, and is the reason `rc` is singled out below.
+Every other field has an observable counterpart: `targets_done` can be recounted
+from poses, `engine_sha` re-hashed from the binary, `run` read off the path.
+`rc` has none. An exit code is a property of a process that no longer exists and
+leaves no trace in the artifacts. It is therefore the one field where
+reconstruction is not weak inference but pure invention, and a reconstructed
+integer would read to every downstream consumer as a reported one.
+
+**The rule:**
+
+A `DONE` written after the runner has already exited — reconstructed by an
+observer from the artifacts on disk — MUST carry `source=reconstructed`. A `DONE`
+written by the runner itself MAY carry `source=runner` or omit the field; absence
+of the field means runner-written.
+
+A reconstructed `DONE`:
+
+- MUST set `rc=unknown`. The exit code is not recoverable from artifacts and a
+  reconstructed value would read as reported.
+- MUST NOT assert `status=ok` on inference alone. It may assert only what is
+  independently checkable from the artifacts.
+- MAY set `targets_done` from a recount of real poses with non-sentinel RMSD,
+  since that is directly observable.
+
+A reader MUST treat `source=reconstructed` as weaker evidence than a
+runner-written `DONE`.
+
+### Consequences a writer should expect
+
+`source=reconstructed` does **not** relax rule 2 (atomic write) or the field
+list. A reconstruction is still a `DONE` and is still written with `rename()`.
+
+Rule 3 does not apply to a reconstruction, because there is no "runner reaching
+its end" for the observer to hook. A reconstruction is written when someone
+chooses to write one.
+
+The justification given under *Relationship to `KIND` and `SKIPPED`* for `DONE`
+having no `unknown` status — "writing it is itself the evidence, so `unknown` is
+unreachable" — holds only for runner-written files. For a reconstruction, writing
+it is *not* evidence of reaching a line, so that argument lapses. This
+specification does not add a fourth `status` value; the consequence is simply
+that a reconstruction observing `targets_done == targets_total` with an
+unrecoverable `rc` has no status value that fits, and its writer should record
+the shortfall it can actually see rather than rounding up to a claim it cannot.
 
 ## Why nothing else can substitute
 
@@ -306,6 +374,12 @@ has no `failed` for the same reason in reverse — a census asks whether results
 are usable, not how the process exited. **When they disagree, `DONE` wins and the
 index is stale.**
 
+That precedence assumes testimony. A driver sealing `KIND` from a `DONE` carrying
+`source=reconstructed` is reading inference, not evidence, and MUST NOT treat it
+as outranking its own observations: where a reconstructed `DONE` disagrees with
+what the directory shows, neither wins automatically and the disagreement is the
+finding.
+
 ## Compatibility
 
 `ga1jd0_20260828_005342/DONE` and `ga1jd0_20260828_012729/DONE` predate this
@@ -313,3 +387,13 @@ specification and use an earlier informal single-line form
 (`DONE <ISO8601>`). They are grandfathered, not retrofitted. A reader
 encountering a `DONE` with no `=` on its first line MUST treat it as the legacy
 form: presence still means the runner finished, and no other field is available.
+
+`source` has the same problem one layer up, and it is worth stating rather than
+leaving to be discovered. Every `DONE` written before the *Attestation* amendment
+lacks the field, including any that were in fact reconstructed, so the
+"absence means runner-written" default reads them all as testimony. The default
+is right going forward and wrong retroactively. A reader MUST NOT infer
+runner-written from absence alone for a `DONE` whose `finished_utc` precedes this
+amendment; for those files, provenance is established out of band or not at all.
+Existing files are grandfathered, not retrofitted — retrofitting `source` onto
+one is a deliberate act by whoever knows how it was written, not a migration.
