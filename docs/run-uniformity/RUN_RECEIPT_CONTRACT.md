@@ -166,10 +166,23 @@ containing "schema_version"     474   <- engine dialect, this document
 not containing it                 2   <- hand-written by a shell driver
 ```
 
-The two exceptions are under `ga1jd0_20260828_012729/`. They share a filename
-with the engine dialect and nothing else — no `schema_version`, no
-`protocol_config`, no `started_utc`. Instead: `schema: "1jd0_ga_wal400_v1"`,
-`frozen_utc`, `engine_id`, `conditions`, `env_pins`, `assertions`, `supersedes`.
+The two exceptions are:
+
+```
+~/flexaidds_results/ga1jd0_20260828_005342/RUN_RECEIPT.json   24 top-level keys
+~/flexaidds_results/ga1jd0_20260828_012729/RUN_RECEIPT.json   26 top-level keys
+```
+
+**Two sibling batches, not one directory.** An earlier draft of this document
+placed both under `ga1jd0_20260828_012729/`; that was wrong, and the error
+propagated into a work instruction before it was caught. Both carry the same
+`frozen_utc` (`2026-08-28T00:54:32.210103Z`), so the 26-key file is an evolved
+copy of the 24-key one rather than an independent artifact.
+
+Both share a filename with the engine dialect and nothing else — verified by
+parsing, not by filename: no `schema_version`, no `protocol_config`, no
+`started_utc`. Instead: `schema: "1jd0_ga_wal400_v1"`, `frozen_utc`,
+`engine_id`, `conditions`, `env_pins`, `assertions`, `supersedes`.
 
 Both dialects are useful. The problem is only that they are not distinguishable
 without opening the file and guessing. Two options:
@@ -189,12 +202,37 @@ on disk are the corpus every existing analysis script walks; a fix that leaves
 them ambiguous has not fixed the problem those scripts have. Two renames buy
 correctness for all 476.
 
-**Deliberately not done in this commit.** Both files live under
-`ga1jd0_20260828_012729/`, which is Grok Bot's territory and adjacent to a live
-batch. Renaming another seat's provenance artifacts is a coordination call
-between LP and Grok Bot, not a change to slip into a documentation commit.
-Recorded here so the decision is made on purpose rather than by whoever touches
-the directory next.
+**Approved by LP, then held on three findings surfaced by the pre-rename
+checks. Not applied. The files are still named `RUN_RECEIPT.json` on disk.**
+
+1. **A by-name consumer exists.** `scripts/check_run_receipt.py:36-45` resolves
+   `RUN_RECEIPT.json` by filename inside a campaign directory given as a
+   command-line argument, falling back to `provenance.json` then
+   `out/RUN_RECEIPT.json`, and raising `FileNotFoundError` if none is present.
+   It does not hardcode these batches — no file in the repository references
+   either batch path except this document — but pointing it at either directory
+   after a rename turns a schema-validation failure into a missing-file crash.
+   That is a behaviour change in a validator, which is the class of thing the
+   rename gate exists to catch.
+2. **The corrected file set is not the approved file set.** Approval covered
+   "the two under `ga1jd0_20260828_012729`". That set has one member. The second
+   file is in a sibling batch that was never named.
+3. **No maintenance gap.** `ga1jd0_20260828_012729/bin/` holds the frozen binary
+   an active campaign is executing. Renaming a JSON beside it cannot affect
+   execution, but the stated preference was to act in a gap, and 1SQ5 S0 had
+   launched by the time the checks completed.
+
+None of these makes the rename wrong. The retroactive-census argument above
+stands. They make it a change to schedule deliberately — with `check_run_receipt.py`
+taught to recognise the campaign dialect first, both paths named explicitly, and
+a quiet window — rather than one to land opportunistically.
+
+**If it is applied, it will be invisible to history.** Both files live under
+`~/flexaidds_results`, which is not a git repository. A rename there leaves no
+commit, no diff, and no record beyond this paragraph and the filesystem mtime.
+That is itself an argument for doing it deliberately: an untracked rename is
+exactly the kind of change that becomes unattributable three weeks later, which
+is the failure mode this entire document exists to describe.
 
 Note also that the collision **predates this work**. It is the state of the
 corpus as found on 2026-08-28, not something Phase 0 or Phase 1 introduces.
