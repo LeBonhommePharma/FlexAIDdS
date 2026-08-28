@@ -880,7 +880,7 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
             std::min(n_residues_, 60),
             config_.organism);
         if (!vr.passed) {
-            std::cerr << tui::strawberry() << "[NATURaL] WARNING:" << tui::reset()
+            std::cerr << tui::err::strawberry() << "[NATURaL] WARNING:" << tui::err::reset()
                       << " " << vr.message << "\n";
         }
     }

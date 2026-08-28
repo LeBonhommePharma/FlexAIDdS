@@ -64,15 +64,27 @@ namespace tui {
 
 enum class Depth { None, Ansi256, TrueColor };
 
-inline Depth& depth_ref() { static Depth d = Depth::None; return d; }
-inline bool&  ready_ref() { static bool r = false;         return r; }
+/* Colour is a property of the STREAM, not of the process. stdout can be a
+   terminal while stderr is redirected to a file — `prog 2> err.log` — so a
+   single isatty(1) test would write escapes into that log. Ten-plus log
+   parsers in this tree read stderr, so each stream is gated on its own. */
+enum class Stream { Out, Err };
+
+inline Depth& depth_ref(Stream s) {
+    static Depth d_out = Depth::None, d_err = Depth::None;
+    return s == Stream::Out ? d_out : d_err;
+}
+inline bool& ready_ref(Stream s) {
+    static bool r_out = false, r_err = false;
+    return s == Stream::Out ? r_out : r_err;
+}
 
 inline bool env_set(const char* k) {
     const char* v = std::getenv(k);
     return v != nullptr && v[0] != '\0';
 }
 
-inline Depth detect_depth() {
+inline Depth detect_depth(Stream st) {
     /* NO_COLOR is a hard veto and takes precedence over everything. */
     if (env_set("FLEXAIDDS_NO_COLOR") || std::getenv("NO_COLOR") != nullptr)
         return Depth::None;
@@ -84,12 +96,13 @@ inline Depth detect_depth() {
     /* A forced request wins over the TTY test, so CI can still capture colour
        deliberately. Without it, a non-terminal stdout is always plain. */
     const bool forced = env_set("FORCE_COLOR") || env_set("CLICOLOR_FORCE");
-    if (!forced && !FLEXAIDDS_ISATTY(FLEXAIDDS_FILENO(stdout)))
+    std::FILE* target = (st == Stream::Out) ? stdout : stderr;
+    if (!forced && !FLEXAIDDS_ISATTY(FLEXAIDDS_FILENO(target)))
         return Depth::None;
 
 #if defined(_WIN32)
     /* Windows terminals need VT sequences switched on explicitly. */
-    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE h = GetStdHandle(st == Stream::Out ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
     DWORD mode = 0;
     if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode))
         SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
@@ -106,19 +119,26 @@ inline Depth detect_depth() {
     return Depth::Ansi256;
 }
 
-inline Depth depth() {
-    if (!ready_ref()) { depth_ref() = detect_depth(); ready_ref() = true; }
-    return depth_ref();
+inline Depth depth(Stream s = Stream::Out) {
+    if (!ready_ref(s)) { depth_ref(s) = detect_depth(s); ready_ref(s) = true; }
+    return depth_ref(s);
 }
 
-inline bool enabled() { return depth() != Depth::None; }
+inline bool enabled(Stream s = Stream::Out) { return depth(s) != Depth::None; }
 
-/** Force colour off (for `--no-color`) or on. Call before any output. */
+/** Which stream a FILE* is, for the composed helpers below. */
+inline Stream stream_of(std::FILE* f) { return f == stderr ? Stream::Err : Stream::Out; }
+
+/** Force colour off (for `--no-color`) or on, on BOTH streams. */
 inline void set_enabled(bool on) {
-    ready_ref() = true;
-    depth_ref() = on ? (detect_depth() == Depth::TrueColor ? Depth::TrueColor
-                                                           : Depth::Ansi256)
-                     : Depth::None;
+    const Stream both[2] = { Stream::Out, Stream::Err };
+    for (int i = 0; i < 2; ++i) {
+        const Stream s = both[i];
+        ready_ref(s) = true;
+        depth_ref(s) = on ? (detect_depth(s) == Depth::TrueColor ? Depth::TrueColor
+                                                                 : Depth::Ansi256)
+                          : Depth::None;
+    }
 }
 
 /* ---- the palette -------------------------------------------------------- */
@@ -139,11 +159,11 @@ inline constexpr Hue FAILTEXT   {0xFF, 0x6B, 0x6B, 203};  /* small fail labels *
 
 /* Returns a pointer to a per-hue static buffer, or "" when colour is off.
    One buffer per hue, so several colours can be live in a single printf. */
-template <const Hue* H>
+template <const Hue* H, Stream S = Stream::Out>
 inline const char* seq() {
     static char buf[24];
     static Depth built = Depth::None;
-    const Depth d = depth();
+    const Depth d = depth(S);
     if (d == Depth::None) return "";
     if (built != d) {
         if (d == Depth::TrueColor)
@@ -156,9 +176,16 @@ inline const char* seq() {
     return buf;
 }
 
-inline const char* reset()      { return enabled() ? "\033[0m" : ""; }
-inline const char* bold()       { return enabled() ? "\033[1m" : ""; }
-inline const char* dim()        { return enabled() ? "\033[2m" : ""; }
+inline const char* reset(Stream s = Stream::Out) { return enabled(s) ? "\033[0m" : ""; }
+inline const char* bold(Stream s = Stream::Out)  { return enabled(s) ? "\033[1m" : ""; }
+inline const char* dim(Stream s = Stream::Out)   { return enabled(s) ? "\033[2m" : ""; }
+
+/** Pick the escape for whichever stream this line is going to. Each (hue,
+    stream) pair gets its own cached buffer, so the two never alias. */
+template <const Hue* H>
+inline const char* pick(std::FILE* out) {
+    return out == stderr ? seq<H, Stream::Err>() : seq<H, Stream::Out>();
+}
 
 inline const char* mint()       { return seq<&MINT>(); }
 inline const char* violet()     { return seq<&VIOLET>(); }
@@ -170,6 +197,24 @@ inline const char* magnesium()  { return seq<&MAGNESIUM>(); }
 inline const char* fg()         { return seq<&FG>(); }
 inline const char* muted()      { return seq<&MUTED>(); }
 inline const char* failtext()   { return seq<&FAILTEXT>(); }
+
+/* Same palette, gated on stderr instead. Use these for anything written to
+   stderr — warnings, errors, progress — so a redirected stderr stays clean
+   even when stdout is a terminal. */
+namespace err {
+inline const char* reset()      { return tui::reset(Stream::Err); }
+inline const char* bold()       { return tui::bold(Stream::Err); }
+inline const char* mint()       { return seq<&MINT, Stream::Err>(); }
+inline const char* violet()     { return seq<&VIOLET, Stream::Err>(); }
+inline const char* tangerine()  { return seq<&TANGERINE, Stream::Err>(); }
+inline const char* firetruck()  { return seq<&FIRETRUCK, Stream::Err>(); }
+inline const char* aqua()       { return seq<&AQUA, Stream::Err>(); }
+inline const char* strawberry() { return seq<&STRAWBERRY, Stream::Err>(); }
+inline const char* magnesium()  { return seq<&MAGNESIUM, Stream::Err>(); }
+inline const char* fg()         { return seq<&FG, Stream::Err>(); }
+inline const char* muted()      { return seq<&MUTED, Stream::Err>(); }
+inline const char* failtext()   { return seq<&FAILTEXT, Stream::Err>(); }
+} // namespace err
 
 /* Quantity aliases — prefer these at call sites, so the binding of colour to
    thermodynamic quantity stays legible in the source itself. */
@@ -184,15 +229,15 @@ inline const char* apo()   { return magnesium(); }
 /* ---- the series ramp ---------------------------------------------------- */
 /* Energy order along the binding coordinate. Index 1..6; anything outside
    falls back to muted rather than wrapping into a wrong quantity. */
-inline const char* series(int step) {
+inline const char* series(int step, std::FILE* out = stdout) {
     switch (step) {
-        case 1: return magnesium();   /* apo baseline            */
+        case 1: return pick<&MAGNESIUM>(out);   /* apo baseline            */
         case 2: return violet();      /* unbound · ΔS dominates  */
         case 3: return strawberry();  /* first pocket contact    */
         case 4: return aqua();        /* rigidification · ΔS_vib */
         case 5: return mint();        /* contacts formed · ΔH    */
-        case 6: return tangerine();   /* converged · ΔG          */
-        default: return muted();
+        case 6: return pick<&TANGERINE>(out);   /* converged · ΔG          */
+        default: return pick<&MUTED>(out);
     }
 }
 
@@ -218,17 +263,19 @@ inline void pad_to(int width, int used, std::FILE* out) {
 
 /** `FlexAID∆S` wordmark: mint mark, tangerine ∆S — as everywhere else. */
 inline void brand(std::FILE* out = stdout) {
+    const Stream S = stream_of(out);
     std::fprintf(out, "%s%sFlexAID%s%s∆S%s",
-                 bold(), mint(), reset(), tangerine(), reset());
+                 bold(S), pick<&MINT>(out), reset(S), pick<&TANGERINE>(out), reset(S));
 }
 
 /** A violet section rule, the terminal form of the site's section divider. */
 inline void rule(const char* title, std::FILE* out = stdout) {
-    std::fprintf(out, "%s──%s %s%s%s %s", violet(), reset(),
-                 bold(), title ? title : "", reset(), violet());
+    const Stream S = stream_of(out);
+    std::fprintf(out, "%s──%s %s%s%s %s", pick<&VIOLET>(out), reset(S),
+                 bold(S), title ? title : "", reset(S), pick<&VIOLET>(out));
     int pad = 58 - display_width(title ? title : "");
     for (int i = 0; i < pad; ++i) std::fputc('-', out);
-    std::fprintf(out, "%s\n", reset());
+    std::fprintf(out, "%s\n", reset(S));
 }
 
 /** `[n/total] label            detail` — one step of the binding coordinate,
@@ -236,41 +283,49 @@ inline void rule(const char* title, std::FILE* out = stdout) {
 inline void stage(int n, int total, const char* label, const char* detail,
                   std::FILE* out = stdout) {
     const char* lbl = label ? label : "";
+    const Stream S = stream_of(out);
     std::fprintf(out, "  %s[%d/%d]%s %s%s%s",
-                 muted(), n, total, reset(), series(n), lbl, reset());
+                 pick<&MUTED>(out), n, total, reset(S), series(n, out), lbl, reset(S));
     pad_to(28, display_width(lbl), out);
-    std::fprintf(out, " %s%s%s\n", muted(), detail ? detail : "", reset());
+    std::fprintf(out, " %s%s%s\n", pick<&MUTED>(out), detail ? detail : "", reset(S));
 }
 
 /** The identity, read term by term in colour. */
 inline void equation(unsigned temperature_K = 0, std::FILE* out = stdout) {
+    const Stream S = stream_of(out);
     std::fprintf(out, "  %sΔG%s = %sΔH%s − %sT%s%sΔS%s − %sT%s%sΔS_vib%s",
-                 dG(), reset(), dH(), reset(), T(), reset(), dS(), reset(),
-                 T(), reset(), dSvib(), reset());
-    if (temperature_K) std::fprintf(out, "        %sT = %u K%s", T(), temperature_K, reset());
+                 pick<&TANGERINE>(out), reset(S), pick<&MINT>(out), reset(S),
+                 pick<&FIRETRUCK>(out), reset(S), pick<&VIOLET>(out), reset(S),
+                 pick<&FIRETRUCK>(out), reset(S), pick<&AQUA>(out), reset(S));
+    if (temperature_K)
+        std::fprintf(out, "        %sT = %u K%s", pick<&FIRETRUCK>(out), temperature_K, reset(S));
     std::fputc('\n', out);
 }
 
 /* Status lines. Severity reads by brightness: mint pass, strawberry caution,
    firetruck stop — never yellow. */
 inline void ok(const char* msg, std::FILE* out = stdout) {
-    std::fprintf(out, "  %s●%s %s%s%s\n", mint(), reset(), fg(), msg, reset());
+    const Stream S = stream_of(out);
+    std::fprintf(out, "  %s●%s %s%s%s\n", pick<&MINT>(out), reset(S), pick<&FG>(out), msg, reset(S));
 }
 inline void warn(const char* msg, std::FILE* out = stdout) {
-    std::fprintf(out, "  %s● WARN%s %s%s%s\n", strawberry(), reset(), fg(), msg, reset());
+    const Stream S = stream_of(out);
+    std::fprintf(out, "  %s● WARN%s %s%s%s\n", pick<&STRAWBERRY>(out), reset(S), pick<&FG>(out), msg, reset(S));
 }
 inline void fail(const char* msg, std::FILE* out = stderr) {
-    std::fprintf(out, "  %s● FAIL%s %s%s%s\n", failtext(), reset(), fg(), msg, reset());
+    const Stream S = stream_of(out);
+    std::fprintf(out, "  %s● FAIL%s %s%s%s\n", pick<&FAILTEXT>(out), reset(S), pick<&FG>(out), msg, reset(S));
 }
 /** Converged — the run reached ΔG. Tangerine, the end of the ramp. */
 inline void converged(const char* msg, std::FILE* out = stdout) {
+    const Stream S = stream_of(out);
     std::fprintf(out, "  %s● CONVERGED%s %s%s%s\n",
-                 tangerine(), reset(), muted(), msg ? msg : "", reset());
+                 pick<&TANGERINE>(out), reset(S), pick<&MUTED>(out), msg ? msg : "", reset(S));
 }
 
 /** A `[TAG]` prefix in a chosen hue, matching the site's eyebrow treatment. */
 inline void tag(const char* name, const char* hue, std::FILE* out = stdout) {
-    std::fprintf(out, "%s[%s]%s ", hue, name, reset());
+    std::fprintf(out, "%s[%s]%s ", hue, name, reset(stream_of(out)));
 }
 
 } // namespace tui

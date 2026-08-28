@@ -1157,7 +1157,7 @@ int main(int argc, char **argv){
 						        stem.c_str(), rc);
 					}
 				}
-				fprintf(stderr, "%s[BATCH]%s complete: %d/%d ligand(s) succeeded\n", tui::strawberry(), tui::reset(),
+				fprintf(stderr, "%s[BATCH]%s complete: %d/%d ligand(s) succeeded\n", tui::err::strawberry(), tui::err::reset(),
 				        n_ok, M);
 				Terminate(0);
 			}
@@ -2381,7 +2381,7 @@ int main(int argc, char **argv){
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "NM");
 
 		if (FA->translational && FA->num_grd == 1) {
-			fprintf(stderr, "%sERROR:%s the binding-site has no anchor points\n", tui::failtext(), tui::reset());
+			fprintf(stderr, "%sERROR:%s the binding-site has no anchor points\n", tui::err::failtext(), tui::err::reset());
 			Terminate(2);
 		}
 
@@ -3396,7 +3396,7 @@ int main(int argc, char **argv){
 	return (0);
   } catch (const FlexAIDException& e) {
 	if (e.exit_code() == 0) return 0;
-	fprintf(stderr, "%sFlexAID Error:%s %s\n", tui::failtext(), tui::reset(), e.what());
+	fprintf(stderr, "%sFlexAID Error:%s %s\n", tui::err::failtext(), tui::err::reset(), e.what());
 	return e.exit_code();
   } catch (const std::exception& e) {
 	fprintf(stderr, "Fatal error: %s\n", e.what());
