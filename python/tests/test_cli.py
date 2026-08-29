@@ -327,7 +327,42 @@ class TestMainTopFlag:
         monkeypatch.setattr(sys, "argv", ["flexaidds", str(d), "--top", "1"])
         main()
         out = capsys.readouterr().out
-        assert "Binding modes: 3" in out
+
+        # INVARIANT: the header reports the TRUE total, not the truncated one.
+        # --top limits what the *table* shows; it must never make a run look
+        # smaller than it was.
+        #
+        # The literal moved in 26f8ee17 ("Colour stdout across the toolchain,
+        # matching the design system"), which reworked the summary header from
+        #     print(f"Binding modes: {result.n_modes}")
+        # to the design-system key=value form
+        #     print("  " + tui.kv("binding modes", result.n_modes, tui.mint()))
+        # Colour accessors return "" off a TTY, so under capsys this renders as
+        # "binding modes=3". The count was never dropped — only relabelled — so
+        # this assertion is updated to the new spelling, not weakened.
+        assert "binding modes=3" in out
+
+        # And the thing this test's NAME promises but the original never
+        # actually checked: --top 1 must leave exactly one data row. Verified
+        # against the real behaviour (--top 1/2/3 -> 1/2/3 rows), so this pins
+        # the count rather than the label.
+        data_rows = [ln for ln in out.splitlines() if ln.strip()[:1].isdigit()]
+        assert len(data_rows) == 1, (
+            f"--top 1 should leave exactly 1 data row, got {len(data_rows)}: {data_rows}"
+        )
+
+    def test_top_none_shows_all_rows(self, tmp_path, monkeypatch, capsys):
+        """Counterpart: without --top every mode is listed, so the assertion
+        above is pinning truncation rather than an unconditional row count."""
+        d = self._make_dir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["flexaidds", str(d)])
+        main()
+        out = capsys.readouterr().out
+        assert "binding modes=3" in out
+        data_rows = [ln for ln in out.splitlines() if ln.strip()[:1].isdigit()]
+        assert len(data_rows) == 3, (
+            f"no --top should list all 3 modes, got {len(data_rows)}: {data_rows}"
+        )
 
     def test_top_default_is_none(self, tmp_path):
         parser = build_parser()
