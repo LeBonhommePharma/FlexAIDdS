@@ -9,12 +9,40 @@ Claim admission (fail-closed):
   claim_ready == 1 (strict table) + PoseBusters/tENCoM/Eigen/hash receipts when present
 
 Metrics (always separate):
-  S1      ordered direct rmsd_to_crystal ≤ 2.0 Å  (RMSD-only diagnostic)
+  S1      symmetry-corrected elected-pose RMSD ≤ 2.0 Å  (RMSD-only diagnostic)
   S2      S1 ∧ pb_pass / success_pb
   STRICT  claim_ready == 1  ← primary headline
   S3      conditional scanned-pool ceiling ≤ 2.0 Å (diagnostic only; never any-pose)
 
-S1 MUST use rmsd_to_crystal only — never rmsd_hungarian.
+S1 metric — read this before quoting a number (#365).
+  "Success at 2.0 Å" used to have two producers with two meanings. This file
+  MANDATED the serial column ("S1 MUST use rmsd_to_crystal only") while
+  METHODOLOGY.md §claim, docs/swarm/2026-08-13/score_canonical.py and
+  ops/gate_accuracy_rmsd.py all meant spyRMSD. Both were live. S1 now converges
+  on the symmetry-corrected value, produced by exactly one implementation:
+
+    scripts/rmsd_symmcorr.py  →  spyrmsd.rmsd.symmrmsd
+    (METHODOLOGY.md §0 method 2 contract: crystal SDF bond block, heavy atoms,
+     center=False, minimize=False — in-place, never superposed)
+
+  Supply it with --symmcorr <sidecar.csv>. Rows are joined on pdb_id and, when
+  both sides carry it, on pose_sha256 — so a sidecar from a different run
+  cannot be silently attached to this claim table.
+
+  `rmsd_to_crystal` KEEPS ITS MEANING: ordered/serial, identity atom mapping,
+  as the engine documents (LIB/DatasetRunner.cpp). It is not redefined here.
+  Without a sidecar S1 falls back to it, which is SAFE BUT CONSERVATIVE:
+  symmetry correction minimises over graph automorphisms and the identity
+  mapping is one of them, so symmcorr ≤ serial always. The serial gate can
+  therefore under-count successes but never over-count them. The report says
+  which metric produced the number; an unlabelled RMSD is not reportable.
+
+  rmsd_hungarian remains BANNED for S1. Element-only Hungarian minimises over
+  all same-element bijections — a superset of the chemically valid
+  automorphisms — so it is over-permissive, not merely different: the repo
+  measured it inflating the pool ceiling from 48.8% to 57.8%.
+  Ordering, by construction: hungarian ≤ symmcorr ≤ serial.
+
 --headline s3 requires --diagnostic-only.
 
 Usage:
@@ -177,25 +205,52 @@ def load_rows_from_csv(path: Path) -> list[dict[str, str]]:
         return [dict(r) for r in csv.DictReader(fh)]
 
 
-def elected_rmsd(row: dict[str, str]) -> float:
-    """Ordered direct elected RMSD only (audit P0).
+SYMMCORR_COL = "rmsd_symmcorr"
+# The frozen nine-arm table (PER_POSE_CF_RMSD_NINE_ARMS.csv) and
+# docs/swarm/2026-08-13/score_canonical.py already call this same quantity
+# `rmsd_spyrmsd`. Accept both names rather than minting a rival one — the whole
+# point of #365 is one quantity with one meaning.
+SYMMCORR_COLS = (SYMMCORR_COL, "rmsd_spyrmsd")
 
-    Never use rmsd_hungarian for S1 / claim rates. Legacy three-engine
-    `rmsd_top1` is accepted only when it is the ordered top-1 serial metric
-    and `rmsd_to_crystal` is absent.
+
+def elected_rmsd_labelled(row: dict[str, str]) -> tuple[float, str]:
+    """Elected-pose RMSD for S1, with the name of the metric that produced it.
+
+    Preference order (#365):
+      1. `rmsd_symmcorr`  — symmetry-corrected, spyrmsd graph automorphism,
+         joined from scripts/rmsd_symmcorr.py. This is the claim metric.
+      2. `rmsd_to_crystal` — ordered/serial identity mapping. Conservative
+         fallback: symmcorr ≤ serial always, so this can only under-count.
+      3. `rmsd_top1` — legacy three-engine ordered top-1, when neither is present.
+
+    rmsd_hungarian is never consulted: it is over-permissive (see module
+    docstring). Returns (value, metric_name); value is nan when none is finite.
     """
+    rs = _f(row, *SYMMCORR_COLS)
+    if math.isfinite(rs):
+        return rs, "symmcorr"
     rc = _f(row, "rmsd_to_crystal")
     if math.isfinite(rc):
-        return rc
+        return rc, "serial"
     # Legacy engines without rmsd_to_crystal may emit ordered rmsd_top1 only.
-    return _f(row, "rmsd_top1")
+    return _f(row, "rmsd_top1"), "serial_legacy_top1"
+
+
+def elected_rmsd(row: dict[str, str]) -> float:
+    """Elected-pose RMSD used by S1. See elected_rmsd_labelled()."""
+    return elected_rmsd_labelled(row)[0]
 
 
 def is_s1(row: dict[str, str]) -> bool:
-    """S1: ordered direct elected RMSD ≤ 2.0 Å (RMSD-only diagnostic).
+    """S1: symmetry-corrected elected RMSD ≤ 2.0 Å (RMSD-only diagnostic).
 
-    Finite ordered RMSD always wins over success_* flags so a stale flag
-    cannot admit a high-RMSD pose. Hungarian is never consulted.
+    A finite RMSD always wins over success_* flags so a stale flag cannot
+    admit a high-RMSD pose. In particular the engine's `success_rmsd` column
+    is a SERIAL gate; when a symmetry-corrected value is present it supersedes
+    that flag rather than deferring to it — otherwise the engine's stricter
+    definition would silently keep governing the claim (#365).
+
+    Hungarian is never consulted.
     """
     if _truth(row, "seed_echo"):
         return False
@@ -210,6 +265,64 @@ def is_s1(row: dict[str, str]) -> bool:
     if "success" in row and str(row.get("success", "")).strip() != "":
         return _truth(row, "success")
     return False
+
+
+def load_symmcorr_sidecar(path: Path) -> dict[str, dict[str, str]]:
+    """Load scripts/rmsd_symmcorr.py output, keyed by pdb_id.
+
+    Only rows with status == "ok" and a finite value are usable. Everything
+    else is dropped here so a blank or errored row cannot be mistaken for a
+    measurement.
+    """
+    out: dict[str, dict[str, str]] = {}
+    with path.open(newline="") as fh:
+        for rec in csv.DictReader(fh):
+            if str(rec.get("status", "")).strip() != "ok":
+                continue
+            val = ""
+            for col in SYMMCORR_COLS:
+                val = str(rec.get(col, "")).strip()
+                if val:
+                    break
+            if val == "":
+                continue
+            rec = dict(rec)
+            rec[SYMMCORR_COL] = val
+            pid = str(rec.get("pdb_id", "")).strip().upper()
+            if pid:
+                out[pid] = dict(rec)
+    return out
+
+
+def join_symmcorr(
+    rows: list[dict[str, str]], sidecar: dict[str, dict[str, str]]
+) -> dict[str, Any]:
+    """Attach `rmsd_symmcorr` to claim rows. Returns a provenance summary.
+
+    The join requires pose identity: when both the claim row and the sidecar
+    carry a pose_sha256 they must be equal, otherwise the sidecar value
+    describes a different pose and is refused. This is the same same-pose
+    discipline the engine applies via rmsd_pose_sha256 == pose_sha256.
+    """
+    joined = 0
+    refused: list[str] = []
+    for row in rows:
+        pid = _pdb_id(row).upper()
+        rec = sidecar.get(pid)
+        if rec is None:
+            continue
+        row_sha = str(row.get("pose_sha256", "")).strip()
+        side_sha = str(rec.get("pose_sha256", "")).strip()
+        if row_sha and side_sha and row_sha != side_sha:
+            refused.append(pid)
+            continue
+        row[SYMMCORR_COL] = rec["rmsd_symmcorr"]
+        joined += 1
+    return {
+        "joined": joined,
+        "refused_sha_mismatch": sorted(refused),
+        "sidecar_rows": len(sidecar),
+    }
 
 
 def is_s2(row: dict[str, str], s1: bool) -> bool:
@@ -430,6 +543,33 @@ def aggregate_rows(
     def rate(k: int) -> float:
         return (k / denom) if denom else 0.0
 
+    # Targets whose RMSD verdict changes under the corrected metric. This is a
+    # metric-only statement: it compares serial vs symmcorr on the SAME elected
+    # pose and says nothing about admission. Direction is one-way by
+    # construction (symmcorr <= serial), so this list can only ever contain
+    # fail -> PASS moves; a pass -> fail entry would be a bug and is asserted
+    # against in tests/test_rmsd_symmcorr.py.
+    symmcorr_gained: list[str] = []
+    for r in claim:
+        rs = _f(r, *SYMMCORR_COLS)
+        rc = _f(r, "rmsd_to_crystal")
+        if not math.isfinite(rs):
+            continue
+        serial_pass = math.isfinite(rc) and 0.0 <= rc <= RMSD_SUCCESS_A
+        if (0.0 <= rs <= RMSD_SUCCESS_A) and not serial_pass:
+            symmcorr_gained.append(_pdb_id(r))
+
+    # Which metric actually produced the S1 numbers on this table? An
+    # unlabelled RMSD is not reportable (METHODOLOGY.md §0).
+    _metrics_seen = sorted(
+        {
+            elected_rmsd_labelled(r)[1]
+            for r in claim
+            if math.isfinite(elected_rmsd_labelled(r)[0])
+        }
+    ) or ["none_finite"]
+    s1_metric_used = "+".join(_metrics_seen)
+
     report: dict[str, Any] = {
         "contract": "admission_metrics_contract",
         "contract_doc": "benchmarks/protocols/admission_metrics_contract.md",
@@ -447,7 +587,13 @@ def aggregate_rows(
         "dropped_rows": dropped,
         "metrics": {
             "S1": {
-                "definition": "ordered direct rmsd_to_crystal <= 2.0 A (never hungarian)",
+                "definition": (
+                    "symmetry-corrected elected-pose RMSD <= 2.0 A "
+                    "(spyrmsd graph automorphism, in-place; never hungarian). "
+                    "Falls back to ordered rmsd_to_crystal when no symmcorr "
+                    "sidecar is joined — conservative, since symmcorr <= serial."
+                ),
+                "metric_used": s1_metric_used,
                 "role": "rmsd_only_diagnostic",
                 "n": len(s1_ids),
                 "rate": rate(len(s1_ids)),
@@ -492,6 +638,33 @@ def aggregate_rows(
             "ids": election_gap_ids,
         },
         "S1_fail_ids": s1_fail_ids,
+        "symmcorr_delta": {
+            "definition": (
+                "targets whose elected-pose RMSD verdict moves fail->PASS when "
+                "the serial metric is replaced by the symmetry-corrected one"
+            ),
+            "n": len(symmcorr_gained),
+            "ids": symmcorr_gained,
+            "direction_note": (
+                "one-way by construction: symmetry correction minimises over "
+                "graph automorphisms and the identity mapping is one of them, "
+                "so symmcorr <= serial and no target can move PASS->fail"
+            ),
+        },
+        "strict_metric_inheritance": {
+            "note": (
+                "STRICT is the engine's claim_ready column. In the engine "
+                "claim_ready requires success_pb, and success_pb := "
+                "success_rmsd AND pb_pass, where success_rmsd gates on the "
+                "SERIAL rmsd_to_crystal (LIB/DatasetRunner.cpp). STRICT "
+                "therefore still inherits the serial definition and is a "
+                "CONSERVATIVE lower bound: it can under-count but never "
+                "over-count. Repointing the engine gate is the remaining half "
+                "of #365 and requires a rebuild."
+            ),
+            "s1_metric": s1_metric_used,
+            "strict_metric": "serial (via engine success_pb)",
+        },
         "headline": {
             "metric": "STRICT",
             "n": len(strict_ids),
@@ -529,13 +702,29 @@ def format_text_report(report: dict[str, Any]) -> str:
         f"STRICT (headline): {m['STRICT']['n']}/{n} = {100.0 * m['STRICT']['rate']:.2f}%  "
         f"[claim_ready]",
         f"S1 (RMSD-only):    {m['S1']['n']}/{n} = {100.0 * m['S1']['rate']:.2f}%  "
-        f"[diagnostic; ordered rmsd_to_crystal]",
+        f"[diagnostic; metric={m['S1'].get('metric_used', 'unknown')}]",
         f"S2 (S1∧PB):        {m['S2']['n']}/{n} = {100.0 * m['S2']['rate']:.2f}%",
         f"S3 (pool ceiling): {m['S3']['n']}/{n} = {100.0 * m['S3']['rate']:.2f}%  "
         f"[diagnostic; conditional scanned pool — NOT any-pose]",
         f"election_gap (S3∧¬S1): {report['election_gap']['n']}/{n} = "
         f"{100.0 * report['election_gap']['rate']:.2f}%",
     ]
+    _sd = report.get("symmcorr_delta")
+    if _sd is not None:
+        lines.append(
+            f"symmcorr gain (fail->PASS): {_sd['n']}"
+            + (f" -> {', '.join(_sd['ids'])}" if _sd["ids"] else "")
+        )
+    _sm = report.get("symmcorr")
+    if _sm is not None and _sm.get("sidecar"):
+        lines.append(
+            f"symmcorr sidecar: {_sm['joined']}/{_sm['sidecar_rows']} rows joined"
+        )
+    elif report.get("metrics", {}).get("S1", {}).get("metric_used") == "serial":
+        lines.append(
+            "symmcorr sidecar: NONE — S1 used the serial metric "
+            "(conservative; run scripts/rmsd_symmcorr.py and pass --symmcorr)"
+        )
     if report["N_dropped"]:
         lines.append("")
         lines.append("dropped (non-claim):")
@@ -646,6 +835,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Allow --headline s3/s1/s2 as diagnostic headline (never abstract claim success).",
     )
+    ap.add_argument(
+        "--symmcorr",
+        type=Path,
+        default=None,
+        help=(
+            "Sidecar CSV from scripts/rmsd_symmcorr.py. Supplies the "
+            "symmetry-corrected S1 metric (#365). Without it S1 falls back to "
+            "the ordered serial column, which under-counts but never "
+            "over-counts."
+        ),
+    )
     ap.add_argument("--json", type=Path, default=None, help="Write full JSON report")
     ap.add_argument(
         "--quiet",
@@ -706,6 +906,28 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     assert campaign is not None
+    symmcorr_provenance: dict[str, Any] = {
+        "sidecar": None,
+        "joined": 0,
+        "refused_sha_mismatch": [],
+        "sidecar_rows": 0,
+    }
+    if args.symmcorr is not None:
+        if not args.symmcorr.is_file():
+            print(f"not a file: {args.symmcorr}", file=sys.stderr)
+            return 2
+        sidecar = load_symmcorr_sidecar(args.symmcorr)
+        symmcorr_provenance = join_symmcorr(rows, sidecar)
+        symmcorr_provenance["sidecar"] = str(args.symmcorr)
+        if symmcorr_provenance["refused_sha_mismatch"]:
+            print(
+                "error: symmcorr sidecar describes different poses for: "
+                + ", ".join(symmcorr_provenance["refused_sha_mismatch"])
+                + "\n(pose_sha256 mismatch — refusing to join a claim number "
+                "to a pose it is not about)",
+                file=sys.stderr,
+            )
+            return 2
     try:
         pin, pin_src = load_matrix_pin(campaign, args.matrix_md5)
     except ValueError as exc:
@@ -717,6 +939,7 @@ def main(argv: list[str] | None = None) -> int:
         matrix_pin_source=pin_src,
         campaign_dir=str(campaign.resolve()),
     )
+    report["symmcorr"] = symmcorr_provenance
     report, err = apply_headline(report, args.headline, args.diagnostic_only)
     if err is not None:
         return err
