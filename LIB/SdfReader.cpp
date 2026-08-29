@@ -410,6 +410,72 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
     printf("read_sdf_ligand: %d atoms, %d bonds (mol=%s)\n",
            natoms, nbonds_actual, mol_name);
 
+    // ── Optional PARTIAL charges from an SD data tag (opt-in, default no-op) ──
+    // SDF carries only FORMAL charges (V2000 "M  CHG", V3000 "CHG="), so every
+    // ligand atom arrives at charge 0.0 for a neutral molecule. The Coulomb term
+    // in vcfunction.cpp is guarded by (qA != 0.0 && qB != 0.0), so electrostatics
+    // is unreachable for neutral ligands no matter how use_elec is set — even
+    // though the receptor side IS populated by assign_formal_charges.h.
+    //
+    // This block lets a partial-charge model (Gasteiger, AM1-BCC, RESP, ...) be
+    // supplied out-of-band in an SD data field, WITHOUT changing atom typing,
+    // file format, or any other input — a.type is derived from element and bond
+    // topology below and is unaffected by anything here:
+    //
+    //   >  <FLEXAIDDS_PARTIAL_CHARGES>
+    //   -0.0451 0.1203 ...        (natoms whitespace-separated floats, atom order)
+    //
+    // Absent tag  => charges untouched => bit-identical to prior behaviour.
+    // Count mismatch => refuse and warn, rather than apply a misaligned vector.
+    // FLEXAIDDS_SDF_PARTIAL_CHARGES=0 disables reading even when the tag exists.
+    {
+        const char* dis = getenv("FLEXAIDDS_SDF_PARTIAL_CHARGES");
+        const bool enabled = !(dis && dis[0] != '\0' && atoi(dis) == 0);
+        if (enabled) {
+            FILE* pf = fopen(sdf_file, "r");
+            if (pf) {
+                char pbuf[4096];
+                bool in_tag = false;
+                std::vector<float> q;
+                while (fgets(pbuf, sizeof(pbuf), pf)) {
+                    if (strncmp(pbuf, "$$$$", 4) == 0) break;
+                    if (!in_tag) {
+                        if (strstr(pbuf, "<FLEXAIDDS_PARTIAL_CHARGES>")) in_tag = true;
+                        continue;
+                    }
+                    if (pbuf[0] == '\n' || pbuf[0] == '\r') break;   // blank line ends the field
+                    const char* p = pbuf;
+                    while (*p) {
+                        while (*p == ' ' || *p == '\t') ++p;
+                        if (!*p || *p == '\n' || *p == '\r') break;
+                        char* end = NULL;
+                        const double v = strtod(p, &end);
+                        if (end == p) break;
+                        q.push_back((float)v);
+                        p = end;
+                    }
+                }
+                fclose(pf);
+                if (!q.empty()) {
+                    if ((int)q.size() != natoms) {
+                        fprintf(stderr,
+                                "ERROR [SDF %s]: FLEXAIDDS_PARTIAL_CHARGES has %d values but "
+                                "%d atoms — charges NOT applied\n",
+                                sdf_file, (int)q.size(), natoms);
+                    } else {
+                        double qsum = 0.0;
+                        for (int i = 0; i < natoms; ++i) {
+                            satoms[i].charge = q[(size_t)i];
+                            qsum += (double)q[(size_t)i];
+                        }
+                        printf("read_sdf_ligand: applied %d SD partial charges (net %+.4f)\n",
+                               natoms, qsum);
+                    }
+                }
+            }
+        }
+    }
+
     // ── Perceive hybridization from bond topology (C.ar / N.ar / O.co2) ───────
     // SDF/MOL files DO carry bond orders (MDL bond type 4 = aromatic). Pure
     // element typing never emits C.ar/N.ar/O.co2 — the only three VCT types that

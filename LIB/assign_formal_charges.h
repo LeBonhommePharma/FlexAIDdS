@@ -28,6 +28,8 @@
 
 // Need full struct definitions for inline implementation
 #include "flexaid.h"
+#include <cstdlib>
+#include "ff14sb_lumped_charges.h"
 
 namespace formal_charges {
 
@@ -166,7 +168,102 @@ static constexpr ChargeEntry METAL_ION_CHARGES[] = {
 //
 // Does NOT overwrite existing non-zero charges (preserves MOL2/PTM values).
 //
+// ─────────────────────────────────────────────────────────────────────────────
+// OPT-IN CHARGE-CONSERVING ALTERNATIVE: AMBER ff14SB, hydrogen-lumped.
+//
+// WHY THIS EXISTS. The default table above mixes two conventions inside itself.
+// Most entries are verbatim ff14SB HEAVY-ATOM partials with the polar hydrogen
+// simply omitted (SER OG -0.65, TYR OH -0.56, backbone N -0.42 ...), while the
+// formally charged groups are DELIBERATELY overridden with formal charge instead
+// (LYS NZ +1.00 against a lumped +0.63; ARG NH1/NH2 +0.45 each) - a documented
+// choice, see the comments on those entries. Each half is defensible alone. Mixed,
+// they are not: a formally NEUTRAL group ends up carrying net charge (SER -0.65,
+// ASN -0.89, backbone -0.99 per peptide unit, of order -297 e over 300 residues),
+// so a pairwise q*q term is invalid before it evaluates - and the ligand side is
+// prepared united-atom with net ~0, i.e. on the OTHER convention.
+//
+// This path replaces the whole receptor set with ff14SB hydrogen-lumped values
+// (LIB/ff14sb_lumped_charges.h, machine-generated), so every residue sums to its
+// formal charge and both sides of the term share one convention.
+//
+// GATE: opt-in only. FLEXAIDDS_FF14SB_CHARGES=1 selects it; unset reproduces the
+// default byte-for-byte. Metals keep METAL_ION_CHARGES formal integers, which is
+// still a convention mismatch against these partials - disclosed, not fixed.
+// Terminal residues use the N*/C* templates; HIS is aliased to HIE at generation.
+// ─────────────────────────────────────────────────────────────────────────────
+inline void assign_ff14sb_lumped(FA_Global* FA, atom* atoms, resid* residue) {
+    int n_assigned = 0, n_metal = 0, n_res = 0, n_unmatched_res = 0;
+    double q_total = 0.0;
+
+    // first residue of each chain -> N-terminal template
+    bool* is_nterm = (bool*)std::calloc((size_t)FA->res_cnt + 2, sizeof(bool));
+    char seen[128]; int n_seen = 0;
+    for (int r = 1; r <= FA->res_cnt; r++) {
+        if (residue[r].type == 1) continue;
+        bool s = false;
+        for (int c = 0; c < n_seen; c++) if (seen[c] == residue[r].chn) { s = true; break; }
+        if (s) continue;
+        if (n_seen < 127) seen[n_seen++] = residue[r].chn;
+        is_nterm[r] = true;
+    }
+
+    for (int r = 1; r <= FA->res_cnt; r++) {
+        if (residue[r].type == 1) continue;               // ligand keeps SDF/MOL2 charges
+        const char* rname = residue[r].name;
+
+        bool is_metal = false;
+        for (const auto& me : METAL_ION_CHARGES) {
+            if (std::strncmp(rname, me.res_name, 3) == 0) {
+                for (int j = residue[r].fatm[0]; j <= residue[r].latm[0]; j++) {
+                    if (atoms[j].charge == 0.0f) { atoms[j].charge = me.charge; n_metal++; }
+                }
+                is_metal = true; break;
+            }
+        }
+        if (is_metal) continue;
+
+        // template name: N<res> at a chain start, C<res> at a chain terminus, else <res>
+        char tmpl[8];
+        if (is_nterm[r])        std::snprintf(tmpl, sizeof(tmpl), "N%.3s", rname);
+        else if (residue[r].ter) std::snprintf(tmpl, sizeof(tmpl), "C%.3s", rname);
+        else                     std::snprintf(tmpl, sizeof(tmpl), "%.3s", rname);
+
+        int hits = 0;
+        double q_res = 0.0;
+        for (int pass = 0; pass < 2; pass++) {
+            // pass 0 uses the terminal/plain template; pass 1 falls back to the plain
+            // template when a terminal one is absent, so a chain end is never left blank
+            const char* want = tmpl;
+            char plain[8];
+            if (pass == 1) { std::snprintf(plain, sizeof(plain), "%.3s", rname); want = plain; }
+            if (pass == 1 && hits > 0) break;
+            for (int e = 0; e < ff14sb_lumped::FF14SB_LUMPED_COUNT; e++) {
+                const auto& ent = ff14sb_lumped::FF14SB_LUMPED_CHARGES[e];
+                if (std::strcmp(want, ent.res_name) != 0) continue;
+                for (int j = residue[r].fatm[0]; j <= residue[r].latm[0]; j++) {
+                    if (std::strncmp(atoms[j].name, ent.atom_name, 4) != 0) continue;
+                    atoms[j].charge = ent.charge;
+                    q_res += (double)ent.charge;
+                    hits++; n_assigned++;
+                }
+            }
+        }
+        if (hits == 0) n_unmatched_res++;
+        else { n_res++; q_total += q_res; }
+    }
+    std::free(is_nterm);
+
+    printf("ff14SB lumped charges: %d atoms over %d residues (net %+.4f e), "
+           "%d metal/ion atoms, %d residues UNMATCHED\n",
+           n_assigned, n_res, q_total, n_metal, n_unmatched_res);
+    printf("  convention: united-atom (polar H folded into its heavy atom); "
+           "every matched residue sums to its formal charge by construction\n");
+}
+
 inline void assign_formal_charges(FA_Global* FA, atom* atoms, resid* residue) {
+    const char* ff14 = std::getenv("FLEXAIDDS_FF14SB_CHARGES");
+    if (ff14 && ff14[0] == '1') { assign_ff14sb_lumped(FA, atoms, residue); return; }
+
     int n_assigned = 0;
     int n_backbone_o = 0;
     int n_backbone_n = 0;
