@@ -90,6 +90,13 @@ normative mapping between them is in `CONVENTION.md`, under
 "`DONE` — normative specification". Where the two disagree, `DONE` is primary
 evidence and `status` is a stale index.
 
+That precedence assumes testimony. A `DONE` carrying `source=reconstructed` was
+written by an observer after the runner exited, inferring from the artifacts on
+disk — it is weaker evidence, and it does not automatically outrank what the
+directory shows. Absence of the field does not establish runner-written for a
+`DONE` predating the amendment. See `CONVENTION.md`, "Attestation — testimony
+versus reconstruction".
+
 ### `by` — carried, pending LP's ruling
 
 LP has not ruled on whether seat attribution belongs in the schema. It is
