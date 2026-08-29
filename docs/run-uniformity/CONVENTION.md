@@ -380,6 +380,24 @@ A reader encountering any of those four combinations MUST treat the file as
 untrustworthy in whole, not repair it in part. The fields disagree, and which one
 is wrong is not recoverable from the file.
 
+**Worked example — all three fields, not one.** A conforming reconstruction of a
+run whose recount finds every target present:
+
+```
+status=unverified
+rc=unknown
+targets_done=1
+targets_total=1
+finished_utc=2026-08-28T21:03:39Z
+engine_sha=5ecbb89eebede8cba9271cbdd386496583bfbe2178cd9ded3db0f5512f11b511
+run=<batch>/<arm>
+source=reconstructed
+```
+
+`status`, `rc` and `source` move together. A retrofit that writes
+`status=unverified` while leaving `rc` or `source` as they were has produced one
+of the four violations above, not a partial improvement.
+
 **What a writer records instead, when it cannot use `unverified`.** A
 reconstruction that finds a short count uses `partial`. One that finds no usable
 output uses `failed` — whose second disjunct ("produced no usable output at all")
