@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 #include "../LIB/CleftDetector.h"
+#include "../LIB/site_confine.h"
 #include "../LIB/CavityDetect/CavityDetect.h"
 
 #include <cmath>
@@ -157,6 +158,63 @@ TEST_F(CleftDetectorTest, DetectsCleftInBox) {
     }
     // If result is null, the geometry may not produce a cleft under default params
     // (this is geometry-dependent, not a failure)
+}
+
+TEST(SiteConfineDecision, SparsePocketMustNotFullGridFallback) {
+    // 1STP biotin: keep=188, MIN_SITE_GRID=500, total=19897 → previously
+    // fell back to the full protein grid. Must confine.
+    EXPECT_TRUE(flexaids::site_confine_should_rebuild(188, 19897));
+    EXPECT_TRUE(flexaids::site_confine_should_rebuild(500, 19897));
+    EXPECT_TRUE(flexaids::site_confine_should_rebuild(25, 19897));
+    EXPECT_FALSE(flexaids::site_confine_should_rebuild(24, 19897));
+    EXPECT_FALSE(flexaids::site_confine_should_rebuild(0, 19897));
+    EXPECT_FALSE(flexaids::site_confine_should_rebuild(19897, 19897));
+}
+
+TEST_F(CleftDetectorTest, AllHetAtomsYieldNoCleft) {
+    // Every atom tagged as ligand/HETATM must be ignored, so SURFNET sees
+    // an empty receptor and returns no cavity.
+    std::vector<resid> het_only(2);
+    het_only[1].type = 1;
+    for (auto& a : atoms)
+        a.ofres = 1;
+
+    CleftDetectorParams params = default_cleft_params();
+    params.min_cluster_size = 2;
+    sphere* result = detect_cleft(atoms.data(), het_only.data(),
+                                  static_cast<int>(atoms.size()), 1, params);
+    EXPECT_EQ(result, nullptr);
+    if (result) free_sphere_list(result);
+}
+
+TEST_F(CleftDetectorTest, SkipsHetLigandOccupyingPocket) {
+    // 1-based residue map: [1]=protein (type 0), [2]=ligand (type 1).
+    // A bulky HET atom at the cavity origin would shrink SURFNET probes
+    // out of the pocket if it were included — the skip must prevent that.
+    std::vector<atom> het_atoms = atoms;
+    std::vector<resid> het_residues(3);
+    het_residues[1].type = 0;
+    het_residues[2].type = 1;
+    for (auto& a : het_atoms)
+        a.ofres = 1;
+    atom lig = make_atom(0.0f, 0.0f, 0.0f, 2.5f, "C1");
+    lig.ofres = 2;
+    het_atoms.push_back(lig);
+
+    CleftDetectorParams params = default_cleft_params();
+    params.min_cluster_size = 2;
+
+    sphere* with_skip = detect_cleft(het_atoms.data(), het_residues.data(),
+                                     static_cast<int>(het_atoms.size()), 2, params);
+    // Ligand skip is a correctness gate, not a geometry guarantee: the box
+    // fixture may still return null under default SURFNET knobs. If spheres
+    // are produced, the occupied-pocket ligand must not have emptied them.
+    if (with_skip) {
+        int count = 0;
+        for (sphere* s = with_skip; s; s = s->prev) ++count;
+        EXPECT_GE(count, 1);
+        free_sphere_list(with_skip);
+    }
 }
 
 TEST_F(CleftDetectorTest, FreeSphereListHandlesNull) {

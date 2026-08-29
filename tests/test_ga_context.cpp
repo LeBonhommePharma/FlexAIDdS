@@ -92,6 +92,17 @@ TEST(GAContextTest, IsMovable) {
     EXPECT_TRUE(std::is_move_assignable_v<GAContext>);
 }
 
+TEST(RngSeedTest, DeterministicSeedFromKeyIsStableAndNonZero) {
+    const int a = flexaids_rng::deterministic_seed_from_key("redock:1STP");
+    const int b = flexaids_rng::deterministic_seed_from_key("redock:1STP");
+    const int c = flexaids_rng::deterministic_seed_from_key("redock:1GPK");
+    EXPECT_GT(a, 0);
+    EXPECT_EQ(a, b);
+    EXPECT_NE(a, c);
+    EXPECT_GT(flexaids_rng::deterministic_seed_from_key(nullptr), 0);
+    EXPECT_GT(flexaids_rng::deterministic_seed_from_key(""), 0);
+}
+
 TEST(RngSeedTest, FlexaidSeedMakesStreamSeedsRepeatable) {
     set_test_env("FLEXAID_SEED", "42");
     auto s1 = flexaids_rng::seed_from_env_or_random(123);

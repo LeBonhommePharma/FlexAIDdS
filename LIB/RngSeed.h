@@ -40,6 +40,23 @@ inline bool env_seed(std::uint64_t& seed)
     return true;
 }
 
+/// Positive 31-bit FNV-1a. Used when ga.seed==0 and FLEXAID_SEED is unset
+/// so documented CLI (`FlexAIDdS --redock 1STP`) is reproducible without
+/// falling back to time(0) (which gaboom now refuses).
+inline int deterministic_seed_from_key(const char* key)
+{
+    std::uint32_t h = 2166136261u;
+    if (key) {
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(key);
+             *p; ++p) {
+            h ^= *p;
+            h *= 16777619u;
+        }
+    }
+    h &= 0x7fffffffu;
+    return h ? static_cast<int>(h) : 1;
+}
+
 inline void set_master_seed(std::uint64_t seed)
 {
     g_master_seed.store(seed, std::memory_order_release);
