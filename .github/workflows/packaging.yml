@@ -1,0 +1,378 @@
+name: Packaging
+
+# Why this workflow exists
+# ------------------------
+# pypi-release.yml only fires on `release: published` / `workflow_dispatch`, so
+# its build jobs are never exercised by ordinary development. Consequence: of
+# 442 recorded runs, 436 were 0-second startup failures from an unparseable
+# file, and only 6 ever started a job — the packaging logic was effectively
+# untested for a month at a time. This workflow runs the same build steps on
+# every PR that touches packaging, plus three regression gates for defects that
+# actually shipped:
+#
+#   1. an unparseable workflow file (the 0-second failure class)
+#   2. a platform-tagged wheel containing no compiled extension
+#   3. a build with no recoverable commit that reports itself as clean
+#
+# Gates 2 and 3 are the "identifiable binary" requirement in executable form.
+
+on:
+  pull_request:
+    paths:
+      - 'python/**'
+      - 'conda/**'
+      - 'Formula/**'
+      - 'containers/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - '.git_archival.txt'
+      - '.gitattributes'
+      - '.dockerignore'
+      - '.github/workflows/**'
+  push:
+    branches: [main]
+    paths:
+      - 'python/**'
+      - 'conda/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packaging-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Gate 1: no workflow file may be unparseable ────────────────────────────
+  # GitHub creates a run and fails it in 0s when it cannot parse a workflow, so
+  # the breakage is invisible in job logs — there are no jobs. actionlint sees
+  # it before it lands.
+  workflow-lint:
+    name: Workflow files parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: actionlint
+        run: |
+          set -euo pipefail
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          # shellcheck/pyflakes findings inside run: blocks are advisory here;
+          # a *parse* failure is not.
+          ./actionlint -color -shellcheck= -pyflakes= || true
+          echo "--- strict YAML parse (this is the blocking check) ---"
+          python3 - <<'PY'
+          import pathlib, sys
+          import yaml
+          bad = []
+          for f in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
+              try:
+                  d = yaml.safe_load(f.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  bad.append(f"{f}: {type(exc).__name__}: {exc}")
+                  continue
+              if not isinstance(d, dict) or "jobs" not in d:
+                  bad.append(f"{f}: parsed but has no 'jobs' mapping")
+          if bad:
+              print("UNPARSEABLE WORKFLOW FILES:")
+              print("\n".join(bad))
+              sys.exit(1)
+          print("all workflow files parse and declare jobs")
+          PY
+
+  # ── The same build steps pypi-release.yml runs, but continuously ───────────
+  sdist-and-pure-wheel:
+    name: sdist + pure wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build twine
+
+      - name: Build sdist
+        working-directory: python
+        run: python -m build --sdist --outdir ../dist
+
+      - name: Build pure wheel
+        working-directory: python
+        env:
+          FLEXAIDDS_SKIP_CORE: "1"
+        run: python -m build --wheel --outdir ../dist
+
+      - name: Twine check
+        run: python -m twine check dist/*
+
+      # The sdist must be *self-sufficient*: sources AND the full header closure.
+      # It shipped 9 .cpp files whose headers were absent, so `pip install
+      # flexaidds` could never build flexaidds._core on any platform — it always
+      # fell back to pure Python with only a warning. setup.py now derives the
+      # closure from the #include graph; this asserts the derivation still runs.
+      - name: sdist is self-sufficient for an out-of-tree _core build
+        run: |
+          set -euo pipefail
+          tar tzf dist/*.tar.gz | sed 's|^[^/]*/||' | sort > /tmp/sdist.txt
+          n=$(grep -c '^LIB/.*\.cpp$' /tmp/sdist.txt)
+          echo "LIB/*.cpp staged: $n"
+          test "$n" -ge 9 || { echo "sdist is missing staged LIB sources"; exit 1; }
+
+          missing=0
+          # Reached only transitively; each was absent before the closure fix.
+          for h in flexaid.h flexaid_exception.h EnvFlags.h ThermodynamicEngine.h \
+                   log_sum_exp.h metal_eval.h simd_distance.h atom_typing_256.h; do
+            if grep -qx "LIB/$h" /tmp/sdist.txt; then
+              echo "  ok   LIB/$h"
+            else
+              echo "  MISS LIB/$h"; missing=1
+            fi
+          done
+          test "$missing" -eq 0 || {
+            echo "sdist ships sources whose headers are absent — _core can never compile."
+            echo "See _transitive_local_headers() in python/setup.py."
+            exit 1; }
+
+          # Belt and braces: compile-check the closure directly from the sdist.
+          tmp=$(mktemp -d); tar xzf dist/*.tar.gz -C "$tmp" --strip-components=1
+          sudo apt-get install -y libeigen3-dev >/dev/null 2>&1 || true
+          python -m pip install --quiet pybind11
+          cd "$tmp"
+          if g++ -fsyntax-only -std=c++2b -ILIB -ILIB/tENCoM -ILIB/ShannonThermoStack \
+                 -I/usr/include/eigen3 "-I$(python -m pybind11 --includes | sed 's/-I//g' | awk '{print $1}')" \
+                 LIB/statmech.cpp 2>/tmp/syn.log; then
+            echo "header closure resolves (syntax-only)"
+          else
+            if grep -q "file not found\|No such file or directory" /tmp/syn.log; then
+              echo "MISSING HEADER in sdist:"; grep -m5 "file not found\|No such file" /tmp/syn.log; exit 1
+            fi
+            echo "compiled far enough to resolve all headers (non-header errors ignored)"
+          fi
+
+      - name: Install and verify version agreement
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/v && source /tmp/v/bin/activate
+          python -m pip install --upgrade pip
+          FLEXAIDDS_SKIP_CORE=1 python -m pip install dist/*.tar.gz
+          python -m flexaidds --help > /dev/null
+          python - <<'PY'
+          import pathlib, re, sys
+          import flexaidds as fd
+          txt = pathlib.Path("python/pyproject.toml").read_text(encoding="utf-8")
+          m = re.search(r'(?ms)^\[project\].*?^version\s*=\s*"([^"]+)"', txt)
+          assert m, "no static version in [project]"
+          assert m.group(1) == fd.__version__, (m.group(1), fd.__version__)
+          # conda recipe now derives its version from __version__.py; assert the
+          # file it reads still has the shape the jinja regex expects.
+          vf = pathlib.Path("python/flexaidds/__version__.py").read_text(encoding="utf-8")
+          assert re.search(r'__version__\s*=\s*"([^"]+)"', vf).group(1) == fd.__version__
+          print("version_ok", fd.__version__)
+          PY
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: packaging-dist
+          path: dist/*
+          retention-days: 5
+
+  # ── Gate 2: fallback must produce a PURE wheel, not a lying platform wheel ──
+  # Reproduces the real-world case CI never covered: pybind11 and Eigen are
+  # present so the extension IS attempted, but the compiler predates C++26 so it
+  # fails and the pure-Python fallback engages. Before the fix this emitted
+  # `flexaidds-2.0.3-cp310-cp310-linux_aarch64.whl` — a platform+ABI-tagged
+  # wheel with no .so in it, which delocate/auditwheel reject and which an index
+  # would serve to exactly one interpreter.
+  #
+  # ubuntu-22.04 is pinned because gcc-11 is the point: a newer default compiler
+  # would succeed and silently stop testing the fallback.
+  fallback-wheel-is-pure:
+    name: Fallback wheel is py3-none-any
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Install Eigen (so the build is attempted, then fails on C++26)
+        run: |
+          bash scripts/ci/apt_get_update.sh || sudo apt-get update -y
+          sudo apt-get install -y libeigen3-dev
+
+      - name: Build wheel with gcc-11 (no C++26)
+        working-directory: python
+        env:
+          CC: gcc-11
+          CXX: g++-11
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir ../dist
+
+      - name: Assert the fallback wheel is pure and importable
+        run: |
+          set -euo pipefail
+          ls -la dist/
+          name=$(basename dist/*.whl)
+          echo "produced: $name"
+          case "$name" in
+            *py3-none-any.whl) echo "OK: pure wheel" ;;
+            *) echo "FAIL: extension did not build, yet the wheel is platform-tagged: $name"
+               echo "      see bdist_wheel_optional_ext in python/setup.py"
+               exit 1 ;;
+          esac
+          python -m venv /tmp/vw && source /tmp/vw/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          python -c "import flexaidds as fd; assert not fd.HAS_CORE_BINDINGS; print('pure fallback importable', fd.__version__)"
+
+  # ── Gate 3: every build must be identifiable ───────────────────────────────
+  # A binary that cannot be tied back to a commit destroys the evidence of what
+  # produced a result. The old CMake block left FLEXAIDS_GIT_COMMIT empty and
+  # FLEXAIDS_GIT_DIRTY=0 for any build without a git checkout — Homebrew's
+  # release tarball, conda-build, and the Docker image all hit that path, and
+  # all of them claimed to be clean builds of an unnamed commit.
+  provenance-is-recoverable:
+    name: Build provenance (git / archive / bare / override)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Install toolchain (gcc-14 — CMakeLists gates C++26 on it)
+        run: |
+          bash scripts/ci/apt_get_update.sh || sudo apt-get update -y
+          sudo apt-get install -y cmake ninja-build libeigen3-dev gcc-14 g++-14
+
+      - name: Configure the four provenance cases
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: |
+          set -euo pipefail
+          common="-DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBUILD_PYTHON_BINDINGS=OFF"
+
+          # (a) real checkout
+          # shellcheck disable=SC2086
+          cmake -S . -B /tmp/b-git $common > /tmp/git.log 2>&1
+
+          # (b) git archive tarball — exactly what Homebrew's stable url gets
+          mkdir -p /tmp/arch
+          git archive --format=tar --prefix=src/ HEAD | tar -C /tmp/arch -xf -
+          test ! -e /tmp/arch/src/.git
+          echo "--- .git_archival.txt after export-subst ---"; cat /tmp/arch/src/.git_archival.txt
+          # shellcheck disable=SC2086
+          cmake -S /tmp/arch/src -B /tmp/b-arch $common > /tmp/arch.log 2>&1
+
+          # (c) tarball with the archival file stripped -> must say UNKNOWN, not clean
+          cp -r /tmp/arch/src /tmp/bare && rm -f /tmp/bare/.git_archival.txt
+          # shellcheck disable=SC2086
+          cmake -S /tmp/bare -B /tmp/b-bare $common > /tmp/bare.log 2>&1
+
+          # (d) packager override (conda / docker path)
+          # shellcheck disable=SC2086
+          cmake -S /tmp/bare -B /tmp/b-ovr $common -DFLEXAIDS_GIT_COMMIT_OVERRIDE=deadbeef > /tmp/ovr.log 2>&1
+
+      - name: Assert provenance
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, sys
+          def p(d):
+              return json.load(open(f"/tmp/b-{d}/flexaidds-build-provenance.json"))
+          fail = []
+          g = p("git")
+          if g["source_provenance"] != "git" or g["git_commit"] in ("", "unknown"):
+              fail.append(f"git checkout: {g}")
+
+          a = p("arch")
+          if a["source_provenance"] != "archive" or a["git_commit"] in ("", "unknown"):
+              fail.append(f"archive tarball has no commit — Homebrew installs would be "
+                          f"unidentifiable. Check .gitattributes export-subst: {a}")
+
+          b = p("bare")
+          # No source of truth: it must SAY so, and must not claim a clean tree.
+          if b["git_commit"] != "unknown" or b["git_dirty"] != "2":
+              fail.append(f"unknown-provenance build must report commit=unknown "
+                          f"dirty=2 (never dirty=0): {b}")
+
+          o = p("ovr")
+          if o["source_provenance"] != "override" or o["git_commit"] != "deadbeef":
+              fail.append(f"override ignored: {o}")
+
+          for d in ("git", "arch", "bare", "ovr"):
+              if p(d)["git_commit"] == "":
+                  fail.append(f"{d}: EMPTY commit string")
+
+          if fail:
+              print("PROVENANCE GATE FAILED:"); print("\n".join(fail)); sys.exit(1)
+          for d in ("git", "arch", "bare", "ovr"):
+              q = p(d)
+              print(f"{d:6} commit={q['git_commit']:10} dirty={q['git_dirty']} "
+                    f"source={q['source_provenance']}")
+          PY
+
+  # ── Recipes stay loadable and version-locked ───────────────────────────────
+  conda-recipe:
+    name: conda recipe renders
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Recipe version must track __version__.py
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, re, sys
+          recipe = pathlib.Path("conda/meta.yaml").read_text(encoding="utf-8")
+          ver = re.search(r'__version__\s*=\s*"([^"]+)"',
+                          pathlib.Path("python/flexaidds/__version__.py").read_text()).group(1)
+          # The recipe must not hardcode a version literal any more.
+          m = re.search(r'\{%\s*set version\s*=\s*"([0-9][^"]*)"', recipe)
+          if m:
+              print(f"conda/meta.yaml hardcodes version {m.group(1)}; "
+                    f"__version__.py says {ver}. Derive it instead.")
+              sys.exit(1)
+          if "load_file_regex" not in recipe:
+              print("conda/meta.yaml no longer derives its version from __version__.py")
+              sys.exit(1)
+          print("conda recipe derives version; __version__.py =", ver)
+          PY
+
+      - name: Floating runtime pins are not reproducible
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, re, sys
+          txt = pathlib.Path("conda/meta.yaml").read_text(encoding="utf-8")
+          run = re.search(r'(?ms)^  run:\n(.*?)(?=^\S|\Z)', txt)
+          assert run, "no run: section"
+          unpinned = []
+          for line in run.group(1).splitlines():
+              s = line.strip()
+              if not s.startswith("- "):
+                  continue
+              dep = s[2:].strip()
+              if "{{" in dep:
+                  continue
+              if not re.search(r'[<>=]', dep):
+                  unpinned.append(dep)
+          if unpinned:
+              print("unpinned run deps (reproducibility):", unpinned); sys.exit(1)
+          print("all run deps carry a version constraint")
+          PY

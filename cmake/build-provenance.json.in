@@ -1,0 +1,16 @@
+{
+  "schema": "flexaidds-build-provenance/1",
+  "package_version": "@PROJECT_VERSION@",
+  "git_commit": "@FLEXAIDS_GIT_COMMIT@",
+  "git_dirty": "@FLEXAIDS_GIT_DIRTY@",
+  "git_dirty_meaning": "0=clean 1=dirty 2=unknown (never assume clean)",
+  "source_provenance": "@FLEXAIDS_SRC_PROVENANCE@",
+  "configured_utc": "@_FX_CONFIGURE_UTC@",
+  "cmake_version": "@CMAKE_VERSION@",
+  "build_type": "@CMAKE_BUILD_TYPE@",
+  "cxx_compiler_id": "@CMAKE_CXX_COMPILER_ID@",
+  "cxx_compiler_version": "@CMAKE_CXX_COMPILER_VERSION@",
+  "cxx_standard": "@CMAKE_CXX_STANDARD@",
+  "system_name": "@CMAKE_SYSTEM_NAME@",
+  "system_processor": "@CMAKE_SYSTEM_PROCESSOR@"
+}

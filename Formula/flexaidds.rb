@@ -50,6 +50,20 @@ class Flexaidds < Formula
       -DENABLE_DIFT_TOOL=OFF
     ]
 
+    # Provenance. A `brew install` builds from an extracted tarball with no
+    # .git, so CMake's git probe finds nothing. Two routes cover it:
+    #   * stable — the release tarball carries .git_archival.txt, populated by
+    #     `export-subst` at `git archive` time, and CMake reads the commit from
+    #     it (source_provenance=archive).
+    #   * --HEAD — Homebrew clones the repo, so the git probe works directly.
+    # Tarballs cut BEFORE .git_archival.txt was added (v2.0.3 and earlier) have
+    # neither; those builds stamp commit=unknown dirty=2, which is honest but
+    # untraceable. Pass the tag as an explicit override so even an old tarball
+    # is identifiable.
+    unless build.head?
+      args << "-DFLEXAIDS_GIT_COMMIT_OVERRIDE=v#{version}"
+    end
+
     if OS.mac?
       libomp = formula_opt_prefix("libomp")
       args += %W[
@@ -83,6 +97,36 @@ class Flexaidds < Formula
     # share/ (FLEXAIDDS_DATA_DIR for engines that honor it after the path fix).
     install_runtime_data!(libexec/"bin")
     install_runtime_data!(libexec/"share")
+
+    # Make the installed engine identifiable without running a dock. The commit
+    # otherwise only surfaces in the REMARK block of emitted pose files, so a
+    # freshly installed binary cannot be told apart from any other build.
+    %w[build build_lto].each do |dir|
+      prov = "#{dir}/flexaidds-build-provenance.json"
+      next unless File.exist?(prov)
+
+      (libexec/"share").install prov
+      break
+    end
+
+    (bin/"flexaidds-buildinfo").write <<~EOS
+      #!/bin/bash
+      # Report what the installed FlexAIDdS actually is.
+      set -euo pipefail
+      prov="#{libexec}/share/flexaidds-build-provenance.json"
+      if [ -f "$prov" ]; then
+        cat "$prov"
+      else
+        echo '{"error":"no provenance file installed"}'
+      fi
+      # Second, independent source: the string compiled into the binary itself,
+      # which survives even if this file is lost or replaced.
+      echo "--- strings(FlexAIDdS) ---"
+      /usr/bin/strings "#{libexec}/bin/FlexAIDdS" 2>/dev/null \\
+        | grep -E '^REMARK FLEXAID\\.commit=' | head -1 \\
+        || echo "(commit string not found in binary)"
+    EOS
+    chmod 0755, bin/"flexaidds-buildinfo"
 
     # Prefer root matrix over WRK/ when both exist (v2.0.2+ ships production both).
     write_wrappers!
@@ -197,5 +241,16 @@ class Flexaidds < Formula
     assert_match "base path", output
 
     system bin/"tENCoM", "--help"
+
+    # The installed engine must be identifiable. A build that cannot be tied to
+    # a source revision silently invalidates any comparison it takes part in.
+    assert_path_exists libexec/"share"/"flexaidds-build-provenance.json"
+    prov = JSON.parse((libexec/"share"/"flexaidds-build-provenance.json").read)
+    refute_empty prov["git_commit"].to_s, "provenance file has an empty commit"
+    assert_match(/^(git|archive|override)$/, prov["source_provenance"],
+                 "installed build has unrecoverable provenance: #{prov}")
+
+    info = shell_output("#{bin}/flexaidds-buildinfo")
+    assert_match prov["git_commit"], info
   end
 end

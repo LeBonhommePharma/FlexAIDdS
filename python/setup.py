@@ -18,6 +18,7 @@ Important packaging constraints:
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import warnings
@@ -65,6 +66,15 @@ _CORE_LIB_REL_SOURCES = [
 ]
 
 # Headers / extra files staged into the sdist so out-of-tree builds can compile.
+# This is the FLOOR, not the whole set — the rest is derived below. A
+# hand-maintained header list silently rots: this one was missing flexaid.h,
+# flexaid_exception.h, EnvFlags.h, ThermodynamicEngine.h, log_sum_exp.h,
+# metal_eval.h and simd_distance.h, so `pip install flexaidds` could never
+# build flexaidds._core on ANY platform or compiler. It always fell back to
+# pure Python while reporting only a warning:
+#     LIB/ShannonThermoStack/../tENCoM/tencm.h:36:10:
+#         fatal error: '../flexaid.h' file not found
+# Verified on macOS arm64 / AppleClang 21 from a clean sdist.
 _CORE_LIB_REL_HEADERS = [
     "statmech.h",
     "TurboQuant.h",
@@ -76,6 +86,84 @@ _CORE_LIB_REL_HEADERS = [
     "ShannonThermoStack/ShannonThermoStack.h",
     "DiFT/DiFT.h",
 ]
+
+# Quoted #include "..." — angle-bracket includes are system/third-party.
+_INCLUDE_RE = re.compile(r'^[ \t]*#[ \t]*include[ \t]+"([^"]+)"', re.MULTILINE)
+
+# Include roots handed to the compiler (see _prepare_core_extension): the LIB
+# root plus the two subdirs. A header is resolved against the including file's
+# directory first, then against each of these — same order the compiler uses.
+_CORE_INCLUDE_ROOTS = ("", "tENCoM", "ShannonThermoStack")
+
+
+def _transitive_local_headers(lib_dir: Path) -> List[str]:
+    """Every header under *lib_dir* reachable from the _core sources.
+
+    Derived by walking quoted includes rather than enumerated by hand, so
+    adding an include to a core source cannot quietly break the sdist again.
+    Includes that escape ``LIB/`` (e.g. ``../src/backends/webgpu/webgpu_eval.h``,
+    reached only under a WebGPU build) are ignored: the pip path never enables
+    those backends.
+    """
+    seen: set = set()
+    found: set = set()
+    stack: List[str] = list(_CORE_LIB_REL_SOURCES) + list(_CORE_LIB_REL_HEADERS)
+
+    # The in-tree binding sources also reach into LIB/, but with monorepo-shaped
+    # paths: bindings/bindings_matrix.cpp says #include "../../LIB/atom_typing_256.h",
+    # which is correct from python/bindings/ in the repo and one level wrong in
+    # the sdist. The compiler still finds it via -I<lib_dir>/tENCoM (…/LIB/tENCoM/
+    # ../../LIB/x.h == …/LIB/x.h) — but only if the header was staged at all.
+    # Seed from those files so it is.
+    binding_seeds: List[Path] = [ROOT / "flexaidds" / "_core.cpp"]
+    bindings_dir = ROOT / "bindings"
+    if bindings_dir.is_dir():
+        binding_seeds.extend(sorted(bindings_dir.glob("*.cpp")))
+        binding_seeds.extend(sorted(bindings_dir.glob("*.h")))
+    for seed in binding_seeds:
+        if not seed.is_file():
+            continue
+        try:
+            text = seed.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for match in _INCLUDE_RE.finditer(text):
+            target = match.group(1).replace("\\", "/")
+            # Keep only the part after the last LIB/ segment.
+            if "LIB/" in target:
+                rel = target.rsplit("LIB/", 1)[1]
+                if (lib_dir / rel).is_file():
+                    found.add(rel)
+                    stack.append(rel)
+
+    while stack:
+        rel = stack.pop()
+        if rel in seen:
+            continue
+        seen.add(rel)
+        path = lib_dir / rel
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for match in _INCLUDE_RE.finditer(text):
+            target = match.group(1)
+            candidates = [os.path.normpath(os.path.join(os.path.dirname(rel), target))]
+            candidates += [
+                os.path.normpath(os.path.join(root, target))
+                for root in _CORE_INCLUDE_ROOTS
+            ]
+            for cand in candidates:
+                if cand.startswith(".."):
+                    continue  # outside LIB/ — not part of the pip build
+                if (lib_dir / cand).is_file():
+                    found.add(cand)
+                    stack.append(cand)
+                    break
+
+    return sorted(h for h in found if h.endswith((".h", ".hpp", ".hh", ".inc")))
 
 
 def _skip_core_requested() -> bool:
@@ -203,6 +291,8 @@ def _stage_lib_under_root(lib_dir: Path) -> Optional[Path]:
 
     # Sources + headers + transitive headers from known subdirs.
     wanted = list(_CORE_LIB_REL_SOURCES) + list(_CORE_LIB_REL_HEADERS)
+    # Everything the core sources actually #include, derived not enumerated.
+    wanted += _transitive_local_headers(lib_dir)
     for sub, patterns in (
         ("tENCoM", ("*.h", "*.hpp", "*.hh")),
         ("ShannonThermoStack", ("*.h", "*.hpp", "*.hh")),
@@ -289,6 +379,16 @@ class optional_build_ext(_build_ext):
         # ``py3-none-any`` wheel. Leaving empty Extension declarations makes
         # cibuildwheel/delocate tag a platform wheel with no binary and fail
         # (macOS: "Failed to find any binary with the required architecture").
+        #
+        # NOTE: clearing ``ext_modules`` here is necessary but NOT sufficient.
+        # ``bdist_wheel.finalize_options()`` latches ``root_is_pure`` from
+        # ``distribution.has_ext_modules()`` *before* ``build_ext`` runs, so by
+        # the time we get here the wheel tag is already decided. Verified: on
+        # gcc-11 (no C++26) with pybind11+Eigen present, the compile fails, the
+        # fallback engages, and the wheel still comes out as
+        # ``flexaidds-2.0.3-cp310-cp310-linux_aarch64.whl`` — a platform wheel
+        # containing no binary, i.e. exactly the artifact this comment says it
+        # prevents. ``bdist_wheel_optional_ext`` below closes that gap.
         if not kept:
             self.distribution.ext_modules = []
             if any(getattr(e, "name", "") == "flexaidds._core" for e in requested):
@@ -404,6 +504,49 @@ class optional_build_ext(_build_ext):
         return True
 
 
+def _make_bdist_wheel_optional_ext():
+    """bdist_wheel that re-decides purity *after* the extension build.
+
+    ``bdist_wheel`` computes ``root_is_pure`` in ``finalize_options()``, which
+    runs before ``build_ext``. For a package whose extension is genuinely
+    optional that ordering is wrong: when the compile fails and we fall back to
+    pure Python, the wheel is still stamped with an ABI + platform tag
+    (``cp310-cp310-linux_aarch64``) despite containing no compiled object.
+
+    Such a wheel is actively harmful on an index:
+      * it is offered only to one interpreter/platform, so other users get
+        nothing from it even though the payload is pure Python;
+      * ``delocate``/``auditwheel`` reject it ("failed to find any binary with
+        the required architecture"), breaking cibuildwheel; and
+      * it silently misrepresents what is inside the artifact.
+
+    We therefore run ``build`` first, then recompute the tag.
+    """
+    base = None
+    try:  # setuptools >= 70 vendors it
+        from setuptools.command.bdist_wheel import bdist_wheel as base
+    except ImportError:
+        try:
+            from wheel.bdist_wheel import bdist_wheel as base  # type: ignore[no-redef]
+        except ImportError:
+            return None
+
+    class bdist_wheel_optional_ext(base):  # type: ignore[misc,valid-type]
+        def run(self):
+            # Force the extension decision to happen before the tag is used.
+            self.run_command("build")
+            if not self.distribution.ext_modules:
+                self.root_is_pure = True
+            super().run()
+
+        def get_tag(self):
+            if not self.distribution.ext_modules:
+                return ("py3", "none", "any")
+            return super().get_tag()
+
+    return bdist_wheel_optional_ext
+
+
 class sdist_with_lib(_sdist):
     """Stage required LIB/ sources into the sdist so wheels can compile _core.
 
@@ -431,6 +574,10 @@ class sdist_with_lib(_sdist):
         dest_lib = Path(base_dir) / "LIB"
         staged = 0
         wanted = list(_CORE_LIB_REL_SOURCES) + list(_CORE_LIB_REL_HEADERS)
+        # Everything the core sources actually #include, derived not enumerated.
+        # Without this the sdist ships sources whose headers are absent, and the
+        # extension can never compile from PyPI on any platform.
+        wanted += _transitive_local_headers(lib_dir)
 
         for sub, patterns in (
             ("tENCoM", ("*.h", "*.hpp", "*.hh")),
@@ -530,12 +677,18 @@ def _read_version() -> str:
 
 # Metadata primarily lives in pyproject.toml. Explicit name/version here are a
 # hard fallback for legacy pip/setuptools that do not fully apply PEP 621.
+_CMDCLASS = {
+    "build_ext": optional_build_ext,
+    "sdist": sdist_with_lib,
+}
+
+_bdist_wheel_cls = _make_bdist_wheel_optional_ext()
+if _bdist_wheel_cls is not None:
+    _CMDCLASS["bdist_wheel"] = _bdist_wheel_cls
+
 setup(
     name="flexaidds",
     version=_read_version(),
     ext_modules=_placeholder_extension_modules(),
-    cmdclass={
-        "build_ext": optional_build_ext,
-        "sdist": sdist_with_lib,
-    },
+    cmdclass=_CMDCLASS,
 )

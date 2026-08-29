@@ -1,0 +1,73 @@
+# Docker build context hygiene.
+#
+# containers/Dockerfile.locked does `COPY . /opt/flexaidds/src` with no
+# .dockerignore, so the context was the entire working tree: every build*/
+# directory, benchmarks/, results/, determinism_*/ , .venv-posebusters/ and a
+# 274 MB python/ (which is mostly python/build + python/results). That is slow,
+# non-reproducible (the image inherits whatever local artifacts happen to be
+# lying around), and can smuggle a stale FlexAIDdS binary into the image.
+#
+# .git is excluded deliberately: provenance is passed explicitly via
+# --build-arg FLEXAIDS_GIT_COMMIT so the stamp is auditable rather than
+# dependent on the builder's checkout state. See containers/Dockerfile.locked.
+
+.git
+.github
+.gitignore
+
+# Build trees (any variant)
+build
+build-*
+build_*
+.build
+*/build
+cmake-build-*
+
+# Local environments / caches
+.venv*
+venv
+__pycache__
+*.py[cod]
+.ruff_cache
+.pytest_cache
+*.egg-info
+node_modules
+
+# Benchmark + run outputs — large, and never an input to the image
+benchmarks
+benchmark_results
+results
+determinism_*
+validation_evidence
+WRK
+site
+handoff_swe
+workorders
+*.profraw
+*.rrg
+
+# Agent/IDE droppings
+.agents
+.augment
+.claude
+.codebuddy
+.codewhale
+.continue
+.cursor
+.factory
+.gemini
+.grok
+.kilocode
+.kiro
+.opencode
+.qoder
+.roo
+.swarm
+.tools
+.trae
+.warp
+.windsurf
+.virgin_scratch
+
+# OS noise
+.DS_Store

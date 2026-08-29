@@ -40,25 +40,112 @@ project(FlexAID VERSION 2.0.0 LANGUAGES ${_ENABLED_LANGUAGES})
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Emit compile_commands.json for clangd/IDEs" FORCE)
 
 # ── Embed git provenance in binary ────────────────────────────────────────
-execute_process(
-    COMMAND git -C "${CMAKE_SOURCE_DIR}" status --porcelain
-    OUTPUT_VARIABLE _GIT_STATUS OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET)
-if(_GIT_STATUS STREQUAL "")
-    set(FLEXAIDS_GIT_DIRTY "0")
-else()
-    set(FLEXAIDS_GIT_DIRTY "1")
-    message(WARNING "Building from a DIRTY working tree — reproducibility metadata will be flagged.")
+#
+# A binary whose provenance cannot be recovered is evidence-destroying: a pose
+# file stamped `commit= dirty=0` is indistinguishable from a genuinely clean
+# build, so a relinked engine can silently invalidate a comparison.  The old
+# block had exactly that failure mode — `execute_process(... ERROR_QUIET)` with
+# no fallback left FLEXAIDS_GIT_COMMIT EMPTY and FLEXAIDS_GIT_DIRTY=0 for every
+# build without a git checkout: Homebrew's release tarball, `conda-build` from
+# an exported tree, and `docker build` (the image installs no git at all).
+#
+# Three sources are consulted, most trustworthy first, and the result is NEVER
+# empty and NEVER claims "clean" on a guess.  A build that already had a real
+# git checkout resolves identically to before — this changes only the builds
+# that were previously unidentifiable.
+#
+#   FLEXAIDS_GIT_DIRTY: 0 = clean, 1 = dirty, 2 = UNKNOWN (never assume clean)
+#   FLEXAIDS_SRC_PROVENANCE: git | archive | override | unknown
+
+set(FLEXAIDS_GIT_COMMIT "")
+set(FLEXAIDS_GIT_DIRTY "2")
+set(FLEXAIDS_SRC_PROVENANCE "unknown")
+
+# (1) Packager override. conda-build / docker / any distro build system can pass
+#     -DFLEXAIDS_GIT_COMMIT_OVERRIDE=<sha> to stamp a build it knows the origin
+#     of.  Explicit and auditable; beats guessing.
+if(DEFINED FLEXAIDS_GIT_COMMIT_OVERRIDE AND NOT FLEXAIDS_GIT_COMMIT_OVERRIDE STREQUAL "")
+    set(FLEXAIDS_GIT_COMMIT "${FLEXAIDS_GIT_COMMIT_OVERRIDE}")
+    set(FLEXAIDS_SRC_PROVENANCE "override")
+    # An override says which commit, not whether the tree was modified.
+    set(FLEXAIDS_GIT_DIRTY "2")
 endif()
 
-execute_process(
-    COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse --short HEAD
-    OUTPUT_VARIABLE FLEXAIDS_GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET)
+# (2) Real git checkout.  Require rev-parse to succeed AND the worktree to be
+#     this source tree, so a checkout nested inside an unrelated repo cannot
+#     donate a foreign commit hash.
+if(FLEXAIDS_SRC_PROVENANCE STREQUAL "unknown")
+    find_package(Git QUIET)
+    if(GIT_EXECUTABLE)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" rev-parse --short HEAD
+            OUTPUT_VARIABLE _FX_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _FX_RC ERROR_QUIET)
+        if(_FX_RC EQUAL 0 AND NOT _FX_COMMIT STREQUAL "")
+            set(FLEXAIDS_GIT_COMMIT "${_FX_COMMIT}")
+            set(FLEXAIDS_SRC_PROVENANCE "git")
+            execute_process(
+                COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" status --porcelain
+                OUTPUT_VARIABLE _GIT_STATUS OUTPUT_STRIP_TRAILING_WHITESPACE
+                RESULT_VARIABLE _FX_ST_RC ERROR_QUIET)
+            if(NOT _FX_ST_RC EQUAL 0)
+                set(FLEXAIDS_GIT_DIRTY "2")      # could not tell — do not claim clean
+            elseif(_GIT_STATUS STREQUAL "")
+                set(FLEXAIDS_GIT_DIRTY "0")
+            else()
+                set(FLEXAIDS_GIT_DIRTY "1")
+                message(WARNING "Building from a DIRTY working tree — reproducibility metadata will be flagged.")
+            endif()
+        endif()
+    endif()
+endif()
+
+# (3) `git archive` export (GitHub's /archive/refs/tags/*.tar.gz — i.e. every
+#     Homebrew stable install).  .git_archival.txt is populated by the
+#     export-subst attribute at archive time, so the tarball carries its own
+#     commit.  This is the designed mechanism, not a workaround.
+if(FLEXAIDS_SRC_PROVENANCE STREQUAL "unknown"
+   AND EXISTS "${CMAKE_SOURCE_DIR}/.git_archival.txt")
+    file(READ "${CMAKE_SOURCE_DIR}/.git_archival.txt" _FX_ARCHIVAL)
+    # Unexpanded in a plain checkout; a real archive substitutes the hash.
+    if(_FX_ARCHIVAL MATCHES "commit:[ \t]*([0-9a-fA-F]+)")
+        set(FLEXAIDS_GIT_COMMIT "${CMAKE_MATCH_1}")
+        string(SUBSTRING "${FLEXAIDS_GIT_COMMIT}" 0 8 FLEXAIDS_GIT_COMMIT)
+        set(FLEXAIDS_SRC_PROVENANCE "archive")
+        set(FLEXAIDS_GIT_DIRTY "0")   # an archive is immutable by construction
+    endif()
+endif()
+
+if(FLEXAIDS_GIT_COMMIT STREQUAL "")
+    set(FLEXAIDS_GIT_COMMIT "unknown")
+endif()
+
+if(FLEXAIDS_SRC_PROVENANCE STREQUAL "unknown")
+    message(WARNING
+        "Build provenance is UNKNOWN (no git, no .git_archival.txt, no override). "
+        "The binary will report commit=unknown dirty=2. Results from it cannot be "
+        "tied to a source revision. Pass -DFLEXAIDS_GIT_COMMIT_OVERRIDE=<sha> to fix.")
+endif()
+
+message(STATUS
+    "FlexAIDdS provenance: commit=${FLEXAIDS_GIT_COMMIT} "
+    "dirty=${FLEXAIDS_GIT_DIRTY} source=${FLEXAIDS_SRC_PROVENANCE}")
 
 add_compile_definitions(
     FLEXAIDS_GIT_DIRTY=${FLEXAIDS_GIT_DIRTY}
-    FLEXAIDS_GIT_COMMIT="${FLEXAIDS_GIT_COMMIT}")
+    FLEXAIDS_GIT_COMMIT="${FLEXAIDS_GIT_COMMIT}"
+    FLEXAIDS_SRC_PROVENANCE="${FLEXAIDS_SRC_PROVENANCE}")
+
+# ── Machine-readable provenance artifact ──────────────────────────────────
+# The engine embeds the commit only via a REMARK line in emitted pose files, so
+# an installed binary that has not run anything is unidentifiable.  Every
+# packaging route installs this file next to the binary so `FlexAIDdS`'s origin
+# is recoverable without running a dock.
+string(TIMESTAMP _FX_CONFIGURE_UTC "%Y-%m-%dT%H:%M:%SZ" UTC)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-provenance.json.in"
+    "${CMAKE_BINARY_DIR}/flexaidds-build-provenance.json"
+    @ONLY)
 
 include(CheckCXXCompilerFlag)
 
