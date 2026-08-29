@@ -194,7 +194,7 @@ run=gan2vsq5_20260828_162000/S1_1SQ5
 
 | Key | Required | Value | Meaning |
 |---|---|---|---|
-| `status` | yes | `ok` \| `partial` \| `failed` | The runner's verdict on its own work |
+| `status` | yes | `ok` \| `partial` \| `failed` \| `unverified` | The verdict on the work. `unverified` is observer-only — see *Attestation* |
 | `rc` | yes | integer, or `unknown` | Runner process exit code, verbatim. `unknown` **only** in a reconstructed `DONE` — see *Attestation* |
 | `targets_done` | yes | integer | Targets that produced **real output** — see below |
 | `targets_total` | yes | integer | Targets the run was asked to do |
@@ -216,21 +216,55 @@ the correct test per target; a conforming writer does the same.
 
 ### `status` values
 
-| Value | Condition |
-|---|---|
-| `ok` | `rc == 0` **and** `targets_done == targets_total` |
-| `partial` | The runner finished, but `targets_done < targets_total` |
-| `failed` | `rc != 0`, or the run produced no usable output at all |
+| Value | Condition | Writer |
+|---|---|---|
+| `ok` | `rc == 0` **and** `targets_done == targets_total` | runner only |
+| `partial` | The runner finished, but `targets_done < targets_total` | either |
+| `failed` | `rc != 0`, or the run produced no usable output at all | either |
+| `unverified` | `targets_done == targets_total`, and `rc` is unrecoverable | **observer only** |
 
 `status=ok` with `targets_done < targets_total` is a contract violation. A reader
 that sees it MUST treat the file as untrustworthy rather than believing the
 `status` field, because the two claims cannot both be true and the count is the
 one derived from evidence.
 
-Note that `ok` is already unreachable for a reconstructed `DONE` without adding a
-rule: `ok` requires `rc == 0`, and a reconstructed `DONE` MUST carry
-`rc=unknown`, which is not `0`. The prohibition in *Attestation* below is an
-entailment of this table, not a new constraint bolted onto it.
+`ok` is unreachable for a reconstructed `DONE`: `ok` requires `rc == 0`, and a
+reconstructed `DONE` MUST carry `rc=unknown`, which is not `0`. `unverified` is
+the value that fills the cell `ok` cannot occupy — all the work is present, and
+nobody observed how the process exited. See *Attestation*.
+
+`unverified` is **not** a weaker `ok` for the same evidence. It is the correct
+value for *different* evidence: `ok` rests on a reported exit code, `unverified`
+rests on a recount of artifacts. The two are not on a quality ladder, they are
+claims of different kinds, which is why `rc` and `source` must be read alongside.
+
+### Why the value is named `unverified` and not `complete`
+
+`complete` was the obvious candidate and it is the wrong word here, on three
+independent counts, all of them checkable in this repository:
+
+1. **This project already sorts `complete` into the claim-asserting bucket.**
+   `scripts/validate_thermo_claims.py:29-45` maintains two sets:
+   `CLAIM_STATUS_WORDS = {complete, completed, published, reproducible,
+   validated, verified}` and `NONCLAIM_STATUS_WORDS = {candidate, draft, example,
+   pending, planned, unverified}`. A status word that means "nobody checked the
+   exit" belongs in the second set by construction, and `unverified` is already
+   in it. Naming the value `complete` would put a claim word on a non-claim, in
+   a codebase that has a validator whose entire job is to catch exactly that.
+2. **`complete` is live in a neighbouring `status` namespace.**
+   `benchmarks/m3pro/dashboard/fleet_monitor.py:557,587,930` compares
+   `status == "complete"`, and `benchmarks/re-dock/orchestrator.py:313` sets
+   `status = "completed"`. Both mean *finished and fine*. Reusing the token for
+   *finished, disposition unknown* is a collision inside one repository.
+3. **`COMPLETE` is already a leading token in a `DONE` on disk.**
+   `vctent_20260828_034330/DONE` opens `COMPLETE <ts> — NOT truncated.` — used
+   there to make the *strong* claim. The word is spoken for, and it is spoken for
+   in the opposite direction.
+
+There is also a plain-English hazard independent of this repository: `complete`
+reads as a stronger claim than `ok`, when the value is weaker than `ok`. An
+enum whose ordering inverts on a casual read is a bad enum. `unverified` cannot
+be misread that way — it announces its own gap.
 
 ## The three rules
 
@@ -303,11 +337,61 @@ A reconstructed `DONE`:
   reconstructed value would read as reported.
 - MUST NOT assert `status=ok` on inference alone. It may assert only what is
   independently checkable from the artifacts.
+- MUST use `status=unverified` when, and only when, its recount finds
+  `targets_done == targets_total` and `rc` is unrecoverable. This is the value
+  `ok` cannot occupy; rounding up to `ok` or down to `partial` are both
+  misreports, in opposite directions.
 - MAY set `targets_done` from a recount of real poses with non-sentinel RMSD,
   since that is directly observable.
 
 A reader MUST treat `source=reconstructed` as weaker evidence than a
 runner-written `DONE`.
+
+### `unverified` — normative
+
+*Ratified by LP, 2026-08-29. Normative.*
+
+**A runner MUST NOT write `status=unverified`.** A process knows its own exit
+code; `rc` is available to it by construction, at the only moment it is ever
+available to anyone. A runner emitting `unverified` is either lying about what it
+can see or is not the process that did the work. There is no third case, so there
+is no legitimate one.
+
+This is the field's defining property and the reason it is stated rather than
+left to inference: **`unverified` is entangled with `source` in a way the other
+three values are not.** `ok`, `partial` and `failed` are meaningful from either
+author. `unverified` is meaningful from exactly one.
+
+The consequent rules:
+
+- A `DONE` carrying `status=unverified` MUST also carry `source=reconstructed`
+  and `rc=unknown`. All three or none of them; the combination is one claim
+  written in three fields, not three independent facts.
+- `status=unverified` with `rc` set to an integer is a contract violation. The
+  writer either had the exit code, in which case the status is wrong, or invented
+  it, in which case the `rc` is.
+- `status=unverified` with `targets_done < targets_total` is a contract
+  violation. The short count is observable and `partial` reports it; `unverified`
+  claims completeness it does not have.
+- `status=unverified` with `source=runner`, or with `source` absent (which means
+  runner-written), is a contract violation.
+
+A reader encountering any of those four combinations MUST treat the file as
+untrustworthy in whole, not repair it in part. The fields disagree, and which one
+is wrong is not recoverable from the file.
+
+**What a writer records instead, when it cannot use `unverified`.** A
+reconstruction that finds a short count uses `partial`. One that finds no usable
+output uses `failed` — whose second disjunct ("produced no usable output at all")
+is observable from artifacts and therefore reachable by an observer without
+inventing an `rc`. `unverified` is for the one cell those two do not cover.
+
+**`aborted` is not a value.** `gan2vsq5_20260828_162000/S1_1N2V/DONE` carries
+`status=aborted`, which has never been in this vocabulary. The evidence recorded
+in that same file — `targets_done=0`, no `result.csv`, no elected pose — is
+exactly the `failed` condition, and `failed` was available. Inventing a value at
+write time is how a vocabulary stops being one. That file is grandfathered as a
+record of what happened; it is not a precedent.
 
 ### Consequences a writer should expect
 
@@ -321,11 +405,16 @@ chooses to write one.
 The justification given under *Relationship to `KIND` and `SKIPPED`* for `DONE`
 having no `unknown` status — "writing it is itself the evidence, so `unknown` is
 unreachable" — holds only for runner-written files. For a reconstruction, writing
-it is *not* evidence of reaching a line, so that argument lapses. This
-specification does not add a fourth `status` value; the consequence is simply
-that a reconstruction observing `targets_done == targets_total` with an
-unrecoverable `rc` has no status value that fits, and its writer should record
-the shortfall it can actually see rather than rounding up to a claim it cannot.
+it is *not* evidence of reaching a line, so that argument lapses.
+
+The amendment as first ratified left that consequence unresolved: a
+reconstruction observing `targets_done == targets_total` with an unrecoverable
+`rc` had no status value that fits. `unverified` is that value, added 2026-08-29.
+The diagnosis behind it is that `status` was carrying two independent axes —
+**completeness**, observable from artifacts, and **exit disposition**, knowable
+only at termination. For a runner-written file the two always co-occur, so one
+enum could carry both without anyone noticing. Admitting observer-written files
+decouples them and exposes the missing cell.
 
 ## Why nothing else can substitute
 
@@ -362,10 +451,21 @@ Mapping, for a driver sealing `KIND` after writing `DONE`:
 |---|---|
 | `status=ok` | `ok` |
 | `status=partial` | `partial` |
+| `status=unverified` | `partial` — see below |
 | `status=failed`, `targets_done == 0` | `void` |
 | `status=failed`, `targets_done > 0` | `partial` |
 | *(no `DONE`, `SKIPPED` present)* | `unknown` |
 | *(no `DONE`, no `SKIPPED`)* | `unknown` — died or still running |
+
+**`unverified` → `partial` is deliberately conservative, and it under-reports.**
+A full-count reconstruction is not "stopped short", so `partial` is not literally
+right. It is chosen because KIND's `ok` is defined as *"Ran to completion. `DONE`
+records `rc=0`"* (`KIND_SCHEMA.md`), and a reconstruction records `rc=unknown`.
+Promoting `unverified` to KIND `ok` would require redefining KIND `ok` away from
+`rc`, which is a separate ruling and a separate document. Until then the index
+under-claims, which is the direction an index should err. Note that `partial` is
+also what `scripts/backfill_kind.sh` already infers for such a file without any
+change, so the conservative mapping costs nothing to adopt.
 
 The two vocabularies differ on purpose. `DONE` has no `void` or `unknown`:
 writing it is itself the evidence, so `unknown` is unreachable, and `void` is a
@@ -397,3 +497,64 @@ runner-written from absence alone for a `DONE` whose `finished_utc` precedes thi
 amendment; for those files, provenance is established out of band or not at all.
 Existing files are grandfathered, not retrofitted — retrofitting `source` onto
 one is a deliberate act by whoever knows how it was written, not a migration.
+
+### What `unverified` touches — measured 2026-08-29
+
+Census over `~/flexaidds_results`, read-only, no live runner:
+
+```
+DONE files                                             61
+  in this document's key=value form                     5
+  pre-spec free text (8 distinct informal dialects)     56
+status= present                                         5
+  status=ok                                             4
+  status=aborted                                        1   <- never a valid value
+source=reconstructed                                    3
+rc=unknown                                              3
+KIND files                                              0   <- sidecar not yet adopted
+```
+
+**Two files are the migration set**, and both are in violation of the
+*Attestation* amendment as it stands today:
+
+| File | Now | Under this amendment |
+|---|---|---|
+| `gan2vsq5_20260828_162000/S0_1N2V/DONE` | `status=ok rc=unknown source=reconstructed` | `status=unverified` |
+| `gan2vsq5_20260828_162000/S1_1N2V_b/DONE` | `status=ok rc=unknown source=reconstructed` | `status=unverified` |
+
+Both assert `status=ok` on inference alone, which the amendment forbids, and both
+carry `rc=unknown`, which makes `ok` unreachable by the value table regardless.
+They are not edge cases discovered by this work — they are the files that raised
+the question. `unverified` is the value they should have had.
+
+A third file, `gan2vsq5_20260828_162000/S1_1N2V/DONE`, carries `status=aborted`
+and should be `failed`; see *Attestation*. Rewriting any of the three is a
+deliberate act by their author, not a migration this document performs.
+
+The remaining 56 `DONE` files carry no `status=` field at all and are unaffected:
+they are the grandfathered informal forms, read by presence and by free text.
+
+### Readers, and the one that needs fixing first
+
+Nothing in the repository or the corpus reads `status=` today. That is why
+`status=aborted` has sat on disk unremarked. The inventory:
+
+| Reader | Reads | Behaviour on `unverified` |
+|---|---|---|
+| `scripts/check_run_receipt.py` | receipts only — never opens `DONE` | unaffected |
+| `scripts/benchmark_ops_monitor.py` | pose counts, process liveness | unaffected — never opens `DONE` |
+| `scripts/backfill_kind.sh:150-151` | `DONE`, via `grep -q 'rc=0'` | infers `partial` — correct, but see below |
+| corpus chain gates (`run_arm1[2-4]*.sh`, `run_combo.sh`, `run_priority.sh`, `run_boom.sh`, `run_temp2016.sh`) | `[ -f DONE ]` | unaffected — presence only, `status` never read |
+| corpus status tables (`monitor_priority.sh`, `run_t13_twotarget.sh`, `run_followon.sh`, …) | `cat DONE` for display | unaffected |
+| `workorders/run_pshare_v2.sh:82` | `grep -q "^VALID"` | unaffected — anchored, fails closed |
+
+**`backfill_kind.sh:151` is the one to fix.** `grep -q 'rc=0'` is unanchored and
+matched against the whole file, not against a `^rc=` line. It gives the right
+answer for every file on disk today, and the wrong one for a plausible next one:
+a reconstruction whose free-text `evidence=` field quotes a per-target log line
+containing `rc=0` would be indexed `status=ok` — an inferred run promoted to
+"records `rc=0`" by a substring. The same defect already fires on multi-target
+`DONE` files, where `g43_mutgran_20260827_090753/run_ctrl_s12345/DONE` is
+inferred `ok` from a *per-target* `rc=0` on line 2, with no run-level `rc` in the
+file at all. `grep -qE '^rc=0$'` fixes both. Not applied here — this document
+does not change code.

@@ -154,6 +154,46 @@ Consequences, and they are the whole argument for the rest of Phase 0:
 - This is precisely why `DONE` earns its place in the tier tables, and why the
   `KIND` sidecar carries a separate `status=` field. See `CONVENTION.md`.
 
+### Ruled 2026-08-29: the ordering stands
+
+A handoff line elsewhere read *"`write_run_receipt` after poses exist"*, which
+contradicts this section. LP has withdrawn that line. **The receipt is written
+before docking, as a statement of intent, and stays there.** The reasoning is the
+one already in this section, stated once more in the form the ruling turns on:
+the receipt and `DONE` are different kinds of claim and they bracket the run. The
+receipt is a *declaration* — written before, saying what is intended, and the
+only record of a run's parameters if the run dies early. `DONE` is *testimony* —
+written after, saying what happened. Moving the receipt to the end would destroy
+the first without adding anything the second does not already carry.
+
+**How often the accepted failure mode actually occurs.** §5 accepts that a
+receipt can exist with no results beside it. Measured over `~/flexaidds_results`
+on 2026-08-29, read-only:
+
+```
+RUN_RECEIPT.json                                      507
+  with no result.csv at or below the receipt's dir      2   (0.39%)
+```
+
+The two:
+
+| Receipt | What is there |
+|---|---|
+| `astex85_defcleft_claim_20260807_172821/run/` | 2 target dirs (`1G9V`, `1GM8`), 0 `result.csv`, 0 poses |
+| `gan2vsq5_20260828_162000/S1_1N2V/run/` | 1 target dir, 0 `result.csv`, 51 `.pdb` — the void arm whose runner died after r1 |
+
+Worth noting for its own sake: the first of those is the production receipt this
+document cites in §1 as the file the 22-key list was verified against. It is
+itself a receipt with no results. That is not an error in §1 — the receipt is
+complete and valid, and its completeness is exactly §5's point — but it is a
+neat demonstration that a valid receipt proves configuration and nothing more.
+
+The hazard §5 describes is therefore **real but rare, and both instances are
+already known and named elsewhere in this corpus**. No case was found of a
+receipt-without-poses misleading a consumer: the two consumers that could be
+misled (`backfill_kind.sh`, `benchmark_ops_monitor.py`) both key on `result.csv`
+and pose counts rather than on receipt presence.
+
 ---
 
 ## 6. The dialect collision already exists
