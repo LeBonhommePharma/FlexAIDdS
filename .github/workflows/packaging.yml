@@ -84,6 +84,50 @@ jobs:
           print("all workflow files parse and declare jobs")
           PY
 
+  # ── Gate 1b: the Homebrew formula is Ruby, and nothing here ever read it ──
+  # Formula/** is in this workflow's path filter, so editing the formula starts
+  # this run -- but no job opened the file. A formula that does not parse fails
+  # at `brew install` time on a user's machine: the same "unexercised until
+  # someone else finds it" shape this workflow exists to remove.
+  #
+  # This is a PARSE gate, not a functional one. It does not run brew, does not
+  # build, install or `brew test` the formula, and cannot detect a formula that
+  # parses but installs the wrong thing. Real coverage needs a macOS runner and
+  # a full source build; that is deliberately not attempted here.
+  formula-lint:
+    name: Homebrew formula parses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Formula is valid Ruby
+        run: ruby -c Formula/flexaidds.rb
+
+      - name: Generated flexaidds-buildinfo script is valid bash
+        run: |
+          set -euo pipefail
+          # The formula writes flexaidds-buildinfo from a heredoc, so the shell
+          # script is generated text that nothing parses until a user runs the
+          # installed file. Render it the way Homebrew would and syntax-check it.
+          python3 - <<'PY'
+          import pathlib, re, subprocess, sys
+          src = pathlib.Path("Formula/flexaidds.rb").read_text()
+          m = re.search(r'\(bin/"flexaidds-buildinfo"\)\.write <<~EOS\n(.*?)\n    EOS\n',
+                        src, re.S)
+          if not m:
+              sys.exit("could not locate the flexaidds-buildinfo heredoc in the formula")
+          lines = m.group(1).split("\n")
+          strip = min(len(l) - len(l.lstrip()) for l in lines if l.strip())
+          body = "\n".join(l[strip:] if l.strip() else "" for l in lines)
+          body = body.replace("#{libexec}", "/nonexistent/libexec").replace("\\\\", "\\")
+          if "#{" in body:
+              sys.exit("unresolved Ruby interpolation in generated script: "
+                       + body[body.index("#{"):][:60])
+          pathlib.Path("/tmp/flexaidds-buildinfo.sh").write_text(body + "\n")
+          subprocess.run(["bash", "-n", "/tmp/flexaidds-buildinfo.sh"], check=True)
+          print("generated flexaidds-buildinfo parses (%d lines)" % len(lines))
+          PY
+
   # ── The same build steps pypi-release.yml runs, but continuously ───────────
   sdist-and-pure-wheel:
     name: sdist + pure wheel
