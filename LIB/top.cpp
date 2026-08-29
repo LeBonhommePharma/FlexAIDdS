@@ -43,6 +43,11 @@
 #include "flexaidds_flags.h"
 #if defined(FLEXAIDDS_ENABLE_REDOCK)
 #include "DatasetRunner.h"
+#include "DatasetRunnerProvenance.h"
+#include "RunReceipt.h"
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 #include <algorithm>
@@ -353,6 +358,125 @@ static bool prepare_redock_from_rcsb(const std::string& pdb_id,
 	return true;
 #endif
 }
+
+#if defined(FLEXAIDDS_ENABLE_REDOCK)
+/// Write RUN_RECEIPT.json for a `--redock` run whose `-o` names an existing
+/// directory. Before this, `--redock` wrote no receipt at all, so a redock run
+/// carried no engine identity.
+///
+/// `-o` is a file *prefix* everywhere else in this file: `-o run/1STP` yields
+/// `run/1STP.rrg`, `run/1STP_INI.pdb` and so on, and that is unchanged. This is
+/// a strictly additive second behaviour, fired only when the prefix happens to
+/// name a directory that already exists, in which case the receipt is written
+/// inside it. No docking artifact moves.
+///
+/// Conforms to the engine dialect in docs/run-uniformity/RUN_RECEIPT_CONTRACT.md.
+/// This is the *third* writer into a format that already has two dialects, so it
+/// calls flexaids::write_run_receipt rather than emitting JSON by hand (§7.1).
+/// That keeps two contract details automatic instead of re-derived here: the
+/// two-booleans-two-encodings rule (§2.1 — seed_elitism as 1/0 while
+/// oracle_site_dir_set is true/false, inconsistent and load-bearing), and the
+/// fixed 6-decimal float formatting (§2.2).
+///
+/// Best-effort by design: a read-only or full output directory must still yield
+/// a successful docking run, so every failure path warns and returns.
+static void write_redock_run_receipt(const std::string& output_dir,
+                                     const std::string& pdb_id,
+                                     double temperature_K,
+                                     int pop,
+                                     int gen) {
+	const flexaids::ProtocolConfig proto = flexaids::ProtocolConfig::from_env();
+
+	// In --redock there is no separate engine process: this binary both drives
+	// the run and does the docking, so binary_* and runner_* are the same file.
+	// DatasetRunner distinguishes them because it spawns a child; recording
+	// them as equal here is the accurate statement, not a shortcut.
+	std::string self_path;
+#if defined(__APPLE__)
+	{
+		char buf[4096];
+		std::uint32_t size = static_cast<std::uint32_t>(sizeof(buf));
+		if (_NSGetExecutablePath(buf, &size) == 0) self_path = buf;
+	}
+#elif defined(__linux__)
+	{
+		std::error_code lec;
+		const auto self = std::filesystem::read_symlink("/proc/self/exe", lec);
+		if (!lec) self_path = self.string();
+	}
+#endif
+
+	const std::string matrix_path =
+	    dataset::resolve_scoring_matrix_path(proto.data_dir, self_path);
+
+	flexaids::RunReceiptInput receipt;
+	receipt.run_id       = pdb_id.empty() ? std::string("redock") : pdb_id;
+	receipt.started_utc  = flexaids::utc_now_iso8601();
+	receipt.output       = output_dir;
+	receipt.dataset      = receipt.run_id;
+	receipt.mode         = "defined-cleft-redock";
+	receipt.temperature_K = temperature_K;
+	receipt.pop          = pop;
+	receipt.gen          = gen;
+	receipt.restarts     = std::max(1, proto.restarts);
+	receipt.seed_base    = proto.seed_base;
+
+	// seed_elitism is DERIVED, never copied — §3 / DatasetRunner.cpp:5341-5347.
+	// Only ORACLE_CEILING forces it true; DEFINED_CLEFT_REDOCK, AUTONOMOUS and
+	// UNSET all force false. --redock is a defined-cleft redock and is never the
+	// oracle-ceiling benchmark, so the derived value is false. Copying
+	// proto.seed_elitism straight through would publish the same key with a
+	// different meaning: silent, and visible later only as an inexplicable
+	// cross-arm difference.
+	receipt.seed_elitism = false;
+
+	receipt.matrix_path   = matrix_path;
+	receipt.matrix_md5    = dataset::provenance_file_md5(matrix_path);
+	receipt.matrix_sha256 = dataset::provenance_file_sha256(matrix_path);
+	receipt.binary_path   = self_path;
+	receipt.binary_sha256 = dataset::provenance_file_sha256(self_path);
+	receipt.runner_path   = self_path;
+	receipt.runner_sha256 = receipt.binary_sha256;
+
+	// Build-stamped commit rather than shelling out to git — §4 and §7.5.
+	// Drivers cd into the arm directory before launching, so `git rev-parse HEAD`
+	// runs outside any checkout and comes back empty; it is empty in the sampled
+	// production receipt. CMakeLists.txt:54-61 stamps this at configure time and
+	// run_t13_twotarget.sh recovers the same value with `strings`, refusing to
+	// launch an unstamped binary. Note it is `rev-parse --short`, so this field
+	// is a short SHA where DatasetRunner's — when it succeeds — is full length.
+#if defined(FLEXAIDS_GIT_COMMIT)
+	receipt.git_commit = FLEXAIDS_GIT_COMMIT;
+#endif
+
+	receipt.oracle_site_dir     = proto.oracle_site_dir;
+	receipt.oracle_site_dir_set = !proto.oracle_site_dir.empty();
+	receipt.protocol            = proto;
+
+	// provenance.json is deliberately NOT written; §2.6 requires the second
+	// writer to decide rather than default. --redock has never written a receipt
+	// of any kind, so no existing tool can be looking for a provenance.json from
+	// this path and nothing regresses by its absence. DatasetRunner still passes
+	// true and is untouched.
+	bool ok = false;
+	try {
+		ok = flexaids::write_run_receipt(output_dir, receipt,
+		                                 /*also_write_provenance_json=*/false);
+	} catch (...) {
+		ok = false;
+	}
+
+	if (ok) {
+		fprintf(stderr, "[RECEIPT] wrote %s/RUN_RECEIPT.json\n", output_dir.c_str());
+	} else {
+		// Warn, never abort. A read-only or full output directory currently
+		// yields a successful docking run and must continue to.
+		fprintf(stderr,
+		        "[WARN] could not write RUN_RECEIPT.json to %s — docking continues\n",
+		        output_dir.c_str());
+	}
+}
+#endif  // FLEXAIDDS_ENABLE_REDOCK
 
 static void print_usage(const char* progname) {
 	tui::brand(); printf(" %s—%s Entropy-driven molecular docking\n\n", tui::muted(), tui::reset());
@@ -873,6 +997,10 @@ int main(int argc, char **argv){
 		std::string receptor_path;
 		std::string ligand_path;
 		std::string redock_pdb_id;
+		// Hoisted out of the --redock block below so the receipt writer can name
+		// the run by its prepared (upper-cased) PDB id. Declaration only — the
+		// value and every use of it are unchanged.
+		std::string redock_prepared_id;
 		bool user_set_output = false;
 		std::vector<std::string> legacy_files;
 
@@ -1019,7 +1147,7 @@ int main(int argc, char **argv){
 				fprintf(stderr, "ERROR: --redock cannot be combined with legacy .inp inputs\n");
 				Terminate(1);
 			}
-			std::string prepared_id;
+			std::string& prepared_id = redock_prepared_id;
 			if (!prepare_redock_from_rcsb(redock_pdb_id, receptor_path, ligand_path, prepared_id)) {
 				Terminate(1);
 			}
@@ -1128,6 +1256,28 @@ int main(int argc, char **argv){
 		strncpy(end_strfile, output_prefix.c_str(), MAX_PATH__ - 1);
 		end_strfile[MAX_PATH__ - 1] = '\0';
 		strncpy(FA->rrgfile, end_strfile, MAX_PATH__-1); FA->rrgfile[MAX_PATH__-1]='\0';
+
+		// ── RUN_RECEIPT.json when --redock's -o names an existing directory ──
+		// Additive only. `-o` stays a file prefix; nothing above or below this
+		// block changes. Three conditions must all hold, so every pre-existing
+		// invocation reaches this point and does nothing: --redock was used, -o
+		// was given explicitly, and that path already exists as a directory.
+		// Written here — after apply_config, before any docking — to match the
+		// engine's own semantics: the receipt is a statement of intent, complete
+		// before a single pose exists (RUN_RECEIPT_CONTRACT.md §5).
+#if defined(FLEXAIDDS_ENABLE_REDOCK)
+		if (!redock_pdb_id.empty() && user_set_output) {
+			std::error_code rec_ec;
+			if (std::filesystem::is_directory(output_prefix, rec_ec) && !rec_ec) {
+				write_redock_run_receipt(
+				    output_prefix,
+				    redock_prepared_id.empty() ? redock_pdb_id : redock_prepared_id,
+				    static_cast<double>(FA->temperature),
+				    GB->num_chrom,
+				    GB->max_generations);
+			}
+		}
+#endif
 
 		// GA input not used in direct mode
 		dockinp[0] = '\0';
