@@ -27,7 +27,45 @@ else()
     set(_HAS_OBJCXX FALSE)
 endif()
 
-project(FlexAID VERSION 2.0.0 LANGUAGES ${_ENABLED_LANGUAGES})
+# ── Single source of truth for the project version ───────────────────────
+#
+# The version lived in two places that had already drifted: this file said
+# 2.0.0 and python/flexaidds/__version__.py said 2.0.3.  Two numbers for one
+# fact is not a version, it is a coin flip, and `--version` stamping either of
+# them would be reporting the coin.
+#
+# python/flexaidds/__version__.py wins because it is the one that is actually
+# maintained and actually tested -- python/tests/test_version.py asserts it
+# equals the static version in pyproject.toml, so it cannot drift from the
+# packaging metadata without a test failing.  Nothing enforced the number here.
+#
+# Parsed BEFORE project(): file(READ) needs no project scope, and project()
+# needs the answer.
+set(FLEXAIDS_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/python/flexaidds/__version__.py")
+set(FLEXAIDS_VERSION_STR "unknown")
+set(_FX_VERSION_NUMERIC "0.0.0")
+
+if(EXISTS "${FLEXAIDS_VERSION_FILE}")
+    file(READ "${FLEXAIDS_VERSION_FILE}" _FX_VERSION_PY)
+    if(_FX_VERSION_PY MATCHES "__version__[ \t]*=[ \t]*[\"']([0-9]+\\.[0-9]+\\.[0-9]+)[\"']")
+        set(FLEXAIDS_VERSION_STR "${CMAKE_MATCH_1}")
+        set(_FX_VERSION_NUMERIC "${FLEXAIDS_VERSION_STR}")
+    endif()
+endif()
+
+# The two variables are deliberately allowed to disagree.  project() requires a
+# numeric version and cannot represent "I do not know", so it gets 0.0.0.  The
+# stamp is a provenance record and CAN say so, so it gets the literal `unknown`
+# -- the same sentinel `KIND` uses for engine_sha and `DONE` uses for rc.
+# Rounding an unknown version up to a plausible-looking number is the exact
+# class of error this whole change exists to remove.
+if(FLEXAIDS_VERSION_STR STREQUAL "unknown")
+    message(WARNING
+        "Could not parse a version from ${FLEXAIDS_VERSION_FILE}. "
+        "The binary will report version=unknown.")
+endif()
+
+project(FlexAID VERSION ${_FX_VERSION_NUMERIC} LANGUAGES ${_ENABLED_LANGUAGES})
 
 # ── Editor/tooling support: emit compile_commands.json ────────────────────
 # Emits a JSON description of the compile line for each translation unit.
@@ -40,25 +78,167 @@ project(FlexAID VERSION 2.0.0 LANGUAGES ${_ENABLED_LANGUAGES})
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Emit compile_commands.json for clangd/IDEs" FORCE)
 
 # ── Embed git provenance in binary ────────────────────────────────────────
-execute_process(
-    COMMAND git -C "${CMAKE_SOURCE_DIR}" status --porcelain
-    OUTPUT_VARIABLE _GIT_STATUS OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET)
-if(_GIT_STATUS STREQUAL "")
-    set(FLEXAIDS_GIT_DIRTY "0")
-else()
-    set(FLEXAIDS_GIT_DIRTY "1")
-    message(WARNING "Building from a DIRTY working tree — reproducibility metadata will be flagged.")
+#
+# Adapted from the packaging work on chore/installability-matrix (682f8090),
+# which diagnosed the defect: the old block was `execute_process(... ERROR_QUIET)`
+# with no fallback, so ANY failure of `git status` left FLEXAIDS_GIT_COMMIT
+# empty and FLEXAIDS_GIT_DIRTY=0.  Every build without a usable git checkout --
+# Homebrew's release tarball, conda-build from an exported tree, docker build
+# (the image installs no git at all) -- therefore stamped every pose it emitted
+# with an assertion of a clean tree that nothing had checked.
+#
+# A false clean claim is worse than an absent one.  An absent claim makes a
+# reader go and look; a false one makes them stop looking.  So three sources
+# are consulted, most trustworthy first, and the result is NEVER empty and
+# NEVER claims "clean" on a guess.  A build that already had a real git
+# checkout resolves exactly as before -- this changes only the builds that were
+# previously unidentifiable.
+#
+#   FLEXAIDS_GIT_DIRTY: 0 = clean, 1 = dirty, 2 = UNKNOWN (never assume clean)
+#   FLEXAIDS_SRC_PROVENANCE: git | archive | override | unknown
+
+set(FLEXAIDS_GIT_COMMIT "")
+set(FLEXAIDS_GIT_DIRTY "2")
+set(FLEXAIDS_SRC_PROVENANCE "unknown")
+
+# (1) Packager override.  conda-build / docker / any distro build system can
+#     pass -DFLEXAIDS_GIT_COMMIT_OVERRIDE=<sha> to stamp a build it knows the
+#     origin of.  Explicit and auditable; beats guessing.
+if(DEFINED FLEXAIDS_GIT_COMMIT_OVERRIDE AND NOT FLEXAIDS_GIT_COMMIT_OVERRIDE STREQUAL "")
+    set(FLEXAIDS_GIT_COMMIT "${FLEXAIDS_GIT_COMMIT_OVERRIDE}")
+    set(FLEXAIDS_SRC_PROVENANCE "override")
+    # An override says WHICH COMMIT, not whether the tree was modified.
+    set(FLEXAIDS_GIT_DIRTY "2")
 endif()
 
-execute_process(
-    COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse --short HEAD
-    OUTPUT_VARIABLE FLEXAIDS_GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET)
+# (2) Real git checkout.  Require rev-parse to succeed AND the worktree to be
+#     this source tree, so a checkout nested inside an unrelated repo cannot
+#     donate a foreign commit hash.
+if(FLEXAIDS_SRC_PROVENANCE STREQUAL "unknown")
+    find_package(Git QUIET)
+    if(GIT_EXECUTABLE)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" rev-parse --short HEAD
+            OUTPUT_VARIABLE _FX_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _FX_RC ERROR_QUIET)
+        if(_FX_RC EQUAL 0 AND NOT _FX_COMMIT STREQUAL "")
+            set(FLEXAIDS_GIT_COMMIT "${_FX_COMMIT}")
+            set(FLEXAIDS_SRC_PROVENANCE "git")
+            execute_process(
+                COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" status --porcelain
+                OUTPUT_VARIABLE _GIT_STATUS OUTPUT_STRIP_TRAILING_WHITESPACE
+                RESULT_VARIABLE _FX_ST_RC ERROR_QUIET)
+            # This is the load-bearing branch.  0 is reachable ONLY from here,
+            # and only when git status both ran (rc==0) and returned empty.
+            if(NOT _FX_ST_RC EQUAL 0)
+                set(FLEXAIDS_GIT_DIRTY "2")      # could not tell — do not claim clean
+            elseif(_GIT_STATUS STREQUAL "")
+                set(FLEXAIDS_GIT_DIRTY "0")
+            else()
+                set(FLEXAIDS_GIT_DIRTY "1")
+                message(WARNING "Building from a DIRTY working tree — reproducibility metadata will be flagged.")
+            endif()
+        endif()
+    endif()
+endif()
 
+# (3) `git archive` export (GitHub's /archive/refs/tags/*.tar.gz — i.e. every
+#     Homebrew stable install).  .git_archival.txt is populated by the
+#     export-subst attribute at archive time, so the tarball carries its own
+#     commit.  This is the designed mechanism, not a workaround.
+#
+#     DIVERGENCE FROM 682f8090, DELIBERATE: that commit sets dirty=0 here, on
+#     the reasoning that "an archive is immutable by construction".  The
+#     ARCHIVE is.  The extracted tree is not -- it is an ordinary directory,
+#     and `tar xzf && patch && cmake` is a completely normal thing to do.  The
+#     tarball also carries no manifest of file hashes, so a build from it has
+#     no way to detect an edit.  dirty=0 there would be a clean claim with
+#     nothing behind it, which is the same bug one layer down.  2 is the only
+#     honest value: the commit is known, the tree state is not.
+if(FLEXAIDS_SRC_PROVENANCE STREQUAL "unknown"
+   AND EXISTS "${CMAKE_SOURCE_DIR}/.git_archival.txt")
+    file(READ "${CMAKE_SOURCE_DIR}/.git_archival.txt" _FX_ARCHIVAL)
+    # Unexpanded in a plain checkout; a real archive substitutes the hash.
+    if(_FX_ARCHIVAL MATCHES "commit:[ \t]*([0-9a-fA-F]+)")
+        set(FLEXAIDS_GIT_COMMIT "${CMAKE_MATCH_1}")
+        string(SUBSTRING "${FLEXAIDS_GIT_COMMIT}" 0 8 FLEXAIDS_GIT_COMMIT)
+        set(FLEXAIDS_SRC_PROVENANCE "archive")
+        set(FLEXAIDS_GIT_DIRTY "2")
+    endif()
+endif()
+
+if(FLEXAIDS_GIT_COMMIT STREQUAL "")
+    set(FLEXAIDS_GIT_COMMIT "unknown")
+endif()
+
+if(FLEXAIDS_SRC_PROVENANCE STREQUAL "unknown")
+    message(WARNING
+        "Build provenance is UNKNOWN (no git, no .git_archival.txt, no override). "
+        "The binary will report commit=unknown dirty=2. Results from it cannot be "
+        "tied to a source revision. Pass -DFLEXAIDS_GIT_COMMIT_OVERRIDE=<sha> to fix.")
+endif()
+
+# Re-run CMake when HEAD moves or the index changes, so a checkout or a commit
+# refreshes the stamp instead of leaving a stale one baked in.  Without this,
+# `git checkout <other-branch> && make` relinks a binary that still reports the
+# previous commit -- a wrong provenance claim, which is worse than none.
+#
+# `git rev-parse --git-path` is used rather than "${CMAKE_SOURCE_DIR}/.git/..."
+# because in a worktree `.git` is a FILE pointing elsewhere and that path does
+# not exist.  This whole change was developed in a worktree; the naive form
+# silently attaches the dependency to a nonexistent file and never fires.
+if(FLEXAIDS_SRC_PROVENANCE STREQUAL "git" AND GIT_EXECUTABLE)
+    foreach(_fx_gitfile HEAD index)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" rev-parse --git-path ${_fx_gitfile}
+            OUTPUT_VARIABLE _FX_GITPATH OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _FX_GP_RC ERROR_QUIET)
+        if(_FX_GP_RC EQUAL 0 AND EXISTS "${CMAKE_SOURCE_DIR}/${_FX_GITPATH}")
+            set_property(DIRECTORY APPEND PROPERTY
+                CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/${_FX_GITPATH}")
+        elseif(_FX_GP_RC EQUAL 0 AND EXISTS "${_FX_GITPATH}")
+            set_property(DIRECTORY APPEND PROPERTY
+                CMAKE_CONFIGURE_DEPENDS "${_FX_GITPATH}")
+        endif()
+    endforeach()
+endif()
+
+message(STATUS
+    "FlexAIDdS provenance: version=${FLEXAIDS_VERSION_STR} commit=${FLEXAIDS_GIT_COMMIT} "
+    "dirty=${FLEXAIDS_GIT_DIRTY} source=${FLEXAIDS_SRC_PROVENANCE}")
+
+# Global: BindingMode.cpp stamps commit+dirty into `REMARK FLEXAID.commit=` in
+# every emitted pose file, so these two must be visible to the whole tree.
 add_compile_definitions(
     FLEXAIDS_GIT_DIRTY=${FLEXAIDS_GIT_DIRTY}
     FLEXAIDS_GIT_COMMIT="${FLEXAIDS_GIT_COMMIT}")
+
+# ── Build-identity stamp for --version ────────────────────────────────────
+#
+# Scoped to LIB/version_info.cpp with set_source_files_properties, NOT global
+# via add_compile_definitions, and the reason is not tidiness.
+#
+# FLEXAIDS_BUILT_UTC changes on every configure.  As a global definition it
+# would invalidate every object file in the project on every reconfigure --
+# a full LTO rebuild of a large C++23 tree to update one timestamp string.
+# Scoped, exactly one translation unit recompiles.
+#
+# The timestamp is CONFIGURE time, not link time, and that is deliberate.  The
+# obvious alternative -- regenerating it on every build -- would make the
+# binary's SHA-256 change on a no-op `make`.  That directly breaks the census
+# query KIND_SCHEMA.md is built around ("every run of one engine build",
+# grep -l engine_sha=$SHA): engine_sha would churn without the engine changing,
+# and identical builds would stop being identifiable as identical.  A stable
+# hash for unchanged source is a property worth more than a link-accurate
+# clock.  The CMAKE_CONFIGURE_DEPENDS above is what keeps the configure-time
+# value from going stale where it matters -- a commit or index change forces a
+# reconfigure, and therefore a fresh timestamp.
+string(TIMESTAMP FLEXAIDS_BUILT_UTC "%Y-%m-%dT%H:%M:%SZ" UTC)
+
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/LIB/version_info.cpp"
+    PROPERTIES COMPILE_DEFINITIONS
+        "FLEXAIDS_VERSION_STR=\"${FLEXAIDS_VERSION_STR}\";FLEXAIDS_SRC_PROVENANCE=\"${FLEXAIDS_SRC_PROVENANCE}\";FLEXAIDS_BUILD_TYPE=\"${CMAKE_BUILD_TYPE}\";FLEXAIDS_COMPILER=\"${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}\";FLEXAIDS_BUILT_UTC=\"${FLEXAIDS_BUILT_UTC}\"")
 
 include(CheckCXXCompilerFlag)
 
@@ -257,7 +437,7 @@ if(FLEXAIDS_BUILD_CORE)
 add_executable(FlexAID "")
 # Slimmed: use central OBJECT library instead of duplicating ~150 source files.
 # Only the dedicated entry points + the core objects.
-target_sources(FlexAID PRIVATE LIB/top.cpp)
+target_sources(FlexAID PRIVATE LIB/top.cpp LIB/version_info.cpp)
 target_link_libraries(FlexAID PRIVATE flexaid_core)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(FlexAID PRIVATE m)
@@ -844,7 +1024,7 @@ if(BUILD_FLEXAIDDS_FAST)
         LIB/PoseBust/Engine.cpp
         LIB/PoseBust/BustCli.cpp
     )
-    add_executable(FlexAIDdS LIB/top.cpp ${FLEXAIDDS_REDOCK_SOURCES})
+    add_executable(FlexAIDdS LIB/top.cpp LIB/version_info.cpp ${FLEXAIDDS_REDOCK_SOURCES})
     target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
     target_include_directories(FlexAIDdS PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB

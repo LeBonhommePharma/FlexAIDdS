@@ -1,4 +1,5 @@
 #include "TuiColor.h"
+#include "version_info.h"
 #include "gaboom.h"
 #include "top_helpers.h"
 #include "fileio.h"
@@ -386,7 +387,8 @@ static void print_usage(const char* progname) {
 	printf("  --legacy                   Legacy 3-file input mode\n");
 	printf("  --redock <PDBid>           Cognate redock from RCSB PDB ID\n");
 	printf("  --benchmark <set>          Run benchmark dataset (astex, casf2016, etc.)\n");
-	printf("  -h, --help                 Show this help\n\n");
+	printf("  -h, --help                 Show this help\n");
+	printf("  --version                  Build identity as key=value lines\n\n");
 	printf("Library input (virtual screening):\n");
 	printf("  Ligand can be a multi-molecule SDF, a SMILES file (.smi),\n");
 	printf("  or a directory of MOL2/SDF files. Each ligand is docked\n");
@@ -412,6 +414,36 @@ static void print_usage(const char* progname) {
 }
 
 int main(int argc, char **argv){
+	// ── --version ────────────────────────────────────────────────────────
+	// Deliberately the FIRST statement in main(): ahead of the try block,
+	// ahead of flexaids_rng::init_from_env(), ahead of the FA allocation and
+	// the base-path / data-directory resolution below.
+	//
+	// This placement is a correctness requirement, not a style choice.  The
+	// existing --help scan sits ~370 lines further down, and by the time
+	// control reaches it main() has already written
+	//     base path is '<...>'
+	//     auto-detected data directory: '<...>'
+	// to STDOUT.  Handling --version there would put two non-key=value lines
+	// ahead of the stamp and break the one-key=value-per-line contract that
+	// makes the output parseable -- silently, for any reader that does not
+	// happen to skip them.
+	//
+	// Being first also satisfies the other two requirements as a consequence
+	// rather than by separate effort: nothing has opened a file yet, so
+	// --version works with no input files present; and nothing has been
+	// allocated or seeded, so it cannot perturb a run.
+	//
+	// Scanned across all of argv rather than tested at argv[1] only, matching
+	// the --help loop, so `FlexAIDdS <receptor> <ligand> --version` answers
+	// instead of starting a dock.
+	for (int a = 1; a < argc; ++a) {
+		if (strcmp(argv[a], "--version") == 0) {
+			flexaids::version::print_build_identity();
+			return 0;
+		}
+	}
+
   try {
 	flexaids_rng::init_from_env();
 	int   i,j;
