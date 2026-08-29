@@ -41,8 +41,61 @@ def _load(name: str, rel: str):
 symm = _load("rmsd_symmcorr", "scripts/rmsd_symmcorr.py")
 agg = _load("aggregate_claim_metrics", "scripts/aggregate_claim_metrics.py")
 
-np = pytest.importorskip("numpy")
-pytest.importorskip("spyrmsd")
+import numpy as np
+
+# ── dependency contract: this module must FAIL, never skip ───────────────────
+# `scripts/rmsd_symmcorr.py` fails closed: when spyrmsd is absent it raises
+# SpyrmsdUnavailable rather than substitute a weaker metric. The tests for that
+# contract previously opened with `pytest.importorskip("spyrmsd")`, which fails
+# OPEN — on a machine without spyrmsd this module collected ZERO tests and the
+# run was reported as success. A gate that reports success without executing is
+# precisely the failure mode the code under test exists to prevent, so the test
+# suite was contradicting its own subject.
+#
+# Why a fixture and not a bare `import spyrmsd` at module level: an unguarded
+# import raises at collection time, and pytest aborts the WHOLE session on a
+# collection error (`!!! Interrupted: 1 error during collection !!!`). One
+# missing optional dependency anywhere would then take the entire suite down.
+# That trades a silent pass for a noisy suite, and someone would rightly revert
+# it. Instead this module ALWAYS imports and ALWAYS collects; if the dependency
+# is missing, every test in it fails loudly and locally, and every other test
+# file — including ones that skip deliberately — is completely unaffected.
+_MISSING_DEPS: list[str] = []
+try:
+    import spyrmsd as _spyrmsd_pkg  # noqa: F401
+except ImportError as _exc:  # pragma: no cover - environment-dependent
+    _MISSING_DEPS.append(f"spyrmsd ({_exc})")
+
+_DEP_HINT = (
+    "Install the pinned version with:  pip install 'spyrmsd==0.9.0'\n"
+    "This repo has no requirements-test.txt; test dependencies are declared in\n"
+    "the pip-install steps of .github/workflows/ci.yml, where spyrmsd==0.9.0 is\n"
+    "pinned for the job that runs this file."
+)
+
+
+@pytest.fixture(autouse=True)
+def _require_symmcorr_deps():
+    """Turn a missing load-bearing dependency into a FAILURE, not a skip."""
+    if _MISSING_DEPS:
+        pytest.fail(
+            "REQUIRED test dependency missing: "
+            + "; ".join(_MISSING_DEPS)
+            + ".\ntests/test_rmsd_symmcorr.py gates a fail-closed metric and "
+            "must never be skipped — a skipped gate reports success without "
+            "executing.\n" + _DEP_HINT,
+            pytrace=False,
+        )
+
+
+def test_symmcorr_dependencies_are_installed():
+    """Tripwire: this file must never again collect zero tests.
+
+    If the guard above is ever reverted to `importorskip`, the module stops
+    collecting and its silence looks identical to success. This test exists so
+    that there is always at least one collected item whose failure is visible.
+    """
+    assert not _MISSING_DEPS, "missing: " + "; ".join(_MISSING_DEPS)
 
 
 # ── fixtures: a molecule with a real automorphism ────────────────────────────
