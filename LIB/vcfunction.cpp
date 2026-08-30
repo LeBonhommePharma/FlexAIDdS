@@ -360,6 +360,50 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		cfstr cfs_atom;
 #endif
 
+		// ── DIAGNOSTIC (temporary): which quantity is out of range here?
+		// ASan put the BUS at the optres dereference below, on a high address.
+		// Three candidates, all raw pointers into reallocatable arrays:
+		//   VC->Calc[i].atom -> atoms      (realloc build_rotamers.cpp:136)
+		//   FA->num_atm[..]  -> bad index  (rotamer atoms never registered)
+		//   atoms[].optres   -> FA->optres (realloc build_rotamers.cpp:308)
+		// Report, do not guess. Set FLEXAIDDS_VCF_DIAG=0 to disable.
+		static int vcf_diag_hits = 0;
+		{
+			// getenv ONCE, not per atom per evaluation: this is the CF hot loop.
+			static const bool diag = [](){ const char* d = getenv("FLEXAIDDS_VCF_DIAG");
+			                              return !(d && d[0] == '0'); }();
+			if(diag){
+				const atom* abase = atoms;
+				const atom* atop  = atoms + FA->atm_cnt + 1;
+				const atom* ca    = VC->Calc[i].atom;
+				int bad_calc = (ca < abase || ca >= atop);
+				int anum = bad_calc ? -1 : ca->number;
+				int bad_num = (!bad_calc && (anum < 0 || anum >= MAX_ATOM_NUMBER));
+				int az = (bad_calc || bad_num) ? -1 : FA->num_atm[anum];
+				int bad_az = (az < 1 || az > FA->atm_cnt);
+				int bad_optres = 0;
+				if(!bad_az && atoms[az].optres != NULL && FA->optres != NULL){
+					const OptRes* olo = FA->optres;
+					const OptRes* ohi = FA->optres + FA->num_optres;
+					bad_optres = (atoms[az].optres < olo || atoms[az].optres >= ohi);
+				}
+				if((bad_calc || bad_num || bad_az || bad_optres) && vcf_diag_hits < 6){
+					vcf_diag_hits++;
+					fprintf(stderr,
+					  "[VCF-DIAG] k=%d i=%d | Calc.atom=%p in[%p,%p)=%d | number=%d ok=%d | "
+					  "atomzero=%d atm_cnt=%d ok=%d | optres=%p in[%p,%p)=%d num_optres=%d\n",
+					  k, i, (const void*)ca, (const void*)abase, (const void*)atop, !bad_calc,
+					  anum, !bad_num, az, FA->atm_cnt, !bad_az,
+					  (bad_az ? NULL : (const void*)atoms[az].optres),
+					  (const void*)FA->optres,
+					  (const void*)(FA->optres ? FA->optres + FA->num_optres : NULL),
+					  !bad_optres, FA->num_optres);
+					fflush(stderr);
+				}
+				if(bad_calc || bad_num || bad_az || bad_optres) continue;  // skip, do not fault
+			}
+		}
+
 		// atom from which contacts are calculated
 		int atomzero = FA->num_atm[VC->Calc[i].atom->number];
 		

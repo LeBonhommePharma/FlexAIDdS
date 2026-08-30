@@ -33,6 +33,15 @@ void update_optres(atom* atoms, resid* residue, int atm_cnt, OptRes* optres_ptr,
 			posebusters_vdw_radius(atoms[j].element, atoms[j].radius);
 	}
 
+	// CLEAR FIRST. Without this pass an atom keeps a pointer into a PREVIOUS
+	// FA->optres allocation forever, because the loop below only assigns on a
+	// match and never resets a non-match. FA->optres is realloc'd per flexible
+	// residue (build_rotamers.cpp:308), so a retained pointer is a freed one.
+	// This function is the single owner of the atoms[].optres mapping and runs
+	// AFTER build_rotamers in both entry paths (top.cpp:2695, read_input.cpp:707),
+	// so rebuilding the mapping from scratch here is both correct and sufficient.
+	for(j=1;j<=atm_cnt;j++){ atoms[j].optres = NULL; }
+
 	for(i=0;i<num_optres;i++){
         
 		for(j=1;j<=atm_cnt;j++){

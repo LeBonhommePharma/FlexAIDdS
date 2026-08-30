@@ -53,7 +53,8 @@ float calc_rmsd(FA_Global* FA,atom* atoms,resid* residue, gridpoint* cleftgrid,i
             normalmode=grd_idx;
             
         }else if(FA->map_par[i].typ==4)  {
-            rot_idx = (int)(icv[i]+0.5);
+            rot_idx = rot_gene_index(icv[i],
+                      &residue[atoms[FA->map_par[i].atm].ofres], "calc_rmsd");
             
             residue[atoms[FA->map_par[i].atm].ofres].rot=rot_idx;
             

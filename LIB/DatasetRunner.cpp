@@ -5982,6 +5982,21 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                           << " (default 3.0)\n";
             }
             {
+                // Opt-in receptor side-chain flexibility. 0 = off, which reproduces
+                // every arm run before this feature existed.
+                int autoflex_max = 0;
+                bool autoflex_metal_shrink = false;
+                if (const char* ms = std::getenv("FLEXAIDDS_AUTOFLEX_METAL_SHRINK")) {
+                    autoflex_metal_shrink = (ms[0] == '1');
+                }
+                bool scored_only = false;
+                if (const char* so = std::getenv("FLEXAIDDS_SCORED_ONLY")) {
+                    scored_only = (so[0] == '1');
+                }
+                if (const char* afx = std::getenv("FLEXAIDDS_AUTOFLEX_MAX")) {
+                    autoflex_max = std::atoi(afx);
+                    if (autoflex_max < 0) autoflex_max = 0;
+                }
                 std::ofstream jf(config_path);
                 jf << "{\n"
                    << "  \"flexibility\": {\n"
@@ -6028,13 +6043,43 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // buried targets (1GPK: -74→-59 kcal). v50b had this flag false.
                    << "    \"receptor_rotamer_prep\": "
                    << ((config.receptor_rotamer_prep &&
-                        config.mode != BenchmarkMode::ORACLE_CEILING) ? "true" : "false") << "\n"
+                        config.mode != BenchmarkMode::ORACLE_CEILING) ? "true" : "false") << ",\n"
+                   // RECEPTOR SIDE-CHAIN FLEXIBILITY DURING SEARCH (default 0 = OFF).
+                   // Distinct from receptor_rotamer_prep above, which is STATIC file
+                   // prep before docking; this one puts side chains in the GA.
+                   // The engine had the whole path (select_flexible_residues,
+                   // build_rotamers, add2_optimiz_vec("SC")) but the runner never
+                   // supplied its precondition, so every arm to date ran
+                   // rigid-receptor while autoflex_enabled read 1 -- verified from
+                   // 85 target logs, num_genes never exceeding 4 + ligand torsions.
+                   // Emitting the key here is the harness half of that fix; the
+                   // engine half is top.cpp direct-mode. Cost: ONE gene per
+                   // flexible residue (a rotamer index), so 5 residues is ~63% more
+                   // dimensionality on a median-8 Astex chromosome -- an arm that
+                   // enables this MUST report num_genes or a loss is uninterpretable.
+                   << "    \"autoflex_max\": " << autoflex_max << ",\n"
+                   << "    \"autoflex_metal_shrink\": "
+                   << (autoflex_metal_shrink ? "true" : "false") << ",\n"
+                   << "    \"rotamer_observations\": true\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
                    << "    \"grid_spacing\": " << config.grid_spacing << opt_extra << "\n"
                    << "  },\n"
                    << "  \"output\": {\n"
-                   << "    \"max_results\": " << kBenchmarkPoseLimit << "\n"
+                   << "    \"max_results\": " << kBenchmarkPoseLimit << ",\n"
+                   // POSE FILE CONTENT. scored_only writes ONLY atoms belonging to an
+                   // OPTIMIZABLE residue -- the ligand plus any flexible side chains,
+                   // since build_rotamers.cpp:320-323 gives each flexed side chain its
+                   // own OptRes with type=0 and update_optres.cpp:44 sets the per-atom
+                   // back-pointer. This is the original FlexAID vHTS flag SCOOUT
+                   // (read_input.cpp:247); config_parser.cpp:337 has always read
+                   // output.scored_only and only THIS emitter was missing -- the same
+                   // engine/harness desync shape as autoflex. 8 of the 9 keys
+                   // config_parser reads from "output" are still unemitted.
+                   // NOTE flexaid.h:576 calls it "ligand coordinates only"; that
+                   // comment predates reachable side-chain flexibility. Trust the code.
+                   // Default false so every existing arm stays byte-identical.
+                   << "    \"scored_only\": " << (scored_only ? "true" : "false") << "\n"
                    << "  },\n"
                    // The MC_st0r5.2_6 interaction matrix is loaded weighted (single
                    // value per type-pair), so the complementarity term must be

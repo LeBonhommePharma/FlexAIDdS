@@ -11,6 +11,7 @@
 #include "SdfReader.h"
 #include "CifReader.h"
 #include "CleftDetector.h"
+#include "BindingResidues.h"   // binding_residues::add_key_residues_as_flexible
 #include "site_confine.h"
 #include "statmech.h"
 #include "TargetServer.h"  // P1: for grand canonical TargetServer context in cluster paths
@@ -632,6 +633,7 @@ int main(int argc, char **argv){
 	FA->reflig_hetatm_fallback = 1;
 	FA->autoflex_enabled = 1;  // auto-flex key binding residues by default
 	FA->autoflex_max = 5;
+	FA->autoflex_metal_shrink = 0;   // default BACKFILL
 
 	// calloc (not malloc): FLEXAIDDS_CONTACTS_EPOCH mode never memsets this
 	// buffer between vcfunction() calls (see vcfunction.cpp), so it must start
@@ -2575,12 +2577,96 @@ int main(int argc, char **argv){
 			FA->index_min = 0.0;
 		}
 
+		// ── Receptor side-chain flexibility, direct/JSON path ──────────
+		// This path already called add2_optimiz_vec(...,"SC") below — the
+		// CONSUMER of flexible side chains — without running any of the
+		// PRODUCERS that read_input.cpp has (rotamer-library load 463-487,
+		// add_key_residues_as_flexible 637, build_rotamers 490/651). So
+		// FA->nflxsc was always 0, "SC" allocated no genes, and the receptor
+		// was rigid on every benchmark arm while autoflex_enabled read 1 and
+		// every log, config and exit code looked clean. Measured: num_genes
+		// never exceeded 4 + ligand torsions on any of 85 Astex targets.
+		//
+		// Ordering follows BindingResidues.h:209 exactly — AFTER the MIF
+		// (computed above on this path) and BEFORE build_rotamers and the
+		// "SC" opt-vector call. Gated on autoflex_max > 0, which
+		// config_parser pins to 0 by default, so every prior arm's rigid
+		// behaviour reproduces unless flexibility is explicitly asked for.
+		if (FA->autoflex_enabled && FA->autoflex_max > 0 && FA->is_protein) {
+			const char* rot_base = strcmp(FA->dependencies_path, "")
+			                       ? FA->dependencies_path : FA->base_path;
+			char rotfile[MAX_PATH__];
+
+			if (rotamer == NULL) {
+				rotamer = (rot*)calloc((size_t)FA->MIN_ROTAMER_LIBRARY_SIZE, sizeof(rot));
+				if (rotamer == NULL) {
+					fprintf(stderr, "ERROR: memory allocation error for rotamer\n");
+					Terminate(2);
+				}
+			}
+
+			if (FA->rotobs) {
+				snprintf(rotfile, MAX_PATH__, "%s/rotobs.lst", rot_base);
+				printf("read rotamer observations <%s>\n", rotfile);
+				read_rotobs(FA, &rotamer, rotfile);
+			} else {
+				snprintf(rotfile, MAX_PATH__, "%s/Lovell_LIB.dat", rot_base);
+				printf("read rotamer library <%s>\n", rotfile);
+				read_rotlib(FA, &rotamer, rotfile);
+			}
+
+			if (FA->rotlibsize <= 0) {
+				// Fail loudly. A missing library previously degraded to a
+				// silently rigid receptor — the exact failure this block ends.
+				fprintf(stderr, "ERROR: autoflex_max=%d requested but no rotamer "
+				                "library loaded from <%s> (rotlibsize=%d)\n",
+				        FA->autoflex_max, rotfile, FA->rotlibsize);
+				Terminate(2);
+			}
+
+			int n_added = binding_residues::add_key_residues_as_flexible(
+			                  FA, cleftgrid, atoms, residue, FA->autoflex_max);
+			printf("AUTOFLEX: %d residue(s) added as flexible "
+			       "(autoflex_max=%d, rotlibsize=%d)\n",
+			       n_added, FA->autoflex_max, FA->rotlibsize);
+
+			if (FA->nflxsc > 0) {
+				// Reserve FA->optres for every flexible side chain PLUS the ligand entry before
+				// build_rotamers() starts growing it (build_rotamers.cpp:308 reallocs per
+				// residue). Keeps the array immovable so no atoms[].optres pointer can be left
+				// THIS RESERVATION IS LOAD-BEARING, not defence in depth. MEASURED with one
+				// binary: update_optres()'s clear-first pass active but FLEXAIDDS_PAR_RESERVE=0
+				// still leaves 6 out-of-range optres dereferences on 1R55; with the reservation
+				// on, zero. So something reallocs FA->optres AFTER update_optres rebuilds the
+				// mapping, and only keeping the array immovable closes it.
+				reserve_optres(FA, FA->nflxsc + 2);
+				build_rotamers(FA, &atoms, residue, rotamer);
+				printf("AUTOFLEX: built rotamers for %d flexible residue(s) "
+				       "(%d with rotamers)\n", FA->nflxsc, FA->nflxsc_real);
+			}
+		}
+
 		int opt[2];
 		char chain = ' ';
 
 		// Translation: grid-index gene (typ=-1), picks anchor point from cleft grid
 		opt[0] = FA->resligand->number;
 		opt[1] = -1;
+		// ── ROOT FIX for the dangling map_par pointer (SIGSEGV in populate_chromosomes)
+		// add2_optimiz_vec() stores RAW POINTERS into FA->map_par (atoms[].par at
+		// add2_optimiz_vec.cpp lines 64/128/156/168/179/207, plus
+		// map_par_sidechain_first/last), and realloc_par() RELOCATES that array.
+		// This function is called up to four times per run (extras "" x3, then "SC",
+		// "NM"), so a realloc on ANY later call invalidates every pointer the earlier
+		// calls took. MEASURED: reserving inside the "SC" call grew MIN_PAR 6 -> 86
+		// there and left 11 of 18 ligand pointers dangling; the dangling atoms[].par
+		// is dereferenced in populate_chromosomes(), which is why the fault needed a
+		// large GA population (freed block reused) and looked target-specific.
+		// Reserving here -- BEFORE the first call, so before any pointer exists --
+		// makes the array immovable for the whole setup. MAX_PAR is the engine's own
+		// declared ceiling on genes (flexaid.h:83); the largest count observed on
+		// Astex-85 is 17. Cost: MAX_PAR * sizeof(optmap), a few KB, once.
+		reserve_par(FA, MAX_PAR);
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "");
 
 		// Rotation: 3 Euler-angle genes (ang + dih + dih of GPA atoms)

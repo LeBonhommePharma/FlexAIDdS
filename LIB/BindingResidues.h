@@ -8,6 +8,7 @@
 #pragma once
 
 #include "flexaid.h"
+#include "metal_coordination.h"   // metal_coord::is_metal_type / is_coord_donor_type
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 
@@ -232,6 +233,71 @@ inline int add_key_residues_as_flexible(
                std::strcmp(name, "PRO") == 0;
     };
 
+    // ─── Exclude residues whose SIDE CHAIN coordinates a metal ────────────────
+    // autoflex ranks by MIF score, and the interaction field peaks at the
+    // catalytic centre, so it preferentially selects metal-coordinating residues
+    // -- precisely the ones that must NOT move in a holo structure. A holo
+    // coordination sphere is not a degree of freedom; leaving it selectable makes
+    // the arm measure whether the GA can break a metal site rather than induced fit.
+    //
+    // MEASURED, 1JD0 (carbonic anhydrase XII + acetazolamide): HIS 94, one of the
+    // three Zn ligands, was ranked FIRST (MIF -901.57, 566 contacts), and flexing
+    // it moved the Zn-NE2 bond from the crystal/rigid 2.064 A to 2.140 A. The
+    // rotamer library is metal-blind -- rotobs.lst carries only
+    // (RESNAME, chi1, chi2, ...) with no coordination geometry -- so nothing
+    // downstream can recover the constraint. 32 of the 85 Astex Diverse targets
+    // carry at least one metal (ZN 13, CA 9, MG 7, K 3, NA 2, MN 2, HG 1, LI 1),
+    // so this is not an edge case.
+    //
+    // Both predicates are the ENGINE'S OWN, from metal_coordination.h, so this
+    // exclusion and the metal_coord scoring term cannot disagree about what counts
+    // as a metal or a donor:
+    //   is_metal_type()       -- the same test vcfunction.cpp:852 applies
+    //   is_coord_donor_type() -- N (6-12 except N.4), O (13-16), S (17-18), P.3
+    // Backbone N/CA/C/O/OXT are exempt: chi rotation cannot move them, so a
+    // backbone-to-metal contact carries no risk and excluding on it would be
+    // over-aggressive.
+    std::vector<const float*> metal_xyz;
+    for (int i = 1; i <= FA->atm_cnt; ++i) {
+        if (metal_coord::is_metal_type(atoms[i].type)) {
+            metal_xyz.push_back(atoms[i].coor);
+        }
+    }
+
+    auto atom_is_backbone = [](const char* nm) {
+        char t[8]; int k = 0;
+        for (const char* p = nm; *p && k < 7; ++p) { if (*p != ' ') t[k++] = *p; }
+        t[k] = '\0';
+        return std::strcmp(t, "N") == 0 || std::strcmp(t, "CA") == 0 ||
+               std::strcmp(t, "C") == 0 || std::strcmp(t, "O") == 0 ||
+               std::strcmp(t, "OXT") == 0;
+    };
+
+    // Returns the offending metal distance (Angstrom) if the side chain coordinates
+    // a metal, or -1.0 otherwise, so the caller can report WHY it excluded.
+    auto sidechain_metal_distance = [&](int res_index) -> float {
+        if (metal_xyz.empty()) return -1.0f;
+        const resid& R = residues[res_index];
+        if (!R.fatm || !R.latm) return -1.0f;
+        const float cut2 = 2.8f * 2.8f;
+        float best = -1.0f;
+        for (int i = R.fatm[0]; i <= R.latm[0]; ++i) {
+            if (atom_is_backbone(atoms[i].name)) continue;
+            if (!metal_coord::is_coord_donor_type(atoms[i].type)) continue;
+            for (const float* m : metal_xyz) {
+                const float dx = atoms[i].coor[0] - m[0];
+                const float dy = atoms[i].coor[1] - m[1];
+                const float dz = atoms[i].coor[2] - m[2];
+                const float d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 < cut2) {
+                    const float d = std::sqrt(d2);
+                    if (best < 0.0f || d < best) best = d;
+                }
+            }
+        }
+        return best;
+    };
+
     // Check if residue is already in flex_res[]
     auto already_flexible = [&](int res_index) {
         for (int i = 0; i < FA->nflxsc; ++i) {
@@ -248,12 +314,38 @@ inline int add_key_residues_as_flexible(
         if (!FA->flex_res) return 0;
     }
 
+    // Slot policy: a METAL-excluded candidate either yields its slot to the next
+    // candidate (backfill, constant gene count) or consumes it and leaves it empty
+    // (shrink, gene count varies with metal content). Only metal exclusions are
+    // affected -- GLY/ALA/PRO and ligand skips still backfill in both modes -- so the
+    // two settings touch exactly one MECHANISM. NOTE, measured 2026-08-30: the SWITCH is
+    // single-mechanism but the OUTCOME is NOT single-variable -- it changes both WHICH
+    // residues are flexed and HOW MANY genes the chromosome carries (shrink used 1-2 fewer
+    // genes on 9 of 12 metal-bearing Astex targets). At a fixed evaluation budget shrink
+    // therefore searches a smaller space with more evaluations per gene, so a shrink win
+    // cannot be attributed to residue quality without a gene-matched control arm.
+    const bool metal_shrink = (FA->autoflex_metal_shrink != 0);
     int added = 0;
+    int slots_used = 0;
     for (const auto& rc : key_res) {
-        if (added >= max_auto_flex) break;
+        if (slots_used >= max_auto_flex) break;
         if (is_skip_residue(rc.name)) continue;
         if (residues[rc.res_index].type != 0) continue;  // skip ligand residues
         if (already_flexible(rc.res_index)) continue;
+
+        // Metal-coordinating side chains are not degrees of freedom. Report the
+        // exclusion rather than skipping silently -- a silently rigid or silently
+        // dropped residue is exactly the failure mode this project keeps paying for.
+        const float mdist = sidechain_metal_distance(rc.res_index);
+        if (mdist >= 0.0f) {
+            printf("AUTOFLEX: %s %d:%c EXCLUDED, side chain coordinates a metal "
+                   "(%.2f A < 2.8 A cutoff; MIF=%.2f would have ranked it) [%s]\n",
+                   rc.name, rc.number, rc.chain, mdist, rc.mif_score,
+                   metal_shrink ? "SHRINK: slot left empty"
+                                : "BACKFILL: next candidate takes the slot");
+            if (metal_shrink) ++slots_used;
+            continue;
+        }
 
         // Grow flex_res if needed
         if (FA->nflxsc >= FA->MIN_FLEX_RESIDUE) {
@@ -276,6 +368,7 @@ inline int add_key_residues_as_flexible(
 
         FA->nflxsc++;
         added++;
+        slots_used++;
 
         printf("AUTOFLEX: %s %d:%c added as flexible (MIF=%.2f, %d contacts)\n",
                rc.name, rc.number, rc.chain, rc.mif_score, rc.contact_count);

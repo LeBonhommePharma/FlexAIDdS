@@ -25,6 +25,30 @@ void add2_optimiz_vec(FA_Global* FA,atom* atoms,resid* residue,int val[], char c
   
 	buildic(FA,atoms,residue,at);
 
+	// ── PRODUCTION GUARD 1 of 2: RESERVE BEFORE ANY POINTER IS TAKEN ─────────
+	// Every branch below stores RAW POINTERS into the reallocatable arrays:
+	//     atoms[...].par              = &FA->map_par[FA->npar];
+	//     FA->map_par_sidechain_first = &FA->map_par[FA->npar];
+	//     FA->map_par_sidechain_last  = &FA->map_par[FA->npar];
+	// realloc_par() RELOCATES map_par, so a realloc anywhere in this call
+	// invalidates every pointer taken earlier in it -- including pointers from
+	// the LIGAND branches when the first side-chain gene triggers the growth.
+	// The dangling atoms[].par is dereferenced in populate_chromosomes(), hence
+	// a fault that needed a large GA population and looked target-specific.
+	// MEASURED: exit 139 with as few as ONE flexible side chain at population
+	// >= 400 (1R55/1R58/1HQ2); population 100 and the rigid arm clean.
+	// Reserving up front makes the arrays immovable for the rest of the call.
+	// No-op when capacity already suffices, so correct paths are unchanged.
+	// Defence in depth only. The reservation that MATTERS is the global one in
+	// top.cpp / read_input.cpp before the FIRST add2_optimiz_vec call: this
+	// function is called up to four times per run (extras "" x3, then "SC",
+	// "NM"), and growing the array on a LATER call invalidates the pointers the
+	// EARLIER calls captured at lines 128-207. Measured: reserving here first
+	// grew MIN_PAR 6 -> 86 on the "SC" call and left 11 of 18 ligand pointers
+	// dangling. With the global reservation in place this is a no-op.
+	reserve_par(FA, FA->npar + FA->nflxsc + FA->normal_modes + 8);
+	const optmap* par_base_on_entry = FA->map_par;
+
 	if(strcmp(extras,"SC") == 0){
 
 		for(i=0;i<FA->nflxsc;i++){
@@ -64,6 +88,17 @@ void add2_optimiz_vec(FA_Global* FA,atom* atoms,resid* residue,int val[], char c
             
 		}
         
+		// PRODUCTION GUARD 2: prove the reservation held and every captured pointer
+		// still lands inside the live array. Loud failure, never silent corruption.
+		if(FA->map_par != par_base_on_entry){
+			fprintf(stderr,"[PAR-PTR] add2_optimiz_vec(SC): map_par RELOCATED during "
+			        "the call despite reservation (npar=%d MIN_PAR=%d)\n",
+			        FA->npar, FA->MIN_PAR);
+			const char* rf = getenv("FLEXAIDDS_PAR_PTR_FATAL");
+			if(rf && rf[0] == '1') Terminate(2);
+		}
+		validate_map_par_pointers(FA, atoms, FA->atm_cnt, "add2_optimiz_vec(SC)");
+
 	}else if(strcmp(extras,"NM") == 0){
                 
 		if (FA->normal_modes > 0){
@@ -199,6 +234,103 @@ void add2_optimiz_vec(FA_Global* FA,atom* atoms,resid* residue,int val[], char c
 	return;
 }
 
+
+// ── Capacity reservation, added to fix a dangling-pointer SIGSEGV ───────────
+// add2_optimiz_vec() stores RAW POINTERS into FA->map_par:
+//     atoms[...].par                = &FA->map_par[FA->npar];   (line ~47)
+//     FA->map_par_sidechain_first   = &FA->map_par[FA->npar];   (line ~56)
+//     FA->map_par_sidechain_last    = &FA->map_par[FA->npar];   (line ~59)
+// realloc_par() then RELOCATES map_par. Any pointer taken before a mid-loop
+// realloc dangles, and the flexible-side-chain loop takes one per residue, so
+// with >=2 flexible residues a realloc can fire between two pointer captures.
+// The dangling atoms[].par is dereferenced during populate_chromosomes(), which
+// is why the fault needed a large GA population (the freed block has been reused
+// by then) and why it was target-specific (whether a MIN_PAR boundary lands
+// inside the side-chain loop depends on the ligand's gene count).
+// MEASURED before this fix: 1R55/1R58/1HQ2 exit 139 at 5 flexible residues and
+// population >= 400; population 100 and the rigid arm clean.
+//
+// reserve_par() grows the arrays to a capacity known up front, so no realloc can
+// occur while pointers are being taken. It is a no-op when capacity suffices, so
+// it cannot change behaviour on any path that was already correct.
+// ── PRODUCTION GUARD 2 of 2: VALIDATE, do not assume ────────────────────────
+// Asserts every non-null atoms[].par points INSIDE the live map_par array.
+// A violation means a relocation happened while pointers were live: the exact
+// condition that produced the SIGSEGV. Fail loudly here rather than corrupt
+// silently and crash later somewhere unrelated.
+// FLEXAIDDS_PAR_PTR_WARN=1 downgrades to a warning for bisecting.
+int validate_map_par_pointers(FA_Global* FA, atom* atoms, int atm_cnt,
+                              const char* where)
+{
+	if(FA == NULL || FA->map_par == NULL || atoms == NULL) return 0;
+	const optmap* lo = FA->map_par;
+	const optmap* hi = FA->map_par + FA->npar;   // one past the last live gene
+	int bad = 0, checked = 0;
+	for(int i = 1; i <= atm_cnt; i++){
+		const optmap* p = atoms[i].par;
+		if(p == NULL) continue;
+		checked++;
+		if(p < lo || p >= hi) bad++;
+	}
+	const optmap* sc[2] = { FA->map_par_sidechain_first, FA->map_par_sidechain_last };
+	for(int k = 0; k < 2; k++){
+		if(sc[k] == NULL) continue;
+		checked++;
+		if(sc[k] < lo || sc[k] >= hi) bad++;
+	}
+	if(bad > 0){
+		fprintf(stderr,
+			"[PAR-PTR] %s: %d of %d captured map_par pointer(s) lie OUTSIDE the live "
+			"array [%p,%p) (npar=%d MIN_PAR=%d). A realloc relocated map_par while "
+			"pointers were live -- this is the dangling-pointer defect, not a data issue.\n",
+			(where ? where : "?"), bad, checked, (const void*)lo, (const void*)hi,
+			FA->npar, FA->MIN_PAR);
+		// WARN by default: this condition predates the guard and is reachable in
+		// rigid runs, so a fatal default would halt every production run rather
+		// than surface the defect. Opt in to aborting when bisecting.
+		const char* fatal = getenv("FLEXAIDDS_PAR_PTR_FATAL");
+		if(fatal && fatal[0] == '1') Terminate(2);
+	}
+	return bad;
+}
+
+// Reserve FA->optres capacity so the array cannot relocate while atoms[].optres
+// pointers are live. Same defect class as map_par; see update_optres.cpp.
+// FLEXAIDDS_PAR_RESERVE=0 also disables this, for baseline measurement.
+void reserve_optres(FA_Global* FA, int need){
+	const char* rsv = getenv("FLEXAIDDS_PAR_RESERVE");
+	if(rsv && rsv[0] == '0') return;
+	if(need < 1) need = 1;
+	if(FA->MIN_OPTRES >= need) return;
+	OptRes* grown = (OptRes*)realloc(FA->optres, (size_t)need * sizeof(OptRes));
+	if(!grown){
+		fprintf(stderr,"ERROR: reserve_optres could not allocate %d entries\n", need);
+		Terminate(2);
+	}
+	memset(&grown[FA->MIN_OPTRES], 0,
+	       (size_t)(need - FA->MIN_OPTRES) * sizeof(OptRes));
+	FA->optres = grown;
+	FA->MIN_OPTRES = need;
+}
+
+void reserve_par(FA_Global* FA, int need){
+	// FLEXAIDDS_PAR_RESERVE=0 disables the reservation, restoring STOCK growth
+	// behaviour (MIN_PAR=6 + fixed steps) so the validator can measure BASELINE
+	// exposure. Without this switch, any violation count is confounded by the
+	// reservation's own relocation and cannot establish whether unpatched runs
+	// were affected.
+	const char* rsv = getenv("FLEXAIDDS_PAR_RESERVE");
+	if(rsv && rsv[0] == '0') return;
+	int guard = 0;
+	while(FA->MIN_PAR <= need){
+		realloc_par(FA,&FA->MIN_PAR);
+		if(++guard > 1000){
+			fprintf(stderr,"ERROR: reserve_par runaway (need=%d MIN_PAR=%d)\n",
+			        need, FA->MIN_PAR);
+			Terminate(2);
+		}
+	}
+}
 
 void realloc_par(FA_Global* FA, int* MIN_PAR){
 	

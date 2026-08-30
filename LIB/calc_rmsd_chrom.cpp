@@ -91,7 +91,8 @@ float calc_rmsd_chrom(FA_Global* FA, GB_Global* GB, const chromosome* chrom, con
 	
 			}else if(FA->map_par[i].typ==4)
 			{
-				rot_idx = (int)(FA->opt_par[i]+0.5);
+				rot_idx = rot_gene_index(FA->opt_par[i],
+				          &residue[atoms[FA->map_par[i].atm].ofres], "calc_rmsd_chrom");
 	
 				residue[atoms[FA->map_par[i].atm].ofres].rot=rot_idx;
 	

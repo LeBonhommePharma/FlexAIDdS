@@ -487,6 +487,15 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		}
 
 		if(FA->nflxsc > 0 && FA->rotlibsize > 0){
+			// Reserve FA->optres for every flexible side chain PLUS the ligand entry before
+			// build_rotamers() starts growing it (build_rotamers.cpp:308 reallocs per
+			// residue). Keeps the array immovable so no atoms[].optres pointer can be left
+			// THIS RESERVATION IS LOAD-BEARING, not defence in depth. MEASURED with one
+			// binary: update_optres()'s clear-first pass active but FLEXAIDDS_PAR_RESERVE=0
+			// still leaves 6 out-of-range optres dereferences on 1R55; with the reservation
+			// on, zero. So something reallocs FA->optres AFTER update_optres rebuilds the
+			// mapping, and only keeping the array immovable closes it.
+			reserve_optres(FA, FA->nflxsc + 2);
 			build_rotamers(FA,atoms,*residue,*rotamer);
 			//build_close(FA,residue,atoms);
 		}
@@ -627,6 +636,21 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		chain=a[0];
 		if(chain == '-'){chain = ' ';}
 		//printf("Add2 optimiz vector...\n");
+		// ── ROOT FIX for the dangling map_par pointer (SIGSEGV in populate_chromosomes)
+		// add2_optimiz_vec() stores RAW POINTERS into FA->map_par (atoms[].par at
+		// add2_optimiz_vec.cpp lines 64/128/156/168/179/207, plus
+		// map_par_sidechain_first/last), and realloc_par() RELOCATES that array.
+		// This function is called up to four times per run (extras "" x3, then "SC",
+		// "NM"), so a realloc on ANY later call invalidates every pointer the earlier
+		// calls took. MEASURED: reserving inside the "SC" call grew MIN_PAR 6 -> 86
+		// there and left 11 of 18 ligand pointers dangling; the dangling atoms[].par
+		// is dereferenced in populate_chromosomes(), which is why the fault needed a
+		// large GA population (freed block reused) and looked target-specific.
+		// Reserving here -- BEFORE the first call, so before any pointer exists --
+		// makes the array immovable for the whole setup. MAX_PAR is the engine's own
+		// declared ceiling on genes (flexaid.h:83); the largest count observed on
+		// Astex-85 is 17. Cost: MAX_PAR * sizeof(optmap), a few KB, once.
+		reserve_par(FA, MAX_PAR);
 		add2_optimiz_vec(FA,*atoms,*residue,opt,chain,"");
 
 	}
@@ -648,6 +672,15 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 			FA->flex_res = &saved_flex_res[nflxsc_before];
 			FA->nflxsc = n_added;
 
+			// Reserve FA->optres for every flexible side chain PLUS the ligand entry before
+			// build_rotamers() starts growing it (build_rotamers.cpp:308 reallocs per
+			// residue). Keeps the array immovable so no atoms[].optres pointer can be left
+			// THIS RESERVATION IS LOAD-BEARING, not defence in depth. MEASURED with one
+			// binary: update_optres()'s clear-first pass active but FLEXAIDDS_PAR_RESERVE=0
+			// still leaves 6 out-of-range optres dereferences on 1R55; with the reservation
+			// on, zero. So something reallocs FA->optres AFTER update_optres rebuilds the
+			// mapping, and only keeping the array immovable closes it.
+			reserve_optres(FA, FA->nflxsc + 2);
 			build_rotamers(FA, atoms, *residue, *rotamer);
 
 			// Accumulate nflxsc_real from both batches

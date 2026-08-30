@@ -582,7 +582,9 @@ std::vector<float> FastOPTICS::Vectorized_Cartesian_Coordinates(int chrom_index)
 
 		}else if(this->FA->map_par[i].typ == 4)
 		{
-			rot_idx = (int)(this->FA->opt_par[i]+0.5);
+			rot_idx = rot_gene_index(this->FA->opt_par[i],
+			          &this->residue[this->atoms[this->FA->map_par[i].atm].ofres],
+			          "FOPTICS.585");
 
 			this->residue[this->atoms[this->FA->map_par[i].atm].ofres].rot=rot_idx;
 		}
@@ -1148,7 +1150,9 @@ std::vector<float> RandomProjectedNeighborsAndDensities::Randomized_CartesianCoo
 
 		}else if(this->top->FA->map_par[i].typ == 4)
 		{
-			rot_idx = (int)(this->top->FA->opt_par[i]+0.5);
+			rot_idx = rot_gene_index(this->top->FA->opt_par[i],
+			          &this->top->residue[this->top->atoms[this->top->FA->map_par[i].atm].ofres],
+			          "FOPTICS.1151");
 
 			this->top->residue[this->top->atoms[this->top->FA->map_par[i].atm].ofres].rot=rot_idx;
 		}
