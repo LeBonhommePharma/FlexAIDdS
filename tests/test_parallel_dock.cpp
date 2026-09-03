@@ -7,6 +7,7 @@
 #include <numeric>
 #include <thread>
 #include <vector>
+#include <barrier>
 #include "../LIB/AtomCopyExtent.h"
 #include "../LIB/GridDecomposer.h"
 #include "../LIB/SharedPosePool.h"
@@ -389,16 +390,19 @@ TEST(ParEvalWSIsolation, ThreadLocalWorkspacesDoNotShare) {
     WS* p1 = nullptr;
     int v0 = -1;
     int v1 = -1;
+    std::barrier sync(2);
 
     std::thread t0([&] {
         ws.sentinel = 7;
         p0 = &ws;
         v0 = ws.sentinel;
+        sync.arrive_and_wait();  // both TLS objects live until both published
     });
     std::thread t1([&] {
         ws.sentinel = 9;
         p1 = &ws;
         v1 = ws.sentinel;
+        sync.arrive_and_wait();
     });
     t0.join();
     t1.join();
