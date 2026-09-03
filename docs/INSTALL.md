@@ -140,15 +140,19 @@ CMake resolves the stamp from four sources, in order:
 
 | source | when | `git_dirty` |
 |---|---|---|
-| `-DFLEXAIDS_GIT_COMMIT_OVERRIDE=<sha>` | packager passes it (conda, Docker, Homebrew stable) | `2` (unknown) |
+| `-DFLEXAIDS_GIT_COMMIT_OVERRIDE=<sha>` | packager passes it (Docker; the Homebrew stable formula once its tag carries this block) | `2` (unknown) |
 | git checkout | normal clone / `--HEAD` install | `0` or `1`, measured |
-| `.git_archival.txt` | release tarball — populated by `export-subst` at `git archive` time | `0` (archives are immutable) |
+| `.git_archival.txt` | release tarball — populated by `export-subst` at `git archive` time | `2` (commit known, tree state not) |
 | none of the above | — | `2`, plus a loud CMake warning |
 
 `git_dirty` is **tri-state**: `0` clean, `1` dirty, `2` unknown. It never
-reports `0` on a guess. Every build also writes
-`flexaidds-build-provenance.json` into the build tree, and each packaging route
-installs it next to the binary:
+reports `0` on a guess. `0` is reachable only from a live git checkout whose
+`git status` ran and came back empty. A release tarball is immutable, but the
+directory you extract it into is not, and the tarball carries no file-hash
+manifest that could detect an edit — so an archive build reports `2`, not `0`.
+
+Every build also writes `flexaidds-build-provenance.json` into the build tree,
+and each packaging route installs it next to the binary:
 
 ```bash
 cat build/flexaidds-build-provenance.json
@@ -156,17 +160,40 @@ flexaidds-buildinfo          # Homebrew installs
 cat /opt/flexaidds/flexaidds-build-provenance.json   # Docker image
 ```
 
-### Known gap
+### Asking the binary itself
 
-The native engine has **no `--version` flag**. Provenance is recoverable from
-the provenance JSON, from `strings $(command -v FlexAIDdS) | grep 'FLEXAID.commit'`,
-or from any emitted pose file — but not from the CLI. Adding
-`FlexAIDdS --version` requires a change to the C++ entry point and is tracked
-separately.
+Builds from `main` after the v2.2.0 tag (commit 087e8434 onward; no tagged
+release carries it yet) answer `FlexAIDdS --version` with one `key=value` per
+line:
 
-Tarballs cut before `.git_archival.txt` existed (**v2.0.3 and earlier**) carry
-no commit. The Homebrew formula compensates by passing the release tag as an
-override, so those installs report `v2.0.3` rather than nothing.
+```
+name=FlexAIDdS
+version=2.0.3
+git_commit=3f2ad344
+git_commit_form=short
+git_dirty=0
+git_dirty_meaning=0=clean 1=dirty 2=unknown
+src_provenance=git
+build_type=Release
+compiler=AppleClang 21.0.0.21000333
+built_utc=2026-09-03T14:02:11Z
+```
+
+The JSON and `--version` are stamped from the same CMake configure — one
+version string (parsed from `python/flexaidds/__version__.py`, the single
+source of truth), one timestamp, one commit/dirty/provenance triple — so they
+must agree. If they do not, the file and the binary describe different builds.
+
+Tagged tarballs v2.0.3 through v2.2.0 predate `--version`, the provenance
+JSON and `.git_archival.txt` alike: their own `CMakeLists.txt` governs the
+build, and it neither reads the override nor writes the JSON. For those builds
+the only identity source is the `REMARK` block of an emitted pose file.
+
+The Homebrew formula passes the release tag as an override on its stable
+path. That takes effect only for a tag cut after this block landed; against
+v2.0.3 through v2.2.0 the override is ignored, no JSON is produced, and the
+formula's own provenance check refuses to install. The stable formula path
+therefore needs a newer tag; `--HEAD` installs are unaffected.
 
 ---
 

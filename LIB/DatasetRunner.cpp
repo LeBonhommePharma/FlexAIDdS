@@ -87,7 +87,59 @@ namespace dataset {
 
 // Preserve a broad, fixed candidate set before any post-docking validator or
 // reranker runs. Candidate RMSD is diagnostic only and never affects retention.
-constexpr int kBenchmarkPoseLimit = 50;
+constexpr int kBenchmarkPoseLimitDefault = 50;
+constexpr int kBenchmarkPoseLimitMax     = 5000;
+
+// ── EMITTED-POSE / ENUMERATION BUDGET: ONE RUNTIME SOURCE OF TRUTH ──────────
+//
+// WHY THIS IS A FUNCTION AND NOT A CONSTANT. The value has THREE consumers:
+//   1. the generated dock_config.json  ("output": {"max_results": N})  -> what the
+//      ENGINE writes to disk;
+//   2. the CF/DP single-suffix probe loop in enumerate_emitted_cluster_heads()
+//      -> what the HARNESS scores;
+//   3. the FO dual-suffix branch of the same function.
+// Gating only (1) would have the engine write N poses while the harness still
+// enumerated 50, so every downstream pool ceiling and best_cluster_rmsd would be
+// computed over 50 while every log, receipt and exit code looked clean.
+//
+// AND IT REPAIRS A LIVE CF/FO ASYMMETRY. Before this change consumer (2) was capped
+// at 50 while consumer (3) was an UNBOUNDED std::filesystem::directory_iterator scan
+// in unspecified order. So CF was capped twice (engine + harness) and FO once
+// (engine only), and the two algorithms could not be compared on the emitted pool
+// without that difference confounding the result. Both branches now share one budget
+// and one deterministic order.
+//
+// DEFAULT IS 50: with FLEXAIDDS_MAX_RESULTS unset this reproduces every prior run
+// bit-for-bit. Read once into a function-local static (thread-safe since C++11) so the
+// value cannot drift between consumers inside a process.
+inline int benchmark_pose_limit()
+{
+    static const int lim = [] {
+        int v = kBenchmarkPoseLimitDefault;
+        const char* e = std::getenv("FLEXAIDDS_MAX_RESULTS");
+        if (e != nullptr && e[0] != '\0') {
+            char* endp = nullptr;
+            const long p = std::strtol(e, &endp, 10);
+            const bool clean = (endp != nullptr && *endp == '\0');
+            if (clean && p >= 1 && p <= kBenchmarkPoseLimitMax) {
+                v = static_cast<int>(p);
+                fprintf(stderr, "[MAXRES] budget=%d source=FLEXAIDDS_MAX_RESULTS "
+                                "(default %d) applies_to=config_emit+cf_dp_enum+fo_enum\n",
+                        v, kBenchmarkPoseLimitDefault);
+            } else {
+                fprintf(stderr, "[MAXRES] budget=%d source=default REJECTED_INPUT=\"%s\" "
+                                "reason=%s allowed=[1,%d]\n",
+                        v, e, clean ? "out_of_range" : "not_an_integer",
+                        kBenchmarkPoseLimitMax);
+            }
+        } else {
+            fprintf(stderr, "[MAXRES] budget=%d source=default "
+                            "applies_to=config_emit+cf_dp_enum+fo_enum\n", v);
+        }
+        return v;
+    }();
+    return lim;
+}
 
 // ── Cluster-head enumeration (CF/DP single-suffix + FO dual-suffix) ─────────
 // Engine emission (BindingMode.cpp / FastOPTICS_cluster.cpp):
@@ -101,16 +153,31 @@ enumerate_emitted_cluster_heads(const std::string& out_prefix)
     std::vector<EmittedClusterHead> out;
     std::set<std::string> seen;
     auto try_add = [&](const std::string& path, int rank, int min_pts) {
-        if (path.empty() || !fs::exists(path) || !seen.insert(path).second) return;
+        if (path.empty() || !fs::exists(path) || !seen.insert(path).second) return false;
         out.push_back(EmittedClusterHead{path, rank, min_pts});
+        return true;
     };
 
-    // CF / DensityPeak single-suffix: <prefix>_<rank>.pdb
-    for (int pi = 0; pi < kBenchmarkPoseLimit; ++pi) {
-        try_add(out_prefix + "_" + std::to_string(pi) + ".pdb", pi, /*min_pts=*/-1);
-    }
+    // ONE budget for every branch below -- see benchmark_pose_limit().
+    const int budget = benchmark_pose_limit();
 
-    // FastOPTICS dual-suffix: <prefix>_<minPts>_<rank>.pdb
+    // ── CF / DensityPeak single-suffix: <prefix>_<rank>.pdb ─────────────────
+    int cf_found = 0;
+    for (int pi = 0; pi < budget; ++pi) {
+        if (try_add(out_prefix + "_" + std::to_string(pi) + ".pdb", pi, /*min_pts=*/-1))
+            ++cf_found;
+    }
+    // TRUNCATION DETECTION, not silence: if rank == budget also exists on disk the
+    // engine wrote more than we are scoring, and the pool ceiling computed downstream
+    // is a FLOOR. Probe one past the budget and say so.
+    const bool cf_truncated =
+        fs::exists(out_prefix + "_" + std::to_string(budget) + ".pdb");
+
+    // ── FastOPTICS dual-suffix: <prefix>_<minPts>_<rank>.pdb ────────────────
+    // Collected first, then ORDERED, then bounded by the SAME budget. Previously this
+    // branch was an unbounded directory_iterator scan whose order is unspecified by
+    // the standard, so it was both uncapped relative to CF and non-deterministic.
+    std::vector<EmittedClusterHead> fo;
     try {
         const fs::path pfx(out_prefix);
         const fs::path dir = pfx.parent_path().empty() ? fs::path(".") : pfx.parent_path();
@@ -149,10 +216,42 @@ enumerate_emitted_cluster_heads(const std::string& out_prefix)
                     continue;
                 }
                 if (min_pts < 0 || rank < 0) continue;
-                try_add(ent.path().string(), rank, min_pts);
+                fo.push_back(EmittedClusterHead{ent.path().string(), rank, min_pts});
             }
         }
     } catch (...) {
+    }
+    const int fo_found = static_cast<int>(fo.size());
+    // Deterministic order: (min_pts, rank, path). Rank is the engine's own CF order
+    // within a minPts level, so this keeps the best-scoring heads when bounded.
+    std::sort(fo.begin(), fo.end(),
+              [](const EmittedClusterHead& a, const EmittedClusterHead& b) {
+                  if (a.min_pts != b.min_pts) return a.min_pts < b.min_pts;
+                  if (a.rank    != b.rank)    return a.rank    < b.rank;
+                  return a.path < b.path;
+              });
+    int fo_kept = 0;
+    for (const auto& h : fo) {
+        if (static_cast<int>(out.size()) >= budget) break;
+        if (try_add(h.path, h.rank, h.min_pts)) ++fo_kept;
+    }
+    const bool fo_truncated = (fo_kept < fo_found);
+
+    // ── ENUMERATION ATTESTATION ─────────────────────────────────────────────
+    // The HARNESS-side count. A gate that reads pose FILES ON DISK cannot detect a
+    // budget that reached the engine but not this function; this line can, because it
+    // is emitted by the enumerator itself. Always printed, never conditional.
+    fprintf(stderr,
+            "[ENUM] budget=%d cf_single=%d fo_dual_found=%d fo_dual_kept=%d "
+            "enumerated=%d cf_truncated=%d fo_truncated=%d\n",
+            budget, cf_found, fo_found, fo_kept,
+            static_cast<int>(out.size()),
+            cf_truncated ? 1 : 0, fo_truncated ? 1 : 0);
+    if (cf_truncated || fo_truncated) {
+        fprintf(stderr,
+                "[ENUM] WARNING: emitted pool TRUNCATED at budget=%d -- any pool "
+                "ceiling or best_cluster_rmsd derived from this set is a FLOOR, not a "
+                "ceiling. Raise FLEXAIDDS_MAX_RESULTS to widen it.\n", budget);
     }
     return out;
 }
@@ -5982,6 +6081,21 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                           << " (default 3.0)\n";
             }
             {
+                // Opt-in receptor side-chain flexibility. 0 = off, which reproduces
+                // every arm run before this feature existed.
+                int autoflex_max = 0;
+                bool autoflex_metal_shrink = false;
+                if (const char* ms = std::getenv("FLEXAIDDS_AUTOFLEX_METAL_SHRINK")) {
+                    autoflex_metal_shrink = (ms[0] == '1');
+                }
+                bool scored_only = false;
+                if (const char* so = std::getenv("FLEXAIDDS_SCORED_ONLY")) {
+                    scored_only = (so[0] == '1');
+                }
+                if (const char* afx = std::getenv("FLEXAIDDS_AUTOFLEX_MAX")) {
+                    autoflex_max = std::atoi(afx);
+                    if (autoflex_max < 0) autoflex_max = 0;
+                }
                 std::ofstream jf(config_path);
                 jf << "{\n"
                    << "  \"flexibility\": {\n"
@@ -6028,13 +6142,43 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // buried targets (1GPK: -74→-59 kcal). v50b had this flag false.
                    << "    \"receptor_rotamer_prep\": "
                    << ((config.receptor_rotamer_prep &&
-                        config.mode != BenchmarkMode::ORACLE_CEILING) ? "true" : "false") << "\n"
+                        config.mode != BenchmarkMode::ORACLE_CEILING) ? "true" : "false") << ",\n"
+                   // RECEPTOR SIDE-CHAIN FLEXIBILITY DURING SEARCH (default 0 = OFF).
+                   // Distinct from receptor_rotamer_prep above, which is STATIC file
+                   // prep before docking; this one puts side chains in the GA.
+                   // The engine had the whole path (select_flexible_residues,
+                   // build_rotamers, add2_optimiz_vec("SC")) but the runner never
+                   // supplied its precondition, so every arm to date ran
+                   // rigid-receptor while autoflex_enabled read 1 -- verified from
+                   // 85 target logs, num_genes never exceeding 4 + ligand torsions.
+                   // Emitting the key here is the harness half of that fix; the
+                   // engine half is top.cpp direct-mode. Cost: ONE gene per
+                   // flexible residue (a rotamer index), so 5 residues is ~63% more
+                   // dimensionality on a median-8 Astex chromosome -- an arm that
+                   // enables this MUST report num_genes or a loss is uninterpretable.
+                   << "    \"autoflex_max\": " << autoflex_max << ",\n"
+                   << "    \"autoflex_metal_shrink\": "
+                   << (autoflex_metal_shrink ? "true" : "false") << ",\n"
+                   << "    \"rotamer_observations\": true\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
                    << "    \"grid_spacing\": " << config.grid_spacing << opt_extra << "\n"
                    << "  },\n"
                    << "  \"output\": {\n"
-                   << "    \"max_results\": " << kBenchmarkPoseLimit << "\n"
+                   << "    \"max_results\": " << benchmark_pose_limit() << ",\n"
+                   // POSE FILE CONTENT. scored_only writes ONLY atoms belonging to an
+                   // OPTIMIZABLE residue -- the ligand plus any flexible side chains,
+                   // since build_rotamers.cpp:320-323 gives each flexed side chain its
+                   // own OptRes with type=0 and update_optres.cpp:44 sets the per-atom
+                   // back-pointer. This is the original FlexAID vHTS flag SCOOUT
+                   // (read_input.cpp:247); config_parser.cpp:337 has always read
+                   // output.scored_only and only THIS emitter was missing -- the same
+                   // engine/harness desync shape as autoflex. 8 of the 9 keys
+                   // config_parser reads from "output" are still unemitted.
+                   // NOTE flexaid.h:576 calls it "ligand coordinates only"; that
+                   // comment predates reachable side-chain flexibility. Trust the code.
+                   // Default false so every existing arm stays byte-identical.
+                   << "    \"scored_only\": " << (scored_only ? "true" : "false") << "\n"
                    << "  },\n"
                    // The MC_st0r5.2_6 interaction matrix is loaded weighted (single
                    // value per type-pair), so the complementarity term must be

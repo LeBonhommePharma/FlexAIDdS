@@ -41,12 +41,17 @@ struct Probe { float center[3]; float radius; };
 
 static std::vector<Probe> generate_probes(
     const atom* atoms, int atm_cnt,
+    const resid* residue, int res_cnt,
     const CleftDetectorParams& p)
 {
     const float max_pair_sq = p.max_pair_dist * p.max_pair_dist;
     std::vector<Probe> probes;
 
     // Collect protein (non-HET) atom indices that have coordinates.
+    // Ligand / HETATM (residue.type == 1) MUST be excluded: in --redock
+    // and other direct-mode docks the cognate ligand is loaded at crystal
+    // coordinates into the same atom array, so SURFNET would otherwise
+    // shrink probes out of the occupied pocket (1STP biotin: 20 Å poses).
     // If oracle_radius > 0, pre-filter to atoms within that radius of
     // oracle_center.  This eliminates the O(N^3) blowup for multimeric
     // receptors: 1OF6 (20826 atoms, 8 chains) drops to ~200-400 atoms
@@ -60,12 +65,22 @@ static std::vector<Probe> generate_probes(
 
     std::vector<int> idx;
     idx.reserve(atm_cnt);
+    int n_het_skipped = 0;
     for (int i = 0; i < atm_cnt; ++i) {
         // skip atoms with zero coordinates (uninitialised/padding)
         if (atoms[i].coor[0] == 0.0f &&
             atoms[i].coor[1] == 0.0f &&
             atoms[i].coor[2] == 0.0f &&
             atoms[i].radius  == 0.0f) continue;
+        // Skip ligand / HETATM / waters. ofres==0 means the caller did not
+        // populate residue membership (unit tests with bare atom arrays).
+        if (residue && res_cnt > 0) {
+            const int ofres = atoms[i].ofres;
+            if (ofres >= 1 && ofres <= res_cnt && residue[ofres].type != 0) {
+                ++n_het_skipped;
+                continue;
+            }
+        }
         // spatial pre-filter: skip atoms outside oracle sphere
         if (has_spatial_filter) {
             float dx = atoms[i].coor[0] - p.oracle_center[0];
@@ -74,6 +89,10 @@ static std::vector<Probe> generate_probes(
             if (dx*dx + dy*dy + dz*dz > filter_r2) continue;
         }
         idx.push_back(i);
+    }
+    if (n_het_skipped > 0) {
+        printf("CleftDetector: skipped %d ligand/HET atoms (pocket must be empty)\n",
+               n_het_skipped);
     }
     if (has_spatial_filter) {
         printf("CleftDetector: oracle spatial filter (%.1f A) reduced atoms %d -> %d\n",
@@ -233,14 +252,14 @@ static std::vector<int> cluster_probes(const std::vector<Probe>& probes, float c
 
 // ── public API ──────────────────────────────────────────────────────────
 
-sphere* detect_cleft(const atom* atoms, const resid* /*residue*/,
-                     int atm_cnt, int /*res_cnt*/,
+sphere* detect_cleft(const atom* atoms, const resid* residue,
+                     int atm_cnt, int res_cnt,
                      const CleftDetectorParams& params)
 {
     printf("CleftDetector: scanning %d atoms for binding cavities ...\n", atm_cnt);
 
     // 1. generate gap-spheres
-    std::vector<Probe> probes = generate_probes(atoms, atm_cnt, params);
+    std::vector<Probe> probes = generate_probes(atoms, atm_cnt, residue, res_cnt, params);
     printf("CleftDetector: %d gap-spheres survived shrinking\n",
            static_cast<int>(probes.size()));
 

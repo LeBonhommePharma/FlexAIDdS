@@ -1,0 +1,22 @@
+{
+  "schema": "1jd0_ga_wal400_v1",
+  "frozen_utc": "2026-08-28T00:54:32.210103Z",
+  "target": "1JD0",
+  "conditions": {
+    "S0_control": {"k_wal": 50, "wal_coercive": false},
+    "S1_treatment": {"k_wal": 400, "wal_coercive": true}
+  },
+  "engine_id": "aaaaaaaa",
+  "binary_sha256": "aaaaaaaa11111111111111111111111111111111111111111111111111111111",
+  "runner_sha256": "bbbbbbbb22222222222222222222222222222222222222222222222222222222",
+  "matrix_md5": "9dc93717dfed0698006d88dd6a9627bc",
+  "matrix_expect": "9dc93717dfed0698006d88dd6a9627bc",
+  "pop": 1000,
+  "gen": 1000,
+  "restarts": 10,
+  "mode": "defined-cleft-redock",
+  "fitness_model": "SMFREE",
+  "seed_base": 0,
+  "env_pins": ["FLEXAIDDS_SEED_BASE=0", "FLEXAIDDS_RESTARTS=10"],
+  "assertions": ["num_chromosomes == 1000", "num_generations == 1000"]
+}

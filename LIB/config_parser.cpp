@@ -168,6 +168,44 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         FA->bloops               = jint(config, "flexibility", "bonded_loops", 2);
         FA->useflexdee           = jbool(config, "flexibility", "use_flexdee", false) ? 1 : 0;
         FA->dee_clash            = jflt(config, "flexibility", "dee_clash", 0.5f);
+
+        // ── Receptor side-chain flexibility (opt-in; DEFAULT OFF) ──────────────
+        // top.cpp:633-634 sets autoflex_enabled=1 / autoflex_max=5 as *global*
+        // defaults, but the JSON (direct) path never had the producer calls that
+        // populate FA->flex_res, so those defaults were inert and every arm ran
+        // rigid-receptor. Now that top.cpp *does* carry the producers, an
+        // unconditional default of 5 would silently change every benchmark
+        // number, so the JSON path pins autoflex OFF unless asked: autoflex_max
+        // defaults to 0 here, which overrides the global default because
+        // apply_config (top.cpp:1215) runs after the defaults at 633.
+        //
+        // autoflex_max > 0  ->  flex the N highest-MIF-scoring binding residues
+        //                       (BindingResidues.h:211; GLY/ALA/PRO are skipped
+        //                       as having no rotameric freedom).
+        // Each flexible residue costs ONE gene, a discrete rotamer index in
+        // [0, trot] (add2_optimiz_vec.cpp:30-38) — not per-torsion angles. On
+        // Astex the median chromosome is 8 genes, so autoflex_max=5 is a ~63%
+        // dimensionality increase at fixed evaluation budget. Any arm that turns
+        // this on must therefore report num_genes, or a loss is uninterpretable.
+        FA->autoflex_max     = jint(config, "flexibility", "autoflex_max", 0);
+        FA->autoflex_enabled = (FA->autoflex_max > 0) ? 1 : 0;
+        // Metal-excluded slot policy. 0 = backfill from the ranking (constant gene
+        // count, comparable dilution across targets, but a marginal residue can take
+        // the slot). 1 = shrink, leaving the slot empty. Only METAL exclusions consume a
+        // slot; GLY/ALA/PRO and ligand skips still backfill in both modes.
+        //
+        // MEASURED 2026-08-30 over the 12 Astex targets with a metal within 6 A of the
+        // ligand, and it does NOT favour either policy as clearly as the 1JD0 case
+        // suggests. Backfill's replacement retains a median 0.52 of the excluded
+        // residue's MIF score (min 0.014 on 1JD0, max 0.952 on 1R1H), so 1JD0 is the
+        // OUTLIER, not the pattern. Shrink's flexed set is a strict SUBSET of
+        // backfill's on 12/12 targets, so any comparison of their weakest member is a
+        // tautology. Neither policy is established better; no docking was measured.
+        FA->autoflex_metal_shrink = jbool(config, "flexibility", "autoflex_metal_shrink", false) ? 1 : 0;
+        // Which rotamer source: bound-conformation observations (rotobs.lst) or
+        // the penultimate Lovell library (Lovell_LIB.dat). Mirrors the ROTOBS
+        // keyword of the legacy path (read_input.cpp:185).
+        FA->rotobs           = jbool(config, "flexibility", "rotamer_observations", true) ? 1 : 0;
     }
 
     // ── Thermodynamics ──

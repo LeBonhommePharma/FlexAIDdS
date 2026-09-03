@@ -132,7 +132,10 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 			normalmode=grd_idx;
       
 		}else if(FA->map_par[i].typ==4)  {
-			rot_idx = (uint)(icv[i]+0.5f);
+			// WAS: rot_idx = (uint)(icv[i]+0.5f);  -- (uint) of a NEGATIVE float is
+			// undefined behaviour and yielded a huge index -> SIGSEGV on fatm[].
+			rot_idx = (uint)rot_gene_index(icv[i],
+			          &residue[atoms[FA->map_par[i].atm].ofres], "ic2cf");
       
 			residue[atoms[FA->map_par[i].atm].ofres].rot=(int)rot_idx;
       

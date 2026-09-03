@@ -344,6 +344,13 @@ jobs:
           if a["source_provenance"] != "archive" or a["git_commit"] in ("", "unknown"):
               fail.append(f"archive tarball has no commit — Homebrew installs would be "
                           f"unidentifiable. Check .gitattributes export-subst: {a}")
+          # The commit is known; the extracted tree's state is not. `tar xzf &&
+          # patch && cmake` is ordinary, and the tarball carries no file-hash
+          # manifest to detect it, so dirty=0 here would be a clean claim with
+          # nothing behind it (CMakeLists.txt, archive branch).
+          if a["git_dirty"] != "2":
+              fail.append(f"archive build must report dirty=2 (tree state unknowable), "
+                          f"never claim clean: {a}")
 
           b = p("bare")
           # No source of truth: it must SAY so, and must not claim a clean tree.

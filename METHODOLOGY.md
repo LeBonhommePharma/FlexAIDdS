@@ -50,7 +50,10 @@ numbers into other files — reference `METHODOLOGY.md §N`.
      commit.** #365 adds element-blocked assignment but is still open; until it merges this
      metric pairs atoms positionally and systematically OVERSTATES error on symmetric ligands
      (measured on real 1gpk poses: up to 1.66 Å, enough to move a pose across the 2.0 Å bar).
-     Do not describe a gate number as symmetry-corrected before #365 lands.
+     Do not describe a *gate* number as symmetry-corrected: this metric is still
+     positional. #365 landed the symmetry correction on the CLAIM path only
+     (`scripts/rmsd_symmcorr.py` → S1/S2 in `scripts/aggregate_claim_metrics.py`),
+     not inside this in-repo metric and not inside the engine's `success_rmsd`.
   2. **Offline reference scorer** — `benchmarks/astex_repro/score_reference.py`: spyrmsd
      graph-isomorphism, heavy atoms, pose selection on PDB serial ≥ 90000, element-blocked
      Hungarian fallback only when spyrmsd raises (logged). Treat this as the strongest
@@ -59,11 +62,17 @@ numbers into other files — reference `METHODOLOGY.md §N`.
      Hungarian, no graph isomorphism. **The repo's own audit records it as over-permissive:
      1HP0 reads success under `score_offline.py` and failure under `score_reference.py`**
      (`docs/audit/26h-swarm/9971dff7e.md`). Do not quote it as a docking-power number.
-  - **Neither offline scorer is wired into anything.** Searched: `.github/workflows/`,
-    `benchmarks/` (including `run.py`), and `python/`. The only invocation recorded anywhere is
-    a manual one — `benchmarks/astex_repro/MONITORING.md:8` says "SCORING: python3
-    score_reference.py". So the strongest instrument is the one nothing runs, and the gate runs
-    the one no document described until this section.
+  - **The strongest instrument is now wired into the claim path (#365).** It used to be
+    true that "the strongest instrument is the one nothing runs": neither offline scorer was
+    invoked by `.github/workflows/`, `benchmarks/` (including `run.py`), or `python/`, and the
+    only recorded invocation was manual (`benchmarks/astex_repro/MONITORING.md:8`).
+    `scripts/rmsd_symmcorr.py` closes that gap. It is **not a sixth implementation** — it is
+    method 2's invocation contract made callable (method 2 is a top-level script that executes
+    on import, so it cannot be imported as a library), calling the same
+    `spyrmsd.rmsd.symmrmsd` with the same arguments: crystal SDF bond block, heavy atoms,
+    `center=False, minimize=False`, ligand selected on PDB serial ≥ 90000.
+    `tests/test_rmsd_symmcorr.py` pins the contract. **The CI gate still runs method 1**, which
+    remains positional — so a gate number and a claim number are still different quantities.
   - `score_offline.py`'s partial `poster_metric_results.csv` is still in-tree beside
     `score_reference.py`'s. The audit's standing recommendation is to deprecate the permissive
     one; until that happens, **check which CSV you are reading.**
@@ -81,6 +90,39 @@ numbers into other files — reference `METHODOLOGY.md §N`.
     **claim success is rank-0 in-place RMSD `<= 2.0 Å`** and compares 4 vs 5 on shared
     assignments. Still never mix an unlabelled REMARK RMSD and a CSV RMSD in the same table,
     and say which file a quoted number came from.
+
+### 0.0 Which RMSD is the claim? (#365)
+
+The three quantities are ordered by construction, not by accident:
+
+```
+hungarian  ≤  symmcorr  ≤  serial
+```
+
+* **serial** (`rmsd_to_crystal`, engine) pairs atoms by position — the identity mapping.
+* **symmcorr** (`rmsd_symmcorr`, `scripts/rmsd_symmcorr.py`) minimises over the ligand's
+  **graph automorphisms**. The identity mapping is one of them, so symmcorr can never exceed
+  serial. Equality holds exactly when the identity mapping is already optimal.
+* **hungarian** (`rmsd_hungarian`, engine) minimises over all **same-element bijections** — a
+  *superset* of the automorphisms, including chemically invalid ones. So it can score *below*
+  the true value: it is over-permissive, not merely different. Measured: it inflated the pool
+  ceiling from 48.8% to 57.8%.
+
+**The claim metric is symmcorr.** Two consequences follow directly from the ordering:
+
+1. Correcting serial → symmcorr moves targets **fail → PASS only**. No banked number can
+   shrink. Verified on the 84-target parent campaign: 76 elected poses scored, **0 direction
+   violations**, 1 flip (1TZ8, 6.8360 → 1.0871 Å).
+2. Where symmcorr is unavailable, falling back to serial is **safe but conservative** — it
+   under-counts successes and never over-counts. Falling back to *hungarian* would not be safe,
+   which is why no code path does.
+
+**Still inheriting the serial definition:** the engine's `success_rmsd` gates on
+`rmsd_to_crystal`, and `success_pb := success_rmsd ∧ pb_pass`, and `claim_ready` requires
+`success_pb`. So the **STRICT headline is still a serial number** and is a conservative lower
+bound. Repointing the engine gate is the remaining half of #365 and requires a rebuild.
+`aggregate_claim_metrics.py` states this in its JSON report under
+`strict_metric_inheritance`.
 
 ---
 

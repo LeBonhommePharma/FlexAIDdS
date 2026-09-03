@@ -22,6 +22,7 @@ set(FLEXAID_CORE_SOURCES
     modify_pdb.cpp
     update_constraint.cpp
     update_optres.cpp
+    rot_gene_index.cpp
     update_bonded.cpp
     free_resid.cpp
     top_helpers.cpp

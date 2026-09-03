@@ -1,4 +1,5 @@
 #include "TuiColor.h"
+#include "version_info.h"
 #include "gaboom.h"
 #include "top_helpers.h"
 #include "fileio.h"
@@ -10,6 +11,8 @@
 #include "SdfReader.h"
 #include "CifReader.h"
 #include "CleftDetector.h"
+#include "BindingResidues.h"   // binding_residues::add_key_residues_as_flexible
+#include "site_confine.h"
 #include "statmech.h"
 #include "TargetServer.h"  // P1: for grand canonical TargetServer context in cluster paths
 #include "ProcessLigand/ProcessLigand.h"
@@ -41,6 +44,11 @@
 #include "flexaidds_flags.h"
 #if defined(FLEXAIDDS_ENABLE_REDOCK)
 #include "DatasetRunner.h"
+#include "DatasetRunnerProvenance.h"
+#include "RunReceipt.h"
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 #include <algorithm>
@@ -352,6 +360,125 @@ static bool prepare_redock_from_rcsb(const std::string& pdb_id,
 #endif
 }
 
+#if defined(FLEXAIDDS_ENABLE_REDOCK)
+/// Write RUN_RECEIPT.json for a `--redock` run whose `-o` names an existing
+/// directory. Before this, `--redock` wrote no receipt at all, so a redock run
+/// carried no engine identity.
+///
+/// `-o` is a file *prefix* everywhere else in this file: `-o run/1STP` yields
+/// `run/1STP.rrg`, `run/1STP_INI.pdb` and so on, and that is unchanged. This is
+/// a strictly additive second behaviour, fired only when the prefix happens to
+/// name a directory that already exists, in which case the receipt is written
+/// inside it. No docking artifact moves.
+///
+/// Conforms to the engine dialect in docs/run-uniformity/RUN_RECEIPT_CONTRACT.md.
+/// This is the *third* writer into a format that already has two dialects, so it
+/// calls flexaids::write_run_receipt rather than emitting JSON by hand (§7.1).
+/// That keeps two contract details automatic instead of re-derived here: the
+/// two-booleans-two-encodings rule (§2.1 — seed_elitism as 1/0 while
+/// oracle_site_dir_set is true/false, inconsistent and load-bearing), and the
+/// fixed 6-decimal float formatting (§2.2).
+///
+/// Best-effort by design: a read-only or full output directory must still yield
+/// a successful docking run, so every failure path warns and returns.
+static void write_redock_run_receipt(const std::string& output_dir,
+                                     const std::string& pdb_id,
+                                     double temperature_K,
+                                     int pop,
+                                     int gen) {
+	const flexaids::ProtocolConfig proto = flexaids::ProtocolConfig::from_env();
+
+	// In --redock there is no separate engine process: this binary both drives
+	// the run and does the docking, so binary_* and runner_* are the same file.
+	// DatasetRunner distinguishes them because it spawns a child; recording
+	// them as equal here is the accurate statement, not a shortcut.
+	std::string self_path;
+#if defined(__APPLE__)
+	{
+		char buf[4096];
+		std::uint32_t size = static_cast<std::uint32_t>(sizeof(buf));
+		if (_NSGetExecutablePath(buf, &size) == 0) self_path = buf;
+	}
+#elif defined(__linux__)
+	{
+		std::error_code lec;
+		const auto self = std::filesystem::read_symlink("/proc/self/exe", lec);
+		if (!lec) self_path = self.string();
+	}
+#endif
+
+	const std::string matrix_path =
+	    dataset::resolve_scoring_matrix_path(proto.data_dir, self_path);
+
+	flexaids::RunReceiptInput receipt;
+	receipt.run_id       = pdb_id.empty() ? std::string("redock") : pdb_id;
+	receipt.started_utc  = flexaids::utc_now_iso8601();
+	receipt.output       = output_dir;
+	receipt.dataset      = receipt.run_id;
+	receipt.mode         = "defined-cleft-redock";
+	receipt.temperature_K = temperature_K;
+	receipt.pop          = pop;
+	receipt.gen          = gen;
+	receipt.restarts     = std::max(1, proto.restarts);
+	receipt.seed_base    = proto.seed_base;
+
+	// seed_elitism is DERIVED, never copied — §3 / DatasetRunner.cpp:5341-5347.
+	// Only ORACLE_CEILING forces it true; DEFINED_CLEFT_REDOCK, AUTONOMOUS and
+	// UNSET all force false. --redock is a defined-cleft redock and is never the
+	// oracle-ceiling benchmark, so the derived value is false. Copying
+	// proto.seed_elitism straight through would publish the same key with a
+	// different meaning: silent, and visible later only as an inexplicable
+	// cross-arm difference.
+	receipt.seed_elitism = false;
+
+	receipt.matrix_path   = matrix_path;
+	receipt.matrix_md5    = dataset::provenance_file_md5(matrix_path);
+	receipt.matrix_sha256 = dataset::provenance_file_sha256(matrix_path);
+	receipt.binary_path   = self_path;
+	receipt.binary_sha256 = dataset::provenance_file_sha256(self_path);
+	receipt.runner_path   = self_path;
+	receipt.runner_sha256 = receipt.binary_sha256;
+
+	// Build-stamped commit rather than shelling out to git — §4 and §7.5.
+	// Drivers cd into the arm directory before launching, so `git rev-parse HEAD`
+	// runs outside any checkout and comes back empty; it is empty in the sampled
+	// production receipt. CMakeLists.txt:54-61 stamps this at configure time and
+	// run_t13_twotarget.sh recovers the same value with `strings`, refusing to
+	// launch an unstamped binary. Note it is `rev-parse --short`, so this field
+	// is a short SHA where DatasetRunner's — when it succeeds — is full length.
+#if defined(FLEXAIDS_GIT_COMMIT)
+	receipt.git_commit = FLEXAIDS_GIT_COMMIT;
+#endif
+
+	receipt.oracle_site_dir     = proto.oracle_site_dir;
+	receipt.oracle_site_dir_set = !proto.oracle_site_dir.empty();
+	receipt.protocol            = proto;
+
+	// provenance.json is deliberately NOT written; §2.6 requires the second
+	// writer to decide rather than default. --redock has never written a receipt
+	// of any kind, so no existing tool can be looking for a provenance.json from
+	// this path and nothing regresses by its absence. DatasetRunner still passes
+	// true and is untouched.
+	bool ok = false;
+	try {
+		ok = flexaids::write_run_receipt(output_dir, receipt,
+		                                 /*also_write_provenance_json=*/false);
+	} catch (...) {
+		ok = false;
+	}
+
+	if (ok) {
+		fprintf(stderr, "[RECEIPT] wrote %s/RUN_RECEIPT.json\n", output_dir.c_str());
+	} else {
+		// Warn, never abort. A read-only or full output directory currently
+		// yields a successful docking run and must continue to.
+		fprintf(stderr,
+		        "[WARN] could not write RUN_RECEIPT.json to %s — docking continues\n",
+		        output_dir.c_str());
+	}
+}
+#endif  // FLEXAIDDS_ENABLE_REDOCK
+
 static void print_usage(const char* progname) {
 	tui::brand(); printf(" %s—%s Entropy-driven molecular docking\n\n", tui::muted(), tui::reset());
 	printf("Usage:\n");
@@ -385,7 +512,8 @@ static void print_usage(const char* progname) {
 	printf("  --legacy                   Legacy 3-file input mode\n");
 	printf("  --redock <PDBid>           Cognate redock from RCSB PDB ID\n");
 	printf("  --benchmark <set>          Run benchmark dataset (astex, casf2016, etc.)\n");
-	printf("  -h, --help                 Show this help\n\n");
+	printf("  -h, --help                 Show this help\n");
+	printf("  --version                  Build identity as key=value lines\n\n");
 	printf("Library input (virtual screening):\n");
 	printf("  Ligand can be a multi-molecule SDF, a SMILES file (.smi),\n");
 	printf("  or a directory of MOL2/SDF files. Each ligand is docked\n");
@@ -411,6 +539,36 @@ static void print_usage(const char* progname) {
 }
 
 int main(int argc, char **argv){
+	// ── --version ────────────────────────────────────────────────────────
+	// Deliberately the FIRST statement in main(): ahead of the try block,
+	// ahead of flexaids_rng::init_from_env(), ahead of the FA allocation and
+	// the base-path / data-directory resolution below.
+	//
+	// This placement is a correctness requirement, not a style choice.  The
+	// existing --help scan sits ~370 lines further down, and by the time
+	// control reaches it main() has already written
+	//     base path is '<...>'
+	//     auto-detected data directory: '<...>'
+	// to STDOUT.  Handling --version there would put two non-key=value lines
+	// ahead of the stamp and break the one-key=value-per-line contract that
+	// makes the output parseable -- silently, for any reader that does not
+	// happen to skip them.
+	//
+	// Being first also satisfies the other two requirements as a consequence
+	// rather than by separate effort: nothing has opened a file yet, so
+	// --version works with no input files present; and nothing has been
+	// allocated or seeded, so it cannot perturb a run.
+	//
+	// Scanned across all of argv rather than tested at argv[1] only, matching
+	// the --help loop, so `FlexAIDdS <receptor> <ligand> --version` answers
+	// instead of starting a dock.
+	for (int a = 1; a < argc; ++a) {
+		if (strcmp(argv[a], "--version") == 0) {
+			flexaids::version::print_build_identity();
+			return 0;
+		}
+	}
+
   try {
 	flexaids_rng::init_from_env();
 	int   i,j;
@@ -475,6 +633,7 @@ int main(int argc, char **argv){
 	FA->reflig_hetatm_fallback = 1;
 	FA->autoflex_enabled = 1;  // auto-flex key binding residues by default
 	FA->autoflex_max = 5;
+	FA->autoflex_metal_shrink = 0;   // default BACKFILL
 
 	// calloc (not malloc): FLEXAIDDS_CONTACTS_EPOCH mode never memsets this
 	// buffer between vcfunction() calls (see vcfunction.cpp), so it must start
@@ -840,6 +999,10 @@ int main(int argc, char **argv){
 		std::string receptor_path;
 		std::string ligand_path;
 		std::string redock_pdb_id;
+		// Hoisted out of the --redock block below so the receipt writer can name
+		// the run by its prepared (upper-cased) PDB id. Declaration only — the
+		// value and every use of it are unchanged.
+		std::string redock_prepared_id;
 		bool user_set_output = false;
 		std::vector<std::string> legacy_files;
 
@@ -986,7 +1149,7 @@ int main(int argc, char **argv){
 				fprintf(stderr, "ERROR: --redock cannot be combined with legacy .inp inputs\n");
 				Terminate(1);
 			}
-			std::string prepared_id;
+			std::string& prepared_id = redock_prepared_id;
 			if (!prepare_redock_from_rcsb(redock_pdb_id, receptor_path, ligand_path, prepared_id)) {
 				Terminate(1);
 			}
@@ -1052,7 +1215,25 @@ int main(int argc, char **argv){
 			// Snapshot protocol once for apply_config (no mid-apply getenv dual path).
 			const flexaids::ProtocolConfig apply_proto = flexaids::ProtocolConfig::from_env();
 			apply_config(config, FA, GB, &apply_proto);
-			if (GB->seed != 0) {
+			if (GB->seed == 0) {
+				std::uint64_t env = 0;
+				if (flexaids_rng::has_master_seed()) {
+					const auto ms = static_cast<unsigned int>(flexaids_rng::master_seed() & 0x7fffffffu);
+					GB->seed = ms ? static_cast<int>(ms) : 1;
+				} else if (flexaids_rng::env_seed(env)) {
+					const auto es = static_cast<unsigned int>(env & 0x7fffffffu);
+					GB->seed = es ? static_cast<int>(es) : 1;
+					flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
+				} else {
+					const std::string key = !redock_pdb_id.empty()
+					    ? (std::string("redock:") + redock_pdb_id)
+					    : (receptor_path + "|" + ligand_path);
+					GB->seed = flexaids_rng::deterministic_seed_from_key(key.c_str());
+					flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
+					printf("[SEED] ga.seed=0; assigned deterministic seed %d from '%s'\n",
+					       GB->seed, key.c_str());
+				}
+			} else {
 				flexaids_rng::set_master_seed(static_cast<std::uint64_t>(GB->seed));
 			}
 
@@ -1077,6 +1258,28 @@ int main(int argc, char **argv){
 		strncpy(end_strfile, output_prefix.c_str(), MAX_PATH__ - 1);
 		end_strfile[MAX_PATH__ - 1] = '\0';
 		strncpy(FA->rrgfile, end_strfile, MAX_PATH__-1); FA->rrgfile[MAX_PATH__-1]='\0';
+
+		// ── RUN_RECEIPT.json when --redock's -o names an existing directory ──
+		// Additive only. `-o` stays a file prefix; nothing above or below this
+		// block changes. Three conditions must all hold, so every pre-existing
+		// invocation reaches this point and does nothing: --redock was used, -o
+		// was given explicitly, and that path already exists as a directory.
+		// Written here — after apply_config, before any docking — to match the
+		// engine's own semantics: the receipt is a statement of intent, complete
+		// before a single pose exists (RUN_RECEIPT_CONTRACT.md §5).
+#if defined(FLEXAIDDS_ENABLE_REDOCK)
+		if (!redock_pdb_id.empty() && user_set_output) {
+			std::error_code rec_ec;
+			if (std::filesystem::is_directory(output_prefix, rec_ec) && !rec_ec) {
+				write_redock_run_receipt(
+				    output_prefix,
+				    redock_prepared_id.empty() ? redock_pdb_id : redock_prepared_id,
+				    static_cast<double>(FA->temperature),
+				    GB->num_chrom,
+				    GB->max_generations);
+			}
+		}
+#endif
 
 		// GA input not used in direct mode
 		dockinp[0] = '\0';
@@ -1970,6 +2173,36 @@ int main(int argc, char **argv){
 				}
 			}
 
+			// --redock: the extracted cognate ligand is already loaded at crystal
+			// coordinates. Use that centroid as the oracle so SURFNET + SITE-CONFINE
+			// target the known pocket (FLEXAIDDS_ORACLE_SITE not required).
+			if (!using_oracle && !using_explicit_cleft && !redock_pdb_id.empty()) {
+				const int lig_res = FA->res_cnt;
+				if (lig_res >= 1 && residue[lig_res].fatm && residue[lig_res].latm) {
+					const int fa = residue[lig_res].fatm[0];
+					const int la = residue[lig_res].latm[0];
+					if (la >= fa) {
+						double sx = 0, sy = 0, sz = 0;
+						int nn = 0;
+						for (int a = fa; a <= la; ++a) {
+							sx += atoms[a].coor[0];
+							sy += atoms[a].coor[1];
+							sz += atoms[a].coor[2];
+							++nn;
+						}
+						if (nn > 0) {
+							oracle_cx = static_cast<float>(sx / nn);
+							oracle_cy = static_cast<float>(sy / nn);
+							oracle_cz = static_cast<float>(sz / nn);
+							using_oracle = true;
+							printf("[REDOCK] oracle centroid from cognate ligand: "
+							       "%.2f %.2f %.2f (%d atoms)\n",
+							       oracle_cx, oracle_cy, oracle_cz, nn);
+						}
+					}
+				}
+			}
+
 			// Always run SURFNET void-space detection (probes placed in void between atoms)
 			// unless a child process was given one explicit cleft sphere file.
 			// In oracle mode, spatially pre-filter atoms to the oracle centroid sphere so
@@ -2110,7 +2343,7 @@ int main(int argc, char **argv){
 						printf("SITE-CONFINE: sparse-pocket retry to %.1f A -> %d pts\n",
 						       rcut, (int)keep.size());
 					}
-					if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID && (int)keep.size() < FA->num_grd - 1) {
+					if (flexaids::site_confine_should_rebuild((int)keep.size(), FA->num_grd - 1)) {
 						gridpoint* confined = nullptr;
 						int new_count = mif::rebuild_cleftgrid(cleftgrid, FA->num_grd, keep, &confined);
 						if (confined && new_count > 0) {
@@ -2122,7 +2355,7 @@ int main(int argc, char **argv){
 							printf("SITE-CONFINE: %d pts within %.1f A of cognate centroid (expanded from %.1f A, %d->%d grid pts)\n",
 							       new_count - 1, rcut, rcut_initial, old_count - 1, new_count - 1);
 							if ((int)keep.size() < MIN_SITE_GRID) {
-								printf("SITE-CONFINE: WARNING confined to only %d pts (< MIN_SITE_GRID=%d) after expanding to %.1f A\n",
+								printf("SITE-CONFINE: WARNING confined to only %d pts (< MIN_SITE_GRID=%d) after expanding to %.1f A — keeping pocket grid (not full-grid fallback)\n",
 								       new_count - 1, MIN_SITE_GRID, rcut);
 							}
 						}
@@ -2158,8 +2391,7 @@ int main(int argc, char **argv){
 				       "n_spheres=%d rcut=%.1f keep=%d/%d\n",
 				       cx, cy, cz, cleft_geom.extent_A, cleft_geom.n_spheres,
 				       rcut, (int)keep.size(), FA->num_grd - 1);
-				if (!keep.empty() && (int)keep.size() >= MIN_SITE_GRID
-				    && (int)keep.size() < FA->num_grd - 1) {
+				if (flexaids::site_confine_should_rebuild((int)keep.size(), FA->num_grd - 1)) {
 					gridpoint* confined = nullptr;
 					int new_count = mif::rebuild_cleftgrid(
 						cleftgrid, FA->num_grd, keep, &confined);
@@ -2345,12 +2577,96 @@ int main(int argc, char **argv){
 			FA->index_min = 0.0;
 		}
 
+		// ── Receptor side-chain flexibility, direct/JSON path ──────────
+		// This path already called add2_optimiz_vec(...,"SC") below — the
+		// CONSUMER of flexible side chains — without running any of the
+		// PRODUCERS that read_input.cpp has (rotamer-library load 463-487,
+		// add_key_residues_as_flexible 637, build_rotamers 490/651). So
+		// FA->nflxsc was always 0, "SC" allocated no genes, and the receptor
+		// was rigid on every benchmark arm while autoflex_enabled read 1 and
+		// every log, config and exit code looked clean. Measured: num_genes
+		// never exceeded 4 + ligand torsions on any of 85 Astex targets.
+		//
+		// Ordering follows BindingResidues.h:209 exactly — AFTER the MIF
+		// (computed above on this path) and BEFORE build_rotamers and the
+		// "SC" opt-vector call. Gated on autoflex_max > 0, which
+		// config_parser pins to 0 by default, so every prior arm's rigid
+		// behaviour reproduces unless flexibility is explicitly asked for.
+		if (FA->autoflex_enabled && FA->autoflex_max > 0 && FA->is_protein) {
+			const char* rot_base = strcmp(FA->dependencies_path, "")
+			                       ? FA->dependencies_path : FA->base_path;
+			char rotfile[MAX_PATH__];
+
+			if (rotamer == NULL) {
+				rotamer = (rot*)calloc((size_t)FA->MIN_ROTAMER_LIBRARY_SIZE, sizeof(rot));
+				if (rotamer == NULL) {
+					fprintf(stderr, "ERROR: memory allocation error for rotamer\n");
+					Terminate(2);
+				}
+			}
+
+			if (FA->rotobs) {
+				snprintf(rotfile, MAX_PATH__, "%s/rotobs.lst", rot_base);
+				printf("read rotamer observations <%s>\n", rotfile);
+				read_rotobs(FA, &rotamer, rotfile);
+			} else {
+				snprintf(rotfile, MAX_PATH__, "%s/Lovell_LIB.dat", rot_base);
+				printf("read rotamer library <%s>\n", rotfile);
+				read_rotlib(FA, &rotamer, rotfile);
+			}
+
+			if (FA->rotlibsize <= 0) {
+				// Fail loudly. A missing library previously degraded to a
+				// silently rigid receptor — the exact failure this block ends.
+				fprintf(stderr, "ERROR: autoflex_max=%d requested but no rotamer "
+				                "library loaded from <%s> (rotlibsize=%d)\n",
+				        FA->autoflex_max, rotfile, FA->rotlibsize);
+				Terminate(2);
+			}
+
+			int n_added = binding_residues::add_key_residues_as_flexible(
+			                  FA, cleftgrid, atoms, residue, FA->autoflex_max);
+			printf("AUTOFLEX: %d residue(s) added as flexible "
+			       "(autoflex_max=%d, rotlibsize=%d)\n",
+			       n_added, FA->autoflex_max, FA->rotlibsize);
+
+			if (FA->nflxsc > 0) {
+				// Reserve FA->optres for every flexible side chain PLUS the ligand entry before
+				// build_rotamers() starts growing it (build_rotamers.cpp:308 reallocs per
+				// residue). Keeps the array immovable so no atoms[].optres pointer can be left
+				// THIS RESERVATION IS LOAD-BEARING, not defence in depth. MEASURED with one
+				// binary: update_optres()'s clear-first pass active but FLEXAIDDS_PAR_RESERVE=0
+				// still leaves 6 out-of-range optres dereferences on 1R55; with the reservation
+				// on, zero. So something reallocs FA->optres AFTER update_optres rebuilds the
+				// mapping, and only keeping the array immovable closes it.
+				reserve_optres(FA, FA->nflxsc + 2);
+				build_rotamers(FA, &atoms, residue, rotamer);
+				printf("AUTOFLEX: built rotamers for %d flexible residue(s) "
+				       "(%d with rotamers)\n", FA->nflxsc, FA->nflxsc_real);
+			}
+		}
+
 		int opt[2];
 		char chain = ' ';
 
 		// Translation: grid-index gene (typ=-1), picks anchor point from cleft grid
 		opt[0] = FA->resligand->number;
 		opt[1] = -1;
+		// ── ROOT FIX for the dangling map_par pointer (SIGSEGV in populate_chromosomes)
+		// add2_optimiz_vec() stores RAW POINTERS into FA->map_par (atoms[].par at
+		// add2_optimiz_vec.cpp lines 64/128/156/168/179/207, plus
+		// map_par_sidechain_first/last), and realloc_par() RELOCATES that array.
+		// This function is called up to four times per run (extras "" x3, then "SC",
+		// "NM"), so a realloc on ANY later call invalidates every pointer the earlier
+		// calls took. MEASURED: reserving inside the "SC" call grew MIN_PAR 6 -> 86
+		// there and left 11 of 18 ligand pointers dangling; the dangling atoms[].par
+		// is dereferenced in populate_chromosomes(), which is why the fault needed a
+		// large GA population (freed block reused) and looked target-specific.
+		// Reserving here -- BEFORE the first call, so before any pointer exists --
+		// makes the array immovable for the whole setup. MAX_PAR is the engine's own
+		// declared ceiling on genes (flexaid.h:83); the largest count observed on
+		// Astex-85 is 17. Cost: MAX_PAR * sizeof(optmap), a few KB, once.
+		reserve_par(FA, MAX_PAR);
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "");
 
 		// Rotation: 3 Euler-angle genes (ang + dih + dih of GPA atoms)

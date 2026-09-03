@@ -12,8 +12,15 @@
 #ifndef FLEXAIDS_GIT_COMMIT
 #define FLEXAIDS_GIT_COMMIT "unknown"
 #endif
+// 0 = clean, 1 = dirty, 2 = unknown.  This default was 0, which made the
+// comment above ("still emits an honest, obviously-unknown value") true of
+// FLEXAIDS_GIT_COMMIT and false of this macro: a build that reached the
+// fallback stamped `FLEXAID.dirty=0` into every pose it wrote -- a positive
+// assertion that the tree was clean, produced by the very code path that
+// exists because nothing was known about the tree.  `unknown` and `clean` are
+// not the same claim, and 0 is not available to say the first one.
 #ifndef FLEXAIDS_GIT_DIRTY
-#define FLEXAIDS_GIT_DIRTY 0
+#define FLEXAIDS_GIT_DIRTY 2
 #endif
 
 #include <algorithm>

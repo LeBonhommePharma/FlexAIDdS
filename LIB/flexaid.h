@@ -713,6 +713,12 @@ struct FA_Global_struct{
 	// ── Auto-Flex Binding Residues ──
 	int     autoflex_enabled;        // 1 = auto-flex key binding residues (default 1)
 	int     autoflex_max;            // max residues to auto-flex (default 5)
+	int     autoflex_metal_shrink;   // 0 = BACKFILL a metal-excluded slot from the
+	                                 //     ranking (constant gene count, but a weak
+	                                 //     residue may take the slot);
+	                                 // 1 = SHRINK: a metal-excluded slot is consumed
+	                                 //     and left EMPTY (only strong residues flex,
+	                                 //     but num_genes then varies with metal content)
 
 	// ── Multi-Model / Conformer-Coupled Binding Modes (CCBM) ──
 	bool    multi_model;             // true when MULTIMODEL ON
@@ -804,6 +810,9 @@ void   buildlist(FA_Global* FA,atom* atoms,resid* residue,int rnum, int bnum, in
 bool   buildcc(FA_Global* FA,atom* atoms,int tot,int list[]);
 void   buildic(FA_Global* FA,atom* atoms,resid* residue,int rnum);                   // creates internal coordinates from cartesian.
 void   add2_optimiz_vec(FA_Global* FA,atom* atoms,resid* residue,int val[], char chain, const char* extras);            // adds atoms that need to be optimized
+int    validate_map_par_pointers(FA_Global* FA, atom* atoms, int atm_cnt, const char* where); // loud check: captured map_par pointers inside the live array
+void   reserve_optres(FA_Global* FA, int need);  // grow FA->optres BEFORE atoms[].optres pointers are taken
+void   reserve_par(FA_Global* FA, int need);     // grow map_par/opt_par capacity BEFORE taking pointers into them
 void   realloc_par(FA_Global* FA, int* MIN_PAR); // reallocs memory for par in add2 function
 void   read_lig(FA_Global* FA,atom** atoms,resid** residue,char ligfile[]);                           // reads ligands
 void   read_input(FA_Global* FA,atom** atoms,resid** residue,rot** rotamer,gridpoint** cleftgrid,char input_file[]);                      // reads input file
@@ -860,6 +869,23 @@ void   free_bonded(resid* residue, int tot);
 // slot with only fatm/latm allocated, so callers loop from 0 with no special
 // case. Derives natm from fatm/latm, so it must run before those are freed.
 void   free_resid(resid* residue);
+// ── Rotamer-gene index guard ────────────────────────────────────────────────
+// The GA carries side-chain rotamer choice as a REAL-VALUED gene bounded
+// [0, trot] (add2_optimiz_vec.cpp:44). Every consumer then indexes
+// residue[].fatm[idx] / latm[idx] with it. Two ways that faults:
+//   1. ic2cf.cpp cast the gene with (uint). A gene pushed below zero by
+//      mutation or crossover makes (uint)(negative float) UNDEFINED -- in
+//      practice a huge index and an immediate SIGSEGV on fatm[idx].
+//   2. an index above trot reads an entry whose atoms were rolled back by the
+//      rigid-clash rejection path (build_rotamers.cpp:214-215).
+// Measured before this guard: 1R55/1R58/1HQ2 died with exit 139 (SIGSEGV) at
+// >=2 flexible residues and GA population >=400, while population 100 and the
+// rigid arm were clean -- the signature of an out-of-range draw whose
+// probability rises with the number of mutation events.
+// The clamp is identity on every in-range value, so it cannot change a correct
+// evaluation. It REPORTS rather than silently hiding: a clamp firing means a
+// gene left its own declared bounds, which is a real defect upstream.
+int    rot_gene_index(double gene, const resid* res, const char* site);  // clamped rotamer index
 void   update_optres(atom* atoms, resid* residue, int atm_cnt, OptRes* optres_ptr,int num_optres); // update atoms structure with optres pointers
 void   set_intprob(flxsc* flex_res);                                         // sets internal probability for rotamer change
 int    number_of_dihedrals(char res[]);                      // determines number of dihedral bonds for residues
