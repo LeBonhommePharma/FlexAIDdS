@@ -1595,6 +1595,7 @@ flexaids_add_unit_test(test_protocol_config
             tests/test_cf_aggregator.cpp
             tests/cf_aggregator_stubs.cpp
             LIB/ic2cf.cpp
+            LIB/rot_gene_index.cpp   # ic2cf.cpp calls it since 94d2d0ba
         TEST_NAME CFAggregatorTests
     )
 
@@ -3017,6 +3018,7 @@ flexaids_add_unit_test(test_protocol_config
             tests/hungarian_rmsd_stubs.cpp
             LIB/calc_rmsd.cpp
             LIB/geometry.cpp
+            LIB/rot_gene_index.cpp   # calc_rmsd.cpp calls it since 94d2d0ba
         TEST_NAME HungarianRmsdBoundsTests
     )
 
