@@ -5,6 +5,7 @@
 #include <cmath>
 #include <set>
 #include <numeric>
+#include <latch>
 #include <thread>
 #include <vector>
 #include "../LIB/AtomCopyExtent.h"
@@ -380,6 +381,11 @@ TEST(ParallelDockWorkspace, AtomCopyIncludesLastOneBasedAtom) {
 // Not a race test: two threads write distinct sentinels and publish addresses
 // after join. A process-wide static would share one object; thread_local must
 // not. Production: thread_local ParEvalWS in gaboom.cpp calculate_fitness.
+//
+// Both threads must be ALIVE when they publish &ws. Without a rendezvous t0
+// can run to completion before t1 is scheduled, and the runtime may hand t1
+// the thread-local block t0 just released: p0 == p1 with no sharing at all.
+// Observed on macOS under `ctest -j4` (2 of 4 runs); never in isolation.
 
 TEST(ParEvalWSIsolation, ThreadLocalWorkspacesDoNotShare) {
     struct WS { int sentinel = 0; };
@@ -389,16 +395,19 @@ TEST(ParEvalWSIsolation, ThreadLocalWorkspacesDoNotShare) {
     WS* p1 = nullptr;
     int v0 = -1;
     int v1 = -1;
+    std::latch both_published(2);
 
     std::thread t0([&] {
         ws.sentinel = 7;
         p0 = &ws;
         v0 = ws.sentinel;
+        both_published.arrive_and_wait();
     });
     std::thread t1([&] {
         ws.sentinel = 9;
         p1 = &ws;
         v1 = ws.sentinel;
+        both_published.arrive_and_wait();
     });
     t0.join();
     t1.join();
