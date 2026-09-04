@@ -2621,6 +2621,54 @@ static int bond_order_from_cif_fields(const std::string& value_order,
     return 1;
 }
 
+// ── KEKULIZED BOND ORDERS (FLEXAIDDS_KEKULIZE_LIGAND_SDF) ────────────────────
+// bond_order_from_cif_fields() above returns MDL order 4 whenever the CCD's
+// pdbx_aromatic_flag is Y, DISCARDING the value_order the CCD also supplies --
+// and value_order for an aromatic ring is already a valid Kekule structure
+// (alternating SING/DOUB). MEASURED CONSEQUENCE: an SDF whose aromatic ring is
+// written as order 4 with no explicit hydrogens cannot be kekulized by RDKit
+// (KekulizeException on the ring atoms of an N-heteroaromatic, whose NH has no
+// explicit H to infer from), so MolFromMolFile returns None and PoseBusters
+// emits a 0-BYTE table. On the Astex-84 roster that silently removed 7 targets
+// from the denominator -- 1K3U 1N2V 1U1C 1U4D 1XOZ 1Y6R 2BSM -- reported as
+// pb_pass=false rather than NOT ASSESSED.
+//
+// WHY ORDER 4 CANNOT SIMPLY BE REPLACED. SdfReader.cpp sets is_aromatic ONLY
+// from `sb.type == 4`, and that drives three VCT atom types that feed CF:
+// C.ar (4), N.ar (10) and O.co2 (15). Writing kekulized orders alone would
+// silently re-type every aromatic carbon and change every score.
+//
+// THE FIX IS THEREFORE TWO-PART AND EXACT RATHER THAN HEURISTIC: write the
+// kekulized order in the bond block (so RDKit sanitizes) AND carry the aromatic
+// bond list in an SD data tag that SdfReader reads back to set is_aromatic
+// identically. Typing is preserved BY CONSTRUCTION, not by argument. Ring
+// perception is deliberately NOT used -- it would be a second heuristic.
+//
+// Scope: the CCD path only. bond_order_from_geometry() has no kekulized
+// alternative (distances cannot resolve a Kekule assignment), so ligands
+// reconstructed from geometry keep order 4 and are unaffected.
+static bool kekulize_ligand_sdf_enabled() {
+    const char* e = std::getenv("FLEXAIDDS_KEKULIZE_LIGAND_SDF");
+    return e && *e && std::string(e) != "0";
+}
+
+// The CCD value_order alone, ignoring the aromatic flag: 1/2/3, never 4.
+static int bond_order_kekule_from_cif(const std::string& value_order) {
+    const std::string order = normalize_token(value_order);
+    if (order == "SING" || order == "SINGLE" || order == "1") return 1;
+    if (order == "DOUB" || order == "DOUBLE" || order == "2") return 2;
+    if (order == "TRIP" || order == "TRIPLE" || order == "3") return 3;
+    return 0;  // 0 = no usable Kekule order; caller must keep the legacy value
+}
+
+static bool bond_is_aromatic_from_cif(const std::string& value_order,
+                                      const std::string& aromatic_flag) {
+    const std::string order = normalize_token(value_order);
+    const std::string aromatic = normalize_token(aromatic_flag);
+    return (aromatic == "Y" || aromatic == "YES" || order == "AROM" ||
+            order == "AROMATIC" || order == "AR");
+}
+
 // Geometry-based bond-order heuristic for inputs that carry no CCD bond table
 // (PDB receptors without a companion .cif) or for individual bonds missing from
 // the chem_comp_bond loop.  HETATM/CONECT connectivity is order-blind, so without
@@ -3603,6 +3651,10 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     };
 
     std::map<std::pair<size_t, size_t>, int> bonds;
+    // Bonds the CCD flagged aromatic. Populated only on the CCD path and only
+    // under FLEXAIDDS_KEKULIZE_LIGAND_SDF; emitted as an SD tag by the writer so
+    // SdfReader can restore is_aromatic without relying on MDL order 4.
+    std::set<std::pair<size_t, size_t>> aromatic_bonds;
 
     // Bonds whose order came straight from the CCD chem_comp_bond loop.  These
     // are authoritative and must never be overwritten by the geometry heuristic.
@@ -3667,10 +3719,21 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
                         auto a1_it = atom_lookup.find(normalize_token(bond.atom_id_1));
                         auto a2_it = atom_lookup.find(normalize_token(bond.atom_id_2));
                         if (a1_it == atom_lookup.end() || a2_it == atom_lookup.end()) continue;
-                        add_bond(a1_it->second, a2_it->second,
-                                 bond_order_from_cif_fields(bond.value_order, bond.aromatic_flag),
-                                 bonds);
+                        int ord = bond_order_from_cif_fields(bond.value_order,
+                                                             bond.aromatic_flag);
+                        const bool arom = bond_is_aromatic_from_cif(bond.value_order,
+                                                                    bond.aromatic_flag);
                         auto mm = std::minmax(a1_it->second, a2_it->second);
+                        if (kekulize_ligand_sdf_enabled() && arom) {
+                            // Prefer the CCD's own Kekule order; keep 4 only if
+                            // value_order carries nothing usable (e.g. DELO).
+                            const int kek = bond_order_kekule_from_cif(bond.value_order);
+                            if (kek > 0) {
+                                ord = kek;
+                                aromatic_bonds.insert({mm.first, mm.second});
+                            }
+                        }
+                        add_bond(a1_it->second, a2_it->second, ord, bonds);
                         cif_bonded.insert({mm.first, mm.second});
                     }
                 }
@@ -3876,11 +3939,17 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
             << " 0  0  0  0  0  0  0  0  0  0  0  0\n";
     }
 
-    // Bond block
+    // Bond block.  Under FLEXAIDDS_KEKULIZE_LIGAND_SDF the CCD-aromatic bonds
+    // carry their Kekule order here (1/2) instead of MDL 4, and their 1-based
+    // indices in THIS block are collected for the SD tag below.
+    std::vector<int> aromatic_bond_indices;
+    int emitted_bond = 0;
     for (const auto& [pair, order] : bonds) {
         int a = old_to_new[pair.first];
         int b = old_to_new[pair.second];
         if (a <= 0 || b <= 0) continue;
+        ++emitted_bond;
+        if (aromatic_bonds.count(pair)) aromatic_bond_indices.push_back(emitted_bond);
         ofs << std::setw(3) << a
             << std::setw(3) << b
             << std::setw(3) << order
@@ -3888,6 +3957,22 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     }
 
     ofs << "M  END\n";
+
+    // ── AROMATIC BOND TAG ────────────────────────────────────────────────────
+    // SD data field, emitted only when there is something to record. RDKit
+    // ignores unknown SD tags, so the mol block stays sanitizable; SdfReader
+    // reads this back to set is_aromatic exactly as MDL order 4 used to, which
+    // keeps C.ar/N.ar typing -- and therefore CF -- unchanged by construction.
+    // Absent tag (every pre-existing cache) => SdfReader's legacy type-4 path.
+    if (!aromatic_bond_indices.empty()) {
+        ofs << "> <FLEXAIDDS_AROMATIC_BONDS>\n";
+        for (size_t i = 0; i < aromatic_bond_indices.size(); ++i) {
+            ofs << aromatic_bond_indices[i]
+                << (i + 1 < aromatic_bond_indices.size() ? " " : "\n");
+        }
+        ofs << "\n";
+    }
+
     ofs << "$$$$\n";
     ofs.close();
 

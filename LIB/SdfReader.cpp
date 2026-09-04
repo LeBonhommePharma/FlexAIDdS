@@ -416,17 +416,70 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
     // actually differ from the degenerate sp2/sp3 rows in MC_st0r5.2_6.dat
     // (C.2↔C.3 and O.2↔O.3 are byte-identical). Derive these three from the
     // connection table so SDF scoring matches the obabel-converted MOL2 typing.
+    // ── FLEXAIDDS_AROMATIC_BONDS SD TAG ──────────────────────────────────────
+    // The V2000 parser above stops at "M  END", so an SD data field is never
+    // seen by it. DatasetRunner's ligand extractor, under
+    // FLEXAIDDS_KEKULIZE_LIGAND_SDF, writes the aromatic ring bonds with their
+    // CCD Kekule order (1/2) instead of MDL 4 -- which is what makes the file
+    // sanitizable by RDKit/PoseBusters -- and records their 1-based bond indices
+    // in this tag. Reading it back restores is_aromatic EXACTLY as order 4 did,
+    // so the C.ar/N.ar VCT types and therefore CF are unchanged. A file without
+    // the tag (every cache written before this change) falls through to the
+    // legacy `sb.type == 4` test below, so old inputs behave identically.
+    //
+    // Scanned in a second pass over the file rather than threaded through the
+    // parser: the parser is shared by every SDF consumer and must not shift.
+    std::vector<char> tagged_aromatic_bond;  // 1-based, empty when no tag
+    {
+        FILE* tf = fopen(sdf_file, "r");
+        if (tf) {
+            char tb[4096];
+            bool in_tag = false;
+            while (fgets(tb, sizeof(tb), tf)) {
+                strip_crlf(tb);
+                if (strncmp(tb, "$$$$", 4) == 0) break;
+                if (strstr(tb, "<FLEXAIDDS_AROMATIC_BONDS>") != nullptr) {
+                    in_tag = true;
+                    continue;
+                }
+                if (!in_tag) continue;
+                if (tb[0] == '\0') break;          // blank line ends the field
+                for (char* p = strtok(tb, " \t"); p; p = strtok(nullptr, " \t")) {
+                    int bi = atoi(p);
+                    if (bi <= 0 || bi > 9999) continue;
+                    if ((int)tagged_aromatic_bond.size() <= bi)
+                        tagged_aromatic_bond.resize(bi + 1, 0);
+                    tagged_aromatic_bond[bi] = 1;
+                }
+            }
+            fclose(tf);
+        }
+    }
+    if (!tagged_aromatic_bond.empty()) {
+        int n_tagged = 0;
+        for (char c : tagged_aromatic_bond) if (c) ++n_tagged;
+        printf("read_sdf_ligand: FLEXAIDDS_AROMATIC_BONDS tag present, "
+               "%d aromatic bond(s) restored from Kekule orders\n", n_tagged);
+    }
+
     std::vector<bool> is_aromatic(natoms, false);
     std::vector<bool> is_carboxylate_O(natoms, false);
 
     // Per-atom neighbour lists with bond order, 0-based (sbonds are 1-based).
     std::vector<std::vector<std::pair<int,int>>> nbr(natoms); // (neighbour, btype)
+    int bond_index = 0;  // 1-based, matches the emitted bond block order
     for (const auto& sb : sbonds) {
+        ++bond_index;
         int i = sb.a1 - 1, j = sb.a2 - 1;
         if (i < 0 || i >= natoms || j < 0 || j >= natoms) continue;
         nbr[i].push_back({j, sb.type});
         nbr[j].push_back({i, sb.type});
-        if (sb.type == 4) { is_aromatic[i] = true; is_aromatic[j] = true; }
+        // Legacy marker (MDL order 4) OR the SD tag written alongside Kekule
+        // orders. Both set the SAME flag, so typing is identical either way.
+        const bool arom_by_tag =
+            (bond_index < (int)tagged_aromatic_bond.size() &&
+             tagged_aromatic_bond[bond_index] != 0);
+        if (sb.type == 4 || arom_by_tag) { is_aromatic[i] = true; is_aromatic[j] = true; }
     }
 
     // Carboxylate oxygens: O bonded to a C that has exactly two O neighbours,
