@@ -336,22 +336,41 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 			if(residue[kres].trot > 0 && residue[kres].bonded == NULL){
 
 				if(!FA->score_ligand_only){
+					// ROOT FIX. The write index here was FA->MIN_OPTRES-1 (CAPACITY) while
+					// update_optres() reads slots 0..FA->num_optres-1 (COUNT). Stock growth
+					// advanced both in lockstep -- read_lig.cpp bumps MIN_OPTRES to 2 next to
+					// num_optres=1, and this block bumped both -- so the two indices
+					// coincided BY ACCIDENT. reserve_optres(FA, nflxsc+2) pre-grows CAPACITY
+					// only (top.cpp:2642, read_input.cpp:498/683), which broke the
+					// coincidence: MIN_OPTRES jumps to nflxsc+2 up front, so the FIRST
+					// flexible residue wrote slot nflxsc+1 while update_optres read slot 1 --
+					// a memset-zero entry with rnum=0. No atom has ofres==0, so the match at
+					// update_optres.cpp:51 never fired and EVERY flexible side chain went
+					// unmapped. MEASURED on 1MQ6, autoflex_max=5, engine ba70c794:
+					//   num_optres=6  optres[0].rnum=291  optres[1..5].rnum=0
+					//   atoms_with_optres=36 (protein=0 ligand=36)  atm_cnt=7047
+					// i.e. the rotamer atoms WERE appended (2262 -> 7047) but were
+					// unreachable through the mapping, so FLEXAIDDS_SCORED_ONLY wrote the
+					// same 36 ligand atoms as a rigid run. Indexing by num_optres is correct
+					// in BOTH growth modes; MIN_OPTRES is now pure capacity.
+					const int slot = FA->num_optres;
+					if(FA->MIN_OPTRES < slot + 1){ FA->MIN_OPTRES = slot + 1; }
 					FA->optres = (OptRes*)realloc(FA->optres,FA->MIN_OPTRES*sizeof(OptRes));
 					if(!FA->optres){
 						fprintf(stderr,"ERROR: Could not re-allocate memory for FA->optres.\n");
 						Terminate(2);
 					}
-					memset(&FA->optres[FA->MIN_OPTRES-1],0,sizeof(OptRes));
+					memset(&FA->optres[slot],0,sizeof(OptRes));
 
 					natm = residue[kres].latm[0]-residue[kres].fatm[0]+1;
 
 
 					//printf("residue[%d].fatm = %d\n",residue[kres].number,residue[kres].fatm[0]);
 
-					FA->optres[FA->MIN_OPTRES-1].rnum = kres;
+					FA->optres[slot].rnum = kres;
 					// 0: side-chain (protein)
-					FA->optres[FA->MIN_OPTRES-1].type = 0;
-					FA->optres[FA->MIN_OPTRES-1].tot = natm;
+					FA->optres[slot].type = 0;
+					FA->optres[slot].tot = natm;
 
 					for(i=0;i<natm;i++){
 
@@ -382,7 +401,10 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 
 					FA->num_optres++;
 
-					FA->MIN_OPTRES++;
+					// MIN_OPTRES is CAPACITY ONLY now and is grown by the guard above.
+					// The old unconditional bump is what made MIN_OPTRES-1 track
+					// num_optres in stock mode and is exactly the coupling that broke
+					// under a pre-reservation. Do not reinstate it.
 				}
 			}else{
 

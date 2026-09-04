@@ -1,3 +1,5 @@
+#include <cstdlib>
+#include <cstdio>
 #include "flexaid.h"
 #include "fileio.h"
 #include "soft_wall.h"  // posebusters_vdw_radius() for the pb_vdw_radius cache
@@ -57,6 +59,60 @@ void update_optres(atom* atoms, resid* residue, int atm_cnt, OptRes* optres_ptr,
             
 		}
         
+	}
+
+	// ── DIAGNOSTIC, opt-in via FLEXAIDDS_OPTRES_DIAG. Default output unchanged.
+	//
+	// WHY THIS EXISTS. FLEXAIDDS_SCORED_ONLY writes only atoms carrying an optres
+	// back-pointer (write_pdb.cpp:44,150). MEASURED: a flexible cell writes EXACTLY
+	// the same 36 ligand atoms as the rigid one, so the flexed side chains are not
+	// getting a pointer. Three candidate causes were ruled out by reading source --
+	// isbb propagates through the struct copy at build_rotamers.cpp:157; the
+	// condition above DOES admit side-chain atoms (protein type==0 AND !isbb); and
+	// reserve_optres() already runs BEFORE build_rotamers on all three load paths,
+	// so the pointer-invalidation route is closed. The remaining candidate is that
+	// the flexible residues never became OptRes entries at all --
+	// build_rotamers.cpp:352 is the only incrementer of num_optres -- which this
+	// print settles outright: num_optres==1 means ligand only.
+	// PERMANENT GUARD, always on. An OptRes entry with rnum==0 at index>0 is
+	// unmapped: no atom has ofres==0, so the match above cannot fire and that
+	// residue is silently absent from every per-residue consumer
+	// (ic2cf.cpp:299, cluster.cpp:732, BindingMode.cpp:921/1091, FOPTICS.cpp:407,
+	// DensityPeak_Cluster.cpp:614, top.cpp:2886) AND from FLEXAIDDS_SCORED_ONLY
+	// output. That is the failure this project keeps paying for: a capability
+	// fully present in the engine whose precondition is never supplied, with every
+	// log, config and exit code looking clean. It must never be silent again.
+	{
+		int unmapped = 0;
+		for(i=1;i<num_optres;i++){ if(optres_ptr[i].rnum == 0) ++unmapped; }
+		if(unmapped > 0){
+			fprintf(stderr,"[OPTRES] WARNING: %d of %d optimizable-residue entries have "
+			        "rnum=0 and are UNMAPPED; their side chains will be absent from the "
+			        "per-residue CF decomposition and from scored-only output. See "
+			        "build_rotamers.cpp (slot index) -- this is a defect, not a warning "
+			        "to ignore.\n", unmapped, num_optres);
+			fflush(stderr);
+		}
+	}
+
+	{
+		const char* diag = getenv("FLEXAIDDS_OPTRES_DIAG");
+		if(diag != NULL && diag[0] == '1'){
+			int with = 0, prot = 0, lig = 0;
+			for(j=1;j<=atm_cnt;j++){
+				if(atoms[j].optres == NULL) continue;
+				++with;
+				if(residue[atoms[j].ofres].type == 0) ++prot; else ++lig;
+			}
+			printf("[OPTRES-DIAG] num_optres=%d atoms_with_optres=%d "
+			       "(protein=%d ligand=%d) atm_cnt=%d\n",
+			       num_optres, with, prot, lig, atm_cnt);
+			for(i=0;i<num_optres;i++){
+				printf("[OPTRES-DIAG]   optres[%d] rnum=%d restype=%d\n",
+				       i, optres_ptr[i].rnum, residue[optres_ptr[i].rnum].type);
+			}
+			fflush(stdout);
+		}
 	}
     
 	return;
