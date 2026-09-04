@@ -58,6 +58,115 @@ Rows missing `claim_ready` but satisfying seed gates are admitted only for **leg
 | Field | Value |
 |-------|--------|
 | Canonical matrix | campaign-dependent (see RUN_RECEIPT) |
+
+---
+
+## 2b. Solvent condition (NORMATIVE — added 2026-09-04)
+
+**Every PoseBusters-derived rate in this contract is conditional on which waters the
+validator saw, and until now that was not the set the engine scored against.**
+
+### The engine's shipped policy
+
+`config_parser.cpp:362-369` defaults to `remove_water=true`,
+`keep_structural_waters=true`, `structural_water_bfactor_max=20.0`.
+`modify_pdb.cpp:158-166` implements that combination as **B-factor-thresholded
+conserved-water retention**: an `HOH` is dropped only when its B-factor exceeds
+the threshold. It is *not* full stripping. The banner at `modify_pdb.cpp:59`
+prints whenever `exclude_het || remove_water` and is **not** a count.
+
+Measured with `FLEXAIDDS_WRITE_FLEXED_RECEPTOR=1` on 1JD0: the receptor as scored
+holds 4325 atoms including 156 `HOH`, every one at B ≤ 20 and none above; 504
+waters in, 156 retained. The loader's 4338 reconciles exactly as
+4169 non-water + 156 conserved + 13 ligand. Across the 84-target roster,
+**2822 of 28608 crystallographic waters (9.9%) reach the search**; 18 targets have
+waters and retain none; 1 target (1IGJ) has none at all.
+
+### Hard rules
+
+7. **Every PB-derived rate MUST name its receptor condition.** A bare
+   `pb_pass`/`success_pb`/`claim_ready` rate is incomplete without it.
+8. **The claim-bearing condition is ENGINE-MATCHED**: the conditioning receptor
+   passed to `bust -p` must contain exactly the waters the engine retained
+   (`<T>_apo.pdb` minus `HOH` with B > `structural_water_bfactor_max`).
+9. **Full-receptor PB rates are SUPERSEDED, not merely noisier.** They judge the
+   pose against waters the search never saw — 348 per target on 1JD0, ~25,786
+   across the set. Measured on 77 paired rigid cells (seed 12345), STRICT rule
+   (§2b rule 14): all-waters 41.6%, engine-matched **68.8%**, no-waters 72.7%.
+   The full-receptor tier is biased downward by ~27 points and must not be
+   reported as a headline.
+10. **Water removal can only remove failures**, so an engine-matched rate that
+    exceeds a full-receptor rate is expected, not suspicious. Zero losses across
+    the correction is the internal check; a loss indicates a defect.
+
+### The PB pass rule (NORMATIVE)
+
+14. **A pose passes only if EVERY check column in `bust_raw.csv` is literally
+    `True`**, excluding the three non-check columns (`file`, `molecule`,
+    `position`) and the `rmsd_≤_2å` column (`BustCli.h:42` records but excludes
+    it). **A blank is a FAILURE, not a pass** — a blank means the check did not
+    run. This is 27 check columns.
+
+15. **Do NOT derive the check set by testing which columns are boolean-valued
+    across the corpus.** A predicate that admits `''` into the boolean set
+    silently drops every sometimes-blank column. Measured consequence on the
+    154-cell NO_SEC corpus: such a predicate kept 16 columns and dropped 11 —
+    `internal_steric_clash`, `bond_lengths`, `bond_angles`,
+    `aromatic_ring_flatness`, `non-aromatic_ring_non-flatness`,
+    `double_bond_flatness`, `double_bond_stereochemistry`,
+    `tetrahedral_chirality`, `molecular_formula`, `molecular_bonds`,
+    `internal_energy`. **`internal_steric_clash` is `False` on 3 of 154 cells**,
+    so dropping it makes the rule LOOSER: poses with intramolecular clashes pass.
+    Ten of the eleven are vacuous in practice (always `True`, blank on the same
+    2 cells, both of which fail other checks); the strict rule changes the rigid
+    engine-matched count by exactly 1 cell (54 → 53). The looseness is small but
+    it is in the direction that flatters the engine.
+
+### Scope limit on the numbers above
+
+These figures are an **S2-grade PB tier, NOT `claim_ready`** — `claim_ready`
+additionally requires tENCoM/Eigen completion, protocol eligibility and
+score–pose consistency per §1. `claim_ready` *inherits* the solvent condition
+through its PB component and must be recomputed under rules 8 and 14 before it
+is quoted. The 16-column rule reproduces the harness's stored `pb_pass` on
+154/154 cells, so the harness's own `pb_pass` carries the same looseness.
+
+### Ablation status
+
+The retention policy is **the shipped default and has never been ablated.** It
+was never chosen: the `protein` config block was not emitted until commit
+`70dd2ed4`, so every key took its parser fallback on every cell this project has
+ever run. All three conditions are now reachable
+(`FLEXAIDDS_REMOVE_WATER`, `FLEXAIDDS_KEEP_STRUCTURAL_WATERS`,
+`FLEXAIDDS_STRUCTURAL_WATER_BFACTOR_MAX`) and default-off is proven byte-identical
+at production settings. **Methods text must state the policy** rather than imply
+a dry receptor.
+
+---
+
+## 2c. Scored endpoint (NORMATIVE — added 2026-09-04)
+
+**The two candidate endpoints disagree on a majority of cells, so a rate without a
+declared endpoint is unreadable.**
+
+| Endpoint | Definition | Status |
+|----------|------------|--------|
+| `argmin(ACF)` | Cluster free energy over members; what the engine **ships** | Primary — declare explicitly |
+| `argmin(CF)` | Lowest contact-function pose in the emitted pool | Secondary / sensitivity |
+
+Measured on 83 rigid NO_SEC cells (seed 12345, ordered-direct RMSD): ACF 40/83 =
+48.2%, CF 44/83 = 53.0%. Per-cell endpoint agreement is 34.9% rigid and 39.8%
+flexible.
+
+### Hard rules
+
+11. **Every claim table MUST carry an endpoint column**, and every reported rate
+    MUST name its endpoint. The two are separate estimands (§1 rule 6).
+12. **Banner-to-pose joins key on the restart directory path**, never on the CF
+    value — two restarts share a rank-0 CF to 3 d.p. on 22% of cells, making a
+    value-join non-deterministic.
+13. **Multi-seed aggregation is majority-of-seeds, never union.** A union
+    systematically flatters the noisier arm.
 | **Fallback MD5** | `9dc93717dfed0698006d88dd6a9627bc` (aggregator default; receipt wins) |
 
 ---
