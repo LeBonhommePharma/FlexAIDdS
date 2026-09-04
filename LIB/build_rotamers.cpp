@@ -1,5 +1,9 @@
 #include "flexaid.h"
 #include "fileio.h"
+// Receptor side-chain conformational strain (FLEXAIDDS_RECEPTOR_STRAIN,
+// default OFF). Header-only; every entry point below is a no-op when the
+// gate is unset, so this build stays bit-identical without it.
+#include "receptor_strain.h"
 /***********************************************************************************************
  * This function build for each residue its rotamers.
  *
@@ -37,6 +41,12 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 
 	FA->nflxsc_real = 0 ;
 
+	// Receptor-strain side tables are rebuilt from scratch on every call:
+	// build_rotamers() has three call sites (top.cpp:2643, read_input.cpp:499
+	// and :684) and a second call would otherwise append onto the first run's
+	// rotamer indices. No-op when FLEXAIDDS_RECEPTOR_STRAIN is unset.
+	flexaids::receptor_strain::reset();
+
 	// set side-chain atoms as mobile for flexible residues
 	for(k=0;k<FA->nflxsc;k++){
 		kres=FA->flex_res[k].inum;
@@ -66,6 +76,15 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 		MIN_ROTAMER = FA->MIN_ROTAMER;
 
 		kres=FA->flex_res[i].inum;
+
+		// HAP2db apo/holo conformational-change probability for this residue
+		// type, already resolved by set_intprob() (read_flexscfile.cpp:98) or
+		// overridden from the flexscfile. This is the MEASURED prior the
+		// receptor-strain eviction term is built on; recorded here because this
+		// is the only place that has both the flexible-residue list and the
+		// internal residue index in scope. No-op when the gate is unset.
+		flexaids::receptor_strain::record_residue_prior(
+			kres, static_cast<double>(FA->flex_res[i].prob));
 
 		buildic(FA,*atoms,residue,kres);
 
@@ -218,6 +237,18 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 					}else{
 
 						//printf("ACCEPTED\n\n");
+
+						// ACCEPTED: residue[kres].trot is now the index the GA
+						// rotamer gene will address for THIS library entry, so
+						// this is the only point where the two are both known.
+						// Recording before the clash test would mis-key every
+						// subsequent rotamer, because rejection rolls trot back.
+						// rotamer[l].pro is obs/total from read_rotlib.cpp:89;
+						// it is left at 0 by read_rotobs.cpp, which the reader
+						// side treats as "unavailable", never as probability 0.
+						flexaids::receptor_strain::record_rotamer(
+							kres, residue[kres].trot,
+							static_cast<double>(rotamer[l].pro));
 
 						if(FA->rotout){
 							if(outrot == NULL){
