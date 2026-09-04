@@ -122,6 +122,47 @@ waters and retain none; 1 target (1IGJ) has none at all.
     engine-matched count by exactly 1 cell (54 → 53). The looseness is small but
     it is in the direction that flatters the engine.
 
+### PB denominator: 8 targets are NOT ASSESSABLE under the current invocation
+
+16. **A PB rate MUST state its own denominator, and a target PoseBusters could
+    not score is NOT ASSESSED — never a failure.** Measured on the 84-target
+    roster: 7 targets wrote a **0-byte** `bust_raw.csv` with `pb_pass=false`, and
+    an 8th (`1TW6`) produced a row whose chemistry columns are blank. So a rate
+    quoted `x/84` counts 7–8 unmeasurable cells as failures, and the honest
+    denominator is **76–77**.
+
+    | Target | Symptom |
+    |--------|---------|
+    | `1K3U` `1N2V` `1U1C` `1U4D` `1XOZ` `1Y6R` `2BSM` | 0-byte `bust_raw.csv`, `pb_pass=false` |
+    | `1TW6` | row present, chemistry columns blank |
+
+    **Cause, established by re-invocation.** The ligand SDF for these targets
+    carries an aromatic bond block RDKit cannot kekulize
+    (`KekulizeException: Can't kekulize mol`), so `MolFromMolFile` returns
+    `None` and `SDMolSupplier` yields 0 non-`None` molecules. This is **in the
+    cache input, not written by the engine** — the native `<T>_ligand.sdf` and
+    the written pose SDF have the *identical* bond-order histogram
+    (1K3U: 9×single, 3×double, 10×aromatic) and both fail identically, while
+    control targets parse in both. It is therefore **not** the pose→SDF writer
+    defect reported elsewhere.
+
+    **Why it is fatal only in the harness.** The harness passes
+    `-l <crystal_sdf>` (`BustCli.cpp:243-244`), which puts PoseBusters on the
+    RMSD path and that path requires a sanitized reference. Measured:
+    `bust <pose> -p <apo>` returns **1 row** for all 8 targets, while
+    `bust <pose> -l <crystal> -p <apo>` returns **0 rows** on 1K3U and 1 row on
+    1JD0. Scored without `-l`, three of the eight (`1K3U`, `1XOZ`, `1Y6R`) pass
+    **every physical check**; all eight report `sanitization=False` and
+    `inchi_convertible=False`. So the exclusion is **not neutral** — it removes
+    targets that would have passed the chemistry.
+
+17. **Do not "fix" this by dropping `-l`.** Without a reference, PoseBusters
+    cannot compute RMSD and the result cannot satisfy S2 (§1). The two admissible
+    repairs are: (a) repair the cache SDF aromaticity so the reference sanitizes,
+    or (b) take RMSD from the engine's own `rmsd_to_crystal` and run PoseBusters
+    without `-l`, declaring the split provenance. Either way the 8 targets must
+    be reported as a named, counted exclusion until repaired.
+
 ### Scope limit on the numbers above
 
 These figures are an **S2-grade PB tier, NOT `claim_ready`** — `claim_ready`

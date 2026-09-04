@@ -689,11 +689,36 @@ ElectedPoseBustOutcome validate_elected_pose(
                         (fs::path(pb_dir) / (stem + "_bust_receipt.json")).string();
                     std::ofstream rcpt(receipt_path);
                     if (rcpt) {
+                        // A receipt that records pb_pass but not the INVOCATION
+                        // cannot explain a zero-row run. Measured cost of that
+                        // omission: 7 of 84 Astex targets wrote a 0-byte
+                        // bust_raw.csv and pb_pass=false, and the cause could
+                        // not be read off any receipt -- it took a manual
+                        // re-invocation to find that `-l <crystal>` aborts when
+                        // the reference ligand cannot be kekulized (RDKit
+                        // KekulizeException in the RMSD path), while the same
+                        // pose scores fine without `-l`. argv_joined, the exit
+                        // status and the check counts make that self-evident
+                        // from the receipt alone.
                         rcpt << "{\n"
                              << "  \"bust_path\": \"" << json_escape(br.bust_path)
                              << "\",\n"
                              << "  \"bust_sha256\": \""
                              << json_escape(br.bust_sha256) << "\",\n"
+                             << "  \"bust_version\": \""
+                             << json_escape(br.bust_version) << "\",\n"
+                             << "  \"argv_joined\": \""
+                             << json_escape(br.argv_joined) << "\",\n"
+                             << "  \"exit_status\": " << br.exit_status << ",\n"
+                             << "  \"n_checks\": " << br.n_checks << ",\n"
+                             << "  \"n_pass\": " << br.n_pass << ",\n"
+                             << "  \"n_fail\": " << br.n_fail << ",\n"
+                             << "  \"failed_keys\": \""
+                             << json_escape(br.failed_keys) << "\",\n"
+                             << "  \"error\": \"" << json_escape(br.error)
+                             << "\",\n"
+                             << "  \"raw_csv_sha256\": \""
+                             << json_escape(br.raw_csv_sha256) << "\",\n"
                              << "  \"pb_pass\": "
                              << (br.pb_pass ? "true" : "false") << ",\n"
                              << "  \"backend\": \"" << json_escape(br.backend)
