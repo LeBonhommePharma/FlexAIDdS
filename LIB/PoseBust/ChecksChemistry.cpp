@@ -300,7 +300,15 @@ SanityReport native_sanity(const Molecule& mol) {
         const bool bad_idx =
             b.a < 0 || b.b < 0 || b.a >= n || b.b >= n || b.a == b.b;
         // Valid MDL-style orders: 1,2,3,4 (aromatic). Reject others.
-        const bool bad_order = (b.order < 1 || b.order > 4);
+        //
+        // NEUTRALISED on fabricated topology. infer_bonds()/CONECT set every
+        // order to 1, which is a VALID order, so this test cannot fail there --
+        // it would report the bond block as validated when no bond block was
+        // ever read. Suppressing only this component keeps the rest of
+        // native_sanity (non-finite coordinates, unknown elements, bad indices)
+        // assessable, which is why `sanitization` is NOT in kOrderDependentKeys.
+        const bool bad_order =
+            mol.topology_inferred ? false : (b.order < 1 || b.order > 4);
         if (bad_idx || bad_order) {
             ++r.n_bad_bonds;
             r.ok = false;
