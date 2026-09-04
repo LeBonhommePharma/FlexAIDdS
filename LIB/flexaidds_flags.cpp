@@ -112,6 +112,22 @@ void seed_runtime_gates() {
         "FLEXAIDDS_WAL_COERCIVE",
         "FLEXAIDDS_SOFTCORE_WAL",
         "FLEXAIDDS_NO_SAS",
+        // Atom-type-pair contact-surface vector (vcfunction.cpp accumulates,
+        // cluster.cpp / native_score.cpp emit <pose>.cprof.csv). Pure
+        // instrumentation: adds nothing to any CF channel and cannot change a
+        // ranking. Records pairs whose interaction-matrix entry is exactly 0.0,
+        // which is the point — those atoms are invisible to CF.
+        "FLEXAIDDS_CONTACT_PROFILE",
+        // Receptor conformational strain term (receptor_strain.h). Default OFF;
+        // when unset evaluate_genes() returns an empty StrainResult and CF is
+        // bit-identical.
+        "FLEXAIDDS_RECEPTOR_STRAIN",
+        // Receptor conformation AS SCORED (cluster.cpp writes
+        // <dir>/flexed_receptor/<pose-stem>_receptor.pdb next to every emitted
+        // pose). Pure output: no CF channel, no REMARK on the pose, no ranking
+        // effect. Read together with FLEXAIDDS_PB_RECEPTOR below, which decides
+        // whether the validator is handed that receptor or the crystal one.
+        "FLEXAIDDS_WRITE_FLEXED_RECEPTOR",
         "FLEXAIDDS_POSEBUST",
         "FLEXAIDS_SOA_ASSERT",
         "FLEXAIDDS_FLAGS_DUMP",
@@ -178,6 +194,20 @@ void seed_runtime_gates() {
         "FLEXAIDDS_WALL_PILOT_PASS",
     };
     static const char* kEnum[] = {
+        // Receptor-state-conditional per-contact wall ceiling (vcfunction.cpp).
+        // "legacy" (default) = today; "flex" = ceiling lifted only for contacts
+        // that involve a flexed receptor side-chain atom.
+        "FLEXAIDDS_WAL_CAP_MODE",
+        // Implicit-solvent reference for the ligand-solvent term (vcfunction.cpp).
+        // "dynamic" (default) = the receptor as it is right now; "crystal" = the
+        // reference is frozen at the INPUT receptor envelope, so surface vacated
+        // by a moved side chain is not re-priced as bulk water.
+        "FLEXAIDDS_SOLVATION_REF",
+        // Receptor frame handed to PoseBusters (DatasetRunner.cpp).
+        // "crystal" (default) = entry.receptor_path, i.e. today's behaviour and
+        // today's validity numbers; "flexed" = the as-scored receptor written by
+        // FLEXAIDDS_WRITE_FLEXED_RECEPTOR. Any other value falls back to crystal.
+        "FLEXAIDDS_PB_RECEPTOR",
         "FLEXAIDDS_CLUSTER_REP",
         "FLEXAIDDS_FITNESS_MODEL",
         "FLEXAIDDS_SEARCH",
@@ -186,8 +216,13 @@ void seed_runtime_gates() {
         "FLEXAIDDS_FLAGS",
     };
     static const char* kValue[] = {
+        // Temperature (K) for the -kT ln p rotamer strain conversion.
+        // Default 298.15; only read when FLEXAIDDS_RECEPTOR_STRAIN is on.
+        "FLEXAIDDS_RECEPTOR_STRAIN_T",
         "FLEXAID_SEED",
         "FLEXAIDDS_WAL_STIFF",
+        // Optional finite replacement ceiling for FLEXAIDDS_WAL_CAP_MODE=flex.
+        "FLEXAIDDS_WAL_CAP_FLEX",
         "FLEXAIDDS_SOFTCORE_FLOOR",
         "FLEXAIDDS_CON_R0",
         "FLEXAIDDS_COM_FLOOR",

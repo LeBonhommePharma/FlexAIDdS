@@ -1,5 +1,10 @@
 #include "BindingMode.h"
 #include "EnvFlags.h"
+// Receptor side-chain conformational strain, E_strain(r) = E(r) - E(r_ref).
+// Gate FLEXAIDDS_RECEPTOR_STRAIN, DEFAULT OFF: with it unset every entry
+// point is a no-op and Pose::receptor_strain stays the 0.0 it has always
+// been, so emission and ranking are bit-identical to HEAD.
+#include "receptor_strain.h"
 #include "fast_optics.hpp"
 #include "SoftBetaFreeEnergy.h"
 #include "RngSeed.h"
@@ -352,6 +357,58 @@ BindingMode::BindingMode(BindingPopulation* pop)
 void BindingMode::add_Pose(Pose& pose)
 {
 	this->Poses.push_back(pose);
+
+	// ── RECEPTOR CONFORMATIONAL STRAIN (FLEXAIDDS_RECEPTOR_STRAIN, default OFF)
+	// Pose::receptor_strain was declared for E_strain(r) = E_conformer(r) -
+	// E_conformer(r_ref) (BindingMode.h:51) and has been identically 0.0 since
+	// it was added. This is where it becomes real.
+	//
+	// Filled in at pose INSERTION, not at emission, because rebuild_engine()
+	// feeds the ensemble with pose.total_energy() = CF + receptor_strain (see
+	// the comment above rebuild_engine): a strain written only at emission time
+	// would never reach the partition function and the binding-mode free
+	// energies would keep ranking as if evicting a side chain were free.
+	//
+	// The STORED copy is mutated, never the caller's Pose: FOPTICS.cpp:332
+	// passes an element of its own pose vector by non-const reference, and this
+	// function has no business writing back into it.
+	//
+	// evaluate_genes() reads the chromosome's own gene vector and touches no
+	// global state, so it is safe alongside whatever else is driving
+	// residue[].rot. Cost when the gate is off: one cached bool test.
+	if (flexaids::receptor_strain::enabled() &&
+	    this->Population != nullptr &&
+	    this->Population->FA != nullptr &&
+	    this->Population->GB != nullptr)
+	{
+		Pose& stored = this->Poses.back();
+		const int n_genes = this->Population->GB->num_genes;
+		if (stored.chrom != nullptr && stored.chrom->genes != nullptr && n_genes > 0) {
+			std::vector<double> genes(static_cast<std::size_t>(n_genes), 0.0);
+			for (int k = 0; k < n_genes; ++k)
+				genes[static_cast<std::size_t>(k)] = stored.chrom->genes[k].to_ic;
+
+			const flexaids::receptor_strain::StrainResult sr =
+				flexaids::receptor_strain::evaluate_genes(
+					this->Population->FA,
+					this->Population->atoms,
+					this->Population->residue,
+					genes.data(), n_genes);
+
+			// Status becomes Available ONLY when a side-chain gene actually
+			// exists and the term was evaluated. A rigid-receptor run keeps
+			// NotComputed, so a structural 0.0 can never be read back later as
+			// a computed zero strain.
+			if (sr.computed && sr.n_flexible > 0) {
+				stored.receptor_strain = sr.total_kcal_mol;
+				stored.energy_components.receptor_strain = sr.total_kcal_mol;
+				stored.energy_components.receptor_strain_status =
+					statmech::ComponentStatus::Available;
+				stored.energy_components.total = stored.total_energy();
+			}
+		}
+	}
+
 	this->thermo_cache_valid_ = false;
 	this->vib_cache_valid_ = false;
 }
@@ -821,6 +878,35 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	safe_remark_cat(remark, tmpremark, &remark_len);
 	snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", Rep->chrom->app_evalue);
 	safe_remark_cat(remark, tmpremark, &remark_len);
+	// ── CF.strain — receptor side-chain eviction cost, REPORTED, NOT SUMMED ──
+	// This line is deliberately NOT part of the CF.app identity. CF.app is
+	// assembled by get_apparent_cf_evalue() (ic2cf.cpp), which sums a fixed set
+	// of cfstr channels; CF.strain is not one of them and nothing here changes
+	// that. The existing identity
+	//     CF.com + CF.sas + CF.wal + CF.hbond (+ gated terms) = CF.app
+	// therefore still holds exactly, and any parser summing the old terms is
+	// unaffected. Where the strain DOES act is the thermodynamic ensemble:
+	// Pose::total_energy() = CF + receptor_strain, which rebuild_engine() feeds
+	// to the StatMechEngine. Emitted only when the gate is on.
+	if (flexaids::receptor_strain::enabled() && this->Population != nullptr) {
+		const flexaids::receptor_strain::StrainResult sr =
+			flexaids::receptor_strain::evaluate_live(
+				this->Population->FA,
+				this->Population->atoms,
+				this->Population->residue);
+		snprintf(tmpremark, MAX_REMARK,
+			"REMARK CF.strain=%8.5f n_flex=%d n_moved=%d n_unresolved=%d T=%.2f "
+			"basis=hap2_switch+rotlib_pmax units=kcal/mol excluded_from=CF.app\n",
+			sr.total_kcal_mol, sr.n_flexible, sr.n_moved, sr.n_unresolved,
+			flexaids::receptor_strain::temperature_K());
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK,
+			"REMARK CF.strain_rep=%8.5f status=%s\n",
+			Rep->receptor_strain,
+			(Rep->energy_components.receptor_strain_status ==
+			 statmech::ComponentStatus::Available) ? "computed" : "not_computed");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+	}
 	// Before per-residue CF blocks: those can fill the 5k REMARK cap and
 	// silently drop a trailing ledger line (safe_remark_cat is fail-closed).
 	if (this->Population && this->Population->FA) {
