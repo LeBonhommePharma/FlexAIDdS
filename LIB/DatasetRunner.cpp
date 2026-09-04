@@ -6582,6 +6582,45 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"n_seeds\": 25,\n"
                    << "    \"n_orientations\": 64\n"
                    << "  },\n"
+                   // ── PROTEIN / SOLVENT PREPARATION ──────────────────────────
+                   // This block was NEVER EMITTED, so config_parser.cpp:362-369 fell
+                   // back to its own defaults on every cell this project has ever run.
+                   // MEASURED consequence: remove_water=true AND keep_structural_waters=true
+                   // AND structural_water_bfactor_max=20.0, which modify_pdb.cpp:158-166
+                   // implements as B-FACTOR-THRESHOLDED CONSERVED-WATER RETENTION -- not
+                   // full stripping. Verified with FLEXAIDDS_WRITE_FLEXED_RECEPTOR=1 on
+                   // 1JD0: the receptor as scored holds 4325 atoms including 156 HOH, all
+                   // with bf<=20 and none above it (504 waters in, 156 retained). Across
+                   // the 84-target set, 2822 of 28608 waters (9.9%) reach the search and
+                   // 19 targets retain none at all.
+                   //
+                   // Every value below equals the parser fallback it replaces, so the
+                   // emitted config reproduces every prior run bit for bit. The env gates
+                   // exist so the shipped policy can be ABLATED -- it never has been.
+                   //   FLEXAIDDS_REMOVE_WATER=0            -> keep ALL waters (CSARdock
+                   //                                          reports this HURTS; negative control)
+                   //   FLEXAIDDS_KEEP_STRUCTURAL_WATERS=0  -> strip ALL waters (never run)
+                   //   FLEXAIDDS_STRUCTURAL_WATER_BFACTOR_MAX=<f>  -> move the cutoff
+                   << "  \"protein\": {\n"
+                   << "    \"is_protein\": true,\n"
+                   << "    \"exclude_het\": false,\n"
+                   << "    \"keep_ions\": true,\n"
+                   << "    \"remove_water\": "
+                   << ((std::getenv("FLEXAIDDS_REMOVE_WATER") &&
+                        std::getenv("FLEXAIDDS_REMOVE_WATER")[0] == '0')
+                           ? "false" : "true")
+                   << ",\n"
+                   << "    \"keep_structural_waters\": "
+                   << ((std::getenv("FLEXAIDDS_KEEP_STRUCTURAL_WATERS") &&
+                        std::getenv("FLEXAIDDS_KEEP_STRUCTURAL_WATERS")[0] == '0')
+                           ? "false" : "true")
+                   << ",\n"
+                   << "    \"structural_water_bfactor_max\": "
+                   << (std::getenv("FLEXAIDDS_STRUCTURAL_WATER_BFACTOR_MAX")
+                           ? std::atof(std::getenv("FLEXAIDDS_STRUCTURAL_WATER_BFACTOR_MAX"))
+                           : 20.0)
+                   << "\n"
+                   << "  },\n"
                    << "  \"thermodynamics\": {\n"
                    << "    \"temperature\": " << config.temperature << ",\n"
                    << "    \"clustering_algorithm\": \"" << effective_clustering_algo << "\",\n"
