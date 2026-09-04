@@ -143,12 +143,59 @@ public:
     bool is_built()                              const noexcept { return built_; }
     const std::vector<std::array<float,3>>& ca_positions() const noexcept { return ca_; }
 
+    /// Which coordinate system the assembled Hessian lives in.
+    ///
+    /// Torsional (build/build_from_ca): dihedral DOFs. Global translation and
+    ///   rotation are not representable, so there is NO rigid-body null space.
+    /// Cartesian (build_from_ligand): 3N DOFs, so the spectrum carries SIX
+    ///   rigid-body modes whose eigenvalues are numerically zero.
+    enum class Basis { Torsional, Cartesian };
+    Basis basis() const noexcept { return basis_; }
+
+    /// Eigenvalues of the VIBRATIONAL subspace, rigid-body modes removed.
+    ///
+    /// WHY THIS EXISTS. Filtering with `eigenvalue > 0.0` does NOT remove the
+    /// rigid-body subspace on the Cartesian path: those eigenvalues land at
+    /// ~1e-12 with round-off SIGNS, so roughly half survive as positive and
+    /// enter the spectrum. MEASURED on this ligand path (BU72, 32 heavy atoms,
+    /// 96 modes): H_pop = 1.896 with them against 2.950 without -- a 56%
+    /// change -- because log(1e-13) = -30 becomes the lower bin edge and
+    /// stretches the log-frequency span from 9.65 to 39.0, compressing every
+    /// real mode into a quarter of the 32 bins. The contamination is in the
+    /// BINNING GEOMETRY, not the histogram mass. Worse, the survivor count is
+    /// unstable: a 1e-6 A coordinate jitter flips it between 2 and 4 of 6, so
+    /// the old value carried a component set by floating-point sign noise and
+    /// was not reproducible across BLAS builds or thread counts.
+    ///
+    /// The cutoff is RELATIVE to the stiffest mode, max(1e-10, lam_max*1e-8),
+    /// matching the two call sites that already got this right
+    /// (ligand_tencom_pose.cpp:85, DatasetRunner.cpp:974) so every consumer
+    /// agrees on one rule. The margin is enormous: measured separation between
+    /// the largest rigid eigenvalue (7e-12) and the softest real mode (3.2) is
+    /// ~6.6e11x, so the threshold sits in eleven decades of empty space.
+    ///
+    /// Negative eigenvalues fail the comparison rather than reaching log(),
+    /// so no NaN can propagate into H(omega).
+    ///
+    /// `n_dropped` receives how many modes were removed; `n_expected` receives
+    /// 6 on the Cartesian path and 0 on the torsional one. A MISMATCH means the
+    /// contact graph fragmented (each disconnected component contributes its
+    /// own rigid modes) and is reported to stderr rather than silently absorbed
+    /// into the entropy.
+    std::vector<double> vibrational_eigenvalues(int* n_dropped  = nullptr,
+                                                int* n_expected = nullptr) const;
+
     /// Per-contact surface-area-weighted spring scores.
     /// Ion contacts (is_ion==true) have k_scaled = k0*(rc/d_surf)^6 * (r_ion/R_CA_EFF)²,
     /// enabling callers to weight vibrational entropy by ion contact surface area.
     const std::vector<TmContSct>& tmcontsct() const noexcept { return tmcontsct_; }
 
 private:
+    // Coordinate system of the assembled Hessian. Defaults to Torsional and is
+    // set explicitly by EVERY builder, so a reused object cannot carry a stale
+    // basis from a previous build of the other kind.
+    Basis basis_ = Basis::Torsional;
+
     // Internal node coordinate store:
     //   indices [0, n_protein_ca_)  → protein Cα atoms
     //   indices [n_protein_ca_, N)  → metal ion pseudo-nodes (rigid)

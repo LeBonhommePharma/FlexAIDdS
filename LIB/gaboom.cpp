@@ -742,10 +742,11 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				tencm::TorsionalENM lig_enm_free;
 				lig_enm_free.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
 				if (lig_enm_free.is_built()) {
-					std::vector<double> eigs;
-					eigs.reserve(lig_enm_free.modes().size());
-					for (const auto& nm : lig_enm_free.modes())
-						if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
+					// Cartesian ligand ANM: rigid-body modes removed by RELATIVE cutoff, not
+					// by eigenvalue sign. A `> 0.0` filter kept whichever of the six landed
+					// positive from round-off, and those set the lower log-frequency bin edge.
+					// See tencm.h::vibrational_eigenvalues for the measurement.
+					const std::vector<double> eigs = lig_enm_free.vibrational_eigenvalues();
 					if (!eigs.empty()) {
 						const std::vector<std::vector<double>> single = { eigs };
 						FA->H_rep_ligand_ref = static_cast<float>(
@@ -1328,10 +1329,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 						// Half-open [lig_start, lig_end); latm[0] is inclusive.
 						lig_enm.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
 						if (!lig_enm.is_built()) continue;
-						std::vector<double> eigs;
-						eigs.reserve(lig_enm.modes().size());
-						for (const auto& nm : lig_enm.modes())
-							eigs.push_back(nm.eigenvalue);
+						// This site had NO filter at all, so all six rigid-body modes entered the
+						// pooled spectrum. Same relative-cutoff rule as every other consumer.
+						std::vector<double> eigs = lig_enm.vibrational_eigenvalues();
 						rep_eigs.push_back(std::move(eigs));
 					}
 					if (!rep_eigs.empty()) {
@@ -1646,10 +1646,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				tencm::TorsionalENM lig_enm_bound;
 				lig_enm_bound.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
 				if (lig_enm_bound.is_built()) {
-					std::vector<double> eigs;
-					eigs.reserve(lig_enm_bound.modes().size());
-					for (const auto& nm : lig_enm_bound.modes())
-						if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
+					// Rigid-body modes removed (relative cutoff), matching the unbound
+					// reference so bound-vs-free compares like with like.
+					const std::vector<double> eigs = lig_enm_bound.vibrational_eigenvalues();
 					if (!eigs.empty()) {
 						const std::vector<std::vector<double>> single = { eigs };
 						FA->H_rep_bound_complex = static_cast<float>(

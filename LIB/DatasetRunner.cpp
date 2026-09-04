@@ -959,22 +959,20 @@ static std::vector<double> compute_pose_eigenvalues(
             if (error) *error = "ligand tENCoM model did not build";
             return {};
         }
-        double max_lambda = 0.0;
-        for (const auto& mode : ligand_enm.modes()) {
-            if (std::isfinite(mode.eigenvalue))
-                max_lambda = std::max(max_lambda, mode.eigenvalue);
-        }
         // Cartesian ANM contains six rigid-body null modes plus any additional
         // disconnected-network nullspace. Remove numerical remnants relative to
         // the spectrum scale instead of treating tiny positive roundoff as motion.
-        const double rigid_cutoff = std::max(1e-10, max_lambda * 1e-8);
-        std::vector<double> eigs;
-        eigs.reserve(ligand_enm.modes().size());
-        for (const auto& mode : ligand_enm.modes()) {
-            if (std::isfinite(mode.eigenvalue) &&
-                mode.eigenvalue > rigid_cutoff)
-                eigs.push_back(mode.eigenvalue);
-        }
+        //
+        // This reasoning, and the max(1e-10, lam_max*1e-8) rule that implements
+        // it, used to live in an inline copy here and a second copy in
+        // ligand_tencom_pose.cpp -- while FOUR other consumers used a bare
+        // `> 0.0` that removes none of them. Consolidated into ONE
+        // implementation so the rule cannot drift again; n_dropped/n_expected
+        // additionally make the disconnected-network case LOUD rather than
+        // silently absorbed into the entropy.
+        int n_dropped = 0, n_expected = 0;
+        std::vector<double> eigs =
+            ligand_enm.vibrational_eigenvalues(&n_dropped, &n_expected);
         if (eigs.empty() && error) *error = "Eigen returned no positive modes";
         return eigs;
     } catch (const std::exception& exc) {
