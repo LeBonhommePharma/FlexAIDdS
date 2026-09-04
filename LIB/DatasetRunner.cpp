@@ -4140,7 +4140,56 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
 
     // Extract ligand.  Regenerate stale caches whenever the extractor version
     // changes or the source structure is newer than the cached SDF.
-    if (!ligand_sdf_is_current(ligand_path, ligand_source_path)) {
+    //
+    // ── CACHE IMMUTABILITY GUARD (FLEXAIDDS_CACHE_READONLY) ──────────────────
+    // extract_ligand() writes to `ligand_path`, which IS the cache path, so a
+    // failed freshness check silently OVERWRITES the cached ligand in the
+    // engine's own bond convention.  MEASURED CONSEQUENCE: an externally
+    // repaired cache (cache_ccd, rebuilt from the PDB Chemical Component
+    // Dictionary with KEKULIZED aromatic rings so RDKit/PoseBusters can
+    // sanitize it) was destroyed on first contact: measured 84/85 sanitizing
+    // and a kekulized bond block (1K3U: 15 single, 7 double, 0 aromatic) at
+    // 16:51Z, then 78/85 and order-4 aromatics (9/3/10) with every one of the
+    // 85 files rewritten at 16:53:37-38Z by a single invocation.
+    //
+    // WHICH of the two sufficient triggers fired is UNDETERMINED and cannot now
+    // be established: ligand_sdf_is_current() returns false if EITHER the
+    // FLEXAIDDS_LIGAND_EXTRACTOR_V5 stamp is absent from the first 4 lines OR a
+    // source .cif/.pdb is newer than the SDF, and no pre-damage copy of the
+    // repaired ligands survives anywhere on disk to test either one.  (Reading
+    // the stamp off the post-rewrite file proves nothing — it is the engine's
+    // own output.)  This guard is deliberately agnostic: it blocks the
+    // overwrite whichever gate fails.  The rewrite also resets the mtimes, so
+    // afterwards the freshness gate reads "current" and the destruction is
+    // invisible to a post-hoc check — content fingerprinting is the only
+    // reliable detector.
+    //
+    // With FLEXAIDDS_CACHE_READONLY=1 an existing, non-empty cached ligand is
+    // used AS-IS and never rewritten; the skip is announced so a stale cache
+    // can never be mistaken for a fresh one.  Default (unset) reproduces the
+    // previous behaviour exactly.
+    const char* ro_env = std::getenv("FLEXAIDDS_CACHE_READONLY");
+    const bool cache_readonly =
+        (ro_env && *ro_env && std::string(ro_env) != "0");
+    std::error_code lig_ec;
+    const bool cached_ligand_usable =
+        fs::exists(ligand_path, lig_ec) && !lig_ec &&
+        fs::file_size(ligand_path, lig_ec) > 0 && !lig_ec;
+
+    if (cache_readonly && cached_ligand_usable) {
+        if (!ligand_sdf_is_current(ligand_path, ligand_source_path)) {
+            std::cerr << "  [CACHE-RO] " << upper_id
+                      << ": freshness check FAILED but FLEXAIDDS_CACHE_READONLY=1"
+                      << " — using the cached ligand as-is, NOT re-extracting: "
+                      << ligand_path << "\n";
+        }
+        entry.ligand_path = ligand_path;
+    } else if (!ligand_sdf_is_current(ligand_path, ligand_source_path)) {
+        if (cache_readonly) {
+            std::cerr << "  [CACHE-RO] " << upper_id
+                      << ": no usable cached ligand, extracting despite"
+                      << " FLEXAIDDS_CACHE_READONLY=1 (cache was incomplete)\n";
+        }
         if (extract_ligand(ligand_source_path, ligand_path)) {
             entry.ligand_path = ligand_path;
         } else {
