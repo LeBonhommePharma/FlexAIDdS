@@ -208,6 +208,31 @@ flexible.
     value-join non-deterministic.
 13. **Multi-seed aggregation is majority-of-seeds, never union.** A union
     systematically flatters the noisier arm.
+
+    **WHY, so this is not "simplified" back into a union.** A p-value is a
+    function of the number of INDEPENDENT observations. Three seeds on one target
+    are three looks at the same target, not three targets: they share the
+    receptor, the pocket, the ligand and the reference pose. Majority-of-seeds
+    collapses them to ONE per-target verdict, so the headline denominator is the
+    number of TARGETS (84), never the number of cells (84 x 3 = 252). Reporting
+    252 would be pseudo-replication — the test would compute significance for a
+    sample size the experiment does not have, and it fails in the flattering
+    direction, so nothing in the output flags it.
+
+    Union is worse than merely non-independent: taking the best of three seeds is
+    a maximum over noise, which is biased upward by construction.
+
+    **The same rule binds any per-item replication, not just seeds:** restarts
+    within a cell, multiple poses of one target, multiple structures of one
+    receptor. MEASURED elsewhere in this project: an n=11 two-state result was 11
+    pairs drawn from only 5 receptors (3+3+2+2+1), so its reported Wilcoxon p was
+    computed over non-independent observations; the honest n was 5. Report the
+    count of independent units and name what the unit is.
+
+    **Residual, to be stated as a limitation rather than fixed:** the 84 Astex
+    targets are not 84 fully independent draws either — the set contains related
+    proteins (several kinases, several proteases). That affects interval width,
+    not the point rate, and it must be declared, not corrected away.
 | **Fallback MD5** | `9dc93717dfed0698006d88dd6a9627bc` (aggregator default; receipt wins) |
 
 ---
