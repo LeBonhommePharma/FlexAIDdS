@@ -5530,18 +5530,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " BenchmarkMode:    " << mode_label << "\n";
     }
 
+    // Argv-only hash helpers — no shell (security harden from main).
+    auto md5_of = [](const std::string& path) -> std::string {
+        if (path.empty() || !fs::exists(path) || !is_safe_exec_path(path)) return "";
+        std::string t = run_argv_first_token({"md5", "-q", path});
+        if (t.empty()) t = run_argv_first_token({"md5sum", path});
+        return t;
+    };
+
     // ── RUN_RECEIPT.json + legacy provenance.json ─────────────────────────
     // Align with C0 iCloud launch scripts: matrix/binary hashes, GA knobs,
     // mode, seed flags, and a full ProtocolConfig JSON snapshot. Best-effort:
     // failure here must not block docking.
     {
-        // Argv-only hash helpers — no shell (security harden from main).
-        auto md5_of = [](const std::string& path) -> std::string {
-            if (path.empty() || !fs::exists(path) || !is_safe_exec_path(path)) return "";
-            std::string t = run_argv_first_token({"md5", "-q", path});
-            if (t.empty()) t = run_argv_first_token({"md5sum", path});
-            return t;
-        };
         auto sha256_of = [](const std::string& path) -> std::string {
             if (path.empty() || !fs::exists(path) || !is_safe_exec_path(path)) return "";
             std::string t = flexaids::posebust::sha256_file(path);
@@ -5912,6 +5913,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         float cached_csv_best_score = 0.0f;
         float cached_csv_predicted_dg = 0.0f;
         int cached_csv_num_poses = 0;
+        int cached_docking_exit_code = -1;
+        bool cached_docking_completed = false;
         double cached_csv_wall_time_s = 0.0;
         if (!ignore_cache && config.skip_completed && fs::exists(out_dir)) {
             int cached_poses = 0;
@@ -5993,7 +5996,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         cached_csv_best_score = parse_float_cell("best_score", 0.0f);
                         cached_csv_predicted_dg = parse_float_cell("predicted_dG", 0.0f);
                         cached_csv_num_poses = parse_int_cell("num_poses", 0);
+                        result.matrix_md5 = cell_for("matrix_md5");
                         cached_csv_wall_time_s = parse_double_cell("wall_time_s", 0.0);
+                        // A pose or stale success flag does not witness a child
+                        // exit. Legacy cache rows remain explicitly unwitnessed.
+                        cached_docking_exit_code = docking_exit_code_or_unknown(cell_for("docking_exit_code"));
+                        const auto completed = cell_for("docking_completed");
+                        cached_docking_completed = completed == "1" || completed == "true" || completed == "True";
                     }
                 }
             } catch (...) {
@@ -6012,8 +6021,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
         }
 
-        // ret is initialised to 0; for cached runs we never call exec_cmd so
-        // the success condition (ret == 0 && n_poses > 0 && !stuck) still works.
+        // Cached execution status is read separately from its receipt; the
+        // initial value of ret must not manufacture a successful child exit.
         int ret = 0;
 
         if (!skip) {
@@ -6855,6 +6864,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Paths are shell_quote'd: dock still uses /bin/sh -c for env
             // prefixes + stdout/stderr redirection (fork_exec_argv cannot).
             std::string data_dir_arg;
+            std::string selected_matrix_path;
             {
                 // FLEXAIDDS_DATA_DIR remains the explicit matrix-swap hook for
                 // controlled A/B tests. Normal runs prefer data staged beside
@@ -6869,6 +6879,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             "FLEXAIDDS_DATA_DIR/path is unsafe for shell (NUL/newline/control)");
                     }
                     data_dir_arg = " --data-dir " + shell_quote(canon) + " ";
+                    selected_matrix_path = canon + "/MC_st0r5.2_6.dat";
                 } else {
                     std::string bin_dir = flexaidds_bin;
                     auto slash = bin_dir.rfind('/');
@@ -6878,12 +6889,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     if (fs::exists(staged_candidate + "/MC_st0r5.2_6.dat")) {
                         data_dir_arg = " --data-dir " +
                                        shell_quote(fs::canonical(staged_candidate).string()) + " ";
+                        selected_matrix_path = staged_candidate + "/MC_st0r5.2_6.dat";
                     } else if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
                         data_dir_arg = " --data-dir " +
                                        shell_quote(fs::canonical(wrk_candidate).string()) + " ";
+                        selected_matrix_path = wrk_candidate + "/MC_st0r5.2_6.dat";
                     }
                 }
             }
+            result.matrix_md5 = md5_of(selected_matrix_path);
             // ── Per-worker OMP thread budget ──────────────────────────
             // Each FlexAIDdS subprocess inherits the parent environment, so
             // OMP_NUM_THREADS must be set explicitly in the command string.
@@ -7580,7 +7594,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         // Runtime completion is tracked separately from benchmark success.
         // The latter is only true once we have a valid pose RMSD under 2 Å.
-        const bool docking_completed = (ret == 0 && n_poses > 0 && !result.stuck);
+        result.docking_exit_code = skip ? cached_docking_exit_code : ret;
+        const bool docking_completed = (result.docking_exit_code == 0 && n_poses > 0 &&
+                                        !result.stuck && (!skip || cached_docking_completed));
+        result.docking_completed = docking_completed;
+        if (!docking_completed && result.rmsd_fail_reason == "none")
+            result.rmsd_fail_reason = "docking_incomplete";
 
         // If the dock produced no output, surface stderr for clues.
         //
@@ -7598,7 +7617,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::string err_line;
                 int err_lines = 0;
                 std::cerr << "  [WARN] " << entry.pdb_id
-                          << " produced no output poses (exit " << ret
+                          << " produced no output poses (exit " << result.docking_exit_code
                           << "). stderr:\n";
                 while (std::getline(stderr_file, err_line) && err_lines < 5) {
                     std::cerr << "    " << err_line << "\n";
@@ -8681,7 +8700,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
                            "cf_best_cluster,"
                            "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z,"
-                           "rmsd_fail_reason\n";
+                           "rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -8766,7 +8785,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.thermo_CF_r2s << ","
                         << "\"" << result.thermo_binding_regime << "\","
                         << result.ensemble_log_Z << ","
-                        << result.rmsd_fail_reason << "\n";
+                        << result.rmsd_fail_reason << "," << result.docking_exit_code
+                        << "," << (result.docking_completed ? 1 : 0) << "," << result.matrix_md5 << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -8942,22 +8962,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             static_cast<double>(claim_ready_count) / report.total_systems;
     }
 
-    // Mean RMSD
-    if (!rmsds.empty()) {
-        report.mean_rmsd = std::accumulate(rmsds.begin(), rmsds.end(), 0.0) / rmsds.size();
-    }
-
-    // Median RMSD
-    if (!rmsds.empty()) {
-        auto sorted = rmsds;
-        std::sort(sorted.begin(), sorted.end());
-        size_t mid = sorted.size() / 2;
-        if (sorted.size() % 2 == 0) {
-            report.median_rmsd = (sorted[mid - 1] + sorted[mid]) / 2.0;
-        } else {
-            report.median_rmsd = sorted[mid];
-        }
-    }
+    const auto rmsd_summary = summarize_rmsds(rmsds);
+    report.valid_rmsd_count = static_cast<int>(rmsd_summary.count);
+    report.mean_rmsd = rmsd_summary.mean;
+    report.median_rmsd = rmsd_summary.median;
+    report.completed_systems = static_cast<int>(std::count_if(
+        report.results.begin(), report.results.end(),
+        [](const DockingResult& r) { return r.docking_completed; }));
 
     // Correlation metrics
     if (pred_affinities.size() >= 3) {
@@ -9021,8 +9032,15 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         ofs << "| Success rate (legacy == RMSD-only) | "
             << (report.success_rate * 100.0) << "% |\n";
         ofs << std::setprecision(2);
-        ofs << "| Mean elected ordered RMSD (Å) | " << report.mean_rmsd << " |\n";
-        ofs << "| Median elected ordered RMSD (Å) | " << report.median_rmsd << " |\n";
+        ofs << "| Runtime-completed systems | " << report.completed_systems << " |\n";
+        ofs << "| Valid elected ordered RMSDs | " << report.valid_rmsd_count << " |\n";
+        ofs << "| Mean elected ordered RMSD (Å) | ";
+        if (report.valid_rmsd_count > 0 && std::isfinite(report.mean_rmsd)) ofs << report.mean_rmsd;
+        else ofs << "NA";
+        ofs << " |\n| Median elected ordered RMSD (Å) | ";
+        if (report.valid_rmsd_count > 0 && std::isfinite(report.median_rmsd)) ofs << report.median_rmsd;
+        else ofs << "NA";
+        ofs << " |\n";
         ofs << "| Affinity pairs | " << report.affinity_pairs << " |\n";
         ofs << "\n**Notes:** Headline claim success is **claim_ready** only "
                "(ordered RMSD ≤2 Å + official PoseBusters + tENCoM/Eigen + hash "
@@ -9169,7 +9187,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         }
         // Appended at END (not mid-header): column names are position-stable
         // for live campaigns; new diagnostics go last.
-        ofs << ",rmsd_fail_reason\n";
+        ofs << ",rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5,pb_ran,pb_n_checks,pb_n_pass,pb_n_fail\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -9237,7 +9255,10 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                     << "," << r.thermo_CF_r2s
                     << ",\"" << r.thermo_binding_regime << "\"";
             }
-            ofs << "," << r.rmsd_fail_reason << "\n";
+            ofs << "," << r.rmsd_fail_reason << "," << r.docking_exit_code
+                << "," << (r.docking_completed ? 1 : 0) << "," << r.matrix_md5
+                << "," << (r.pb_ran ? 1 : 0) << "," << r.pb_n_checks
+                << "," << r.pb_n_pass << "," << r.pb_n_fail << "\n";
         }
 
         ofs.close();
@@ -9251,7 +9272,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::ofstream ofs(summary_csv);
 
         // Headline: claim_ready. RMSD-only and pool ceiling stay diagnostic.
-        // suspect_zero_success is appended at END (position-stable header):
+        // Runtime and valid-count fields are appended; existing positions stay stable:
         // 1 when the zero-success plausibility gate fired (bug 2026-08-22).
         ofs << "dataset,total_systems,"
                "claim_ready_count,claim_ready_rate,"
@@ -9259,7 +9280,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "successful_rmsd,success_rate_rmsd,"
                "successful,success_rate,"
                "mean_rmsd,median_rmsd,pearson_r,spearman_rho,kendall_tau,"
-               "suspect_zero_success\n";
+               "suspect_zero_success,valid_rmsd_count,completed_systems\n";
         ofs << std::fixed << std::setprecision(4)
             << report.dataset_name << ","
             << report.total_systems << ","
@@ -9270,13 +9291,15 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             << report.successful_rmsd << ","
             << report.success_rate_rmsd << ","
             << report.successful << ","
-            << report.success_rate << ","
-            << report.mean_rmsd << ","
-            << report.median_rmsd << ","
-            << report.pearson_r << ","
+            << report.success_rate << ",";
+        if (report.valid_rmsd_count > 0 && std::isfinite(report.mean_rmsd)) ofs << report.mean_rmsd;
+        ofs << ",";
+        if (report.valid_rmsd_count > 0 && std::isfinite(report.median_rmsd)) ofs << report.median_rmsd;
+        ofs << "," << report.pearson_r << ","
             << report.spearman_rho << ","
             << report.kendall_tau << ","
-            << (report.suspect_zero_success ? 1 : 0) << "\n";
+            << (report.suspect_zero_success ? 1 : 0) << ","
+            << report.valid_rmsd_count << "," << report.completed_systems << "\n";
 
         ofs.close();
         std::cout << "  Summary CSV: " << summary_csv << "\n";

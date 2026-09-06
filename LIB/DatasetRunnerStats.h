@@ -10,11 +10,46 @@
 #pragma once
 
 #include <array>
+#include <charconv>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <numeric>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace dataset {
+
+// Cache restoration must preserve a recorded failure code, not collapse it to
+// the -1 sentinel used for unknown/not-started/timeout outcomes.
+inline int docking_exit_code_or_unknown(const std::string& value) {
+    int code = -1;
+    const auto parsed = std::from_chars(value.data(), value.data() + value.size(), code);
+    return parsed.ec == std::errc{} && parsed.ptr == value.data() + value.size() ? code : -1;
+}
+
+struct RmsdSummary {
+    size_t count{0};
+    double mean{std::numeric_limits<double>::quiet_NaN()};
+    double median{std::numeric_limits<double>::quiet_NaN()};
+};
+
+// Reject missing/invalid measurements; a real zero RMSD remains a measurement.
+inline RmsdSummary summarize_rmsds(std::vector<double> values) {
+    values.erase(std::remove_if(values.begin(), values.end(), [](double v) {
+        return !std::isfinite(v) || v < 0;
+    }), values.end());
+    RmsdSummary out;
+    out.count = values.size();
+    if (values.empty()) return out;
+    out.mean = std::accumulate(values.begin(), values.end(), 0.0) / values.size();
+    std::sort(values.begin(), values.end());
+    const auto mid = values.size() / 2;
+    out.median = values.size() % 2 ? values[mid] : (values[mid-1] + values[mid]) / 2;
+    return out;
+}
+
 
 /// Pearson correlation coefficient (computed from scratch).
 /// Returns 0.0 if sizes differ, n < 2, or either series is constant.

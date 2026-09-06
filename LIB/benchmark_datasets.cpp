@@ -112,8 +112,14 @@ static void print_publication_table(const dataset::BenchmarkReport& report) {
     printf("  │ Total systems               │ %18d │\n", report.total_systems);
     printf("  │ Successful (RMSD <= 2.0 A)  │ %18d │\n", report.successful);
     printf("  │ Success rate                │ %17.1f%% │\n", report.success_rate * 100.0);
-    printf("  │ Mean RMSD (Å)               │ %18.2f │\n", report.mean_rmsd);
-    printf("  │ Median RMSD (Å)             │ %18.2f │\n", report.median_rmsd);
+    printf("  │ Valid RMSDs                 │ %18d │\n", report.valid_rmsd_count);
+    if (report.valid_rmsd_count > 0 && std::isfinite(report.mean_rmsd) && std::isfinite(report.median_rmsd)) {
+        printf("  │ Mean RMSD (Å)               │ %18.2f │\n", report.mean_rmsd);
+        printf("  │ Median RMSD (Å)             │ %18.2f │\n", report.median_rmsd);
+    } else {
+        printf("  │ Mean RMSD (Å)               │ %18s │\n", "NA");
+        printf("  │ Median RMSD (Å)             │ %18s │\n", "NA");
+    }
     printf("  │ Affinity pairs              │ %18d │\n", report.affinity_pairs);
     if (report.affinity_pairs >= 3 &&
         std::isfinite(report.pearson_r) &&
@@ -748,6 +754,7 @@ int main(int argc, char** argv) {
     }
     std::cout << "\n";
 
+    int runtime_exit_code = 0;
     // Handle "all" benchmark
     if (benchmark_name == "all") {
         std::vector<std::string> all_benchmarks = {
@@ -761,17 +768,21 @@ int main(int argc, char** argv) {
             std::cout << "  Running: " << name << "\n";
             std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
-            run_single_benchmark(name, runner, config, prepare_only, list_codes_only, only_codes);
+            auto report = run_single_benchmark(name, runner, config, prepare_only, list_codes_only, only_codes);
+            runtime_exit_code = std::max(runtime_exit_code,
+                dataset::benchmark_runtime_exit_code(report, prepare_only || list_codes_only));
         }
 
         // Print combined summary
         std::cout << "\n\n═══════════════════════════════════════════════════════════════\n";
-        std::cout << "  All benchmarks completed. Results in: " << output_dir << "\n";
+        std::cout << "  All benchmark attempts finished. Results in: " << output_dir << "\n";
         std::cout << "═══════════════════════════════════════════════════════════════\n";
     } else {
         const auto fleet_started = std::chrono::steady_clock::now();
         auto report = run_single_benchmark(benchmark_name, runner, config, prepare_only, list_codes_only, only_codes);
 
+        runtime_exit_code = dataset::benchmark_runtime_exit_code(
+            report, prepare_only || list_codes_only);
         if (fleet_mode) {
             const double duration_s = std::chrono::duration<double>(
                 std::chrono::steady_clock::now() - fleet_started).count();
@@ -813,5 +824,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    return 0;
+    if (runtime_exit_code != 0)
+        std::cerr << "ERROR: Incomplete docking; inspect per-target runtime fields and child logs\n";
+    return runtime_exit_code;
 }
