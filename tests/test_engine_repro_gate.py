@@ -107,6 +107,9 @@ if os.environ.get('FLEXAIDDS_GEN0_RECEIPT') and MODE!='missing_gen0':
     if MODE=='incomplete_gen0': receipt['complete']=False
     Path(os.environ['FLEXAIDDS_GEN0_RECEIPT']).write_text(json.dumps(receipt))
 print('synthetic fake-executable run completed')
+if MODE=='log_vcf_diag': print('[VCF-DIAG] k=1 i=1 | skipped atom scoring')
+if MODE=='log_ownership_pointer': print('Caught: Atom OptRes pointer is not owned by the master OptRes array')
+if MODE=='log_ownership_size': print('Caught: Atom/OptRes workspace sizes changed after binding capture')
 if MODE=='exit_nonzero': sys.exit(7)
 '''
     path.write_text(code)
@@ -166,6 +169,110 @@ def test_same_binary_basename_has_distinct_runs_and_only_provenance_normalizes(s
     assert ma["source_build"]["source_commit"]
     assert len(ma["outputs"]["poses"]) == 10
     assert ma["environment"]["FLEXAID_SEED"] == "12345"
+    assert ma["environment"]["FLEXAIDDS_VCF_DIAG"] == "1"
+
+
+@pytest.mark.parametrize("mode", ["log_vcf_diag", "log_ownership_pointer", "log_ownership_size"])
+def test_complete_artifacts_and_exit_zero_cannot_override_scoring_failure_log(setup, mode):
+    result, manifest, out = run_one(setup, "bad_log", mode=mode)
+    assert manifest["exit_code"] == 0
+    assert len(gate.inspect_outputs(out, True)["poses"]) == 10
+    assert result.returncode == 1
+    assert "skipped scoring or an ownership invariant failure" in manifest["errors"][0]
+    assert manifest["log"]["sha256"] == gate.sha256(out / "run.log")
+
+
+@pytest.mark.parametrize("marker", gate.SCORING_FAILURE_MARKERS)
+def test_saved_run_rescans_scoring_failure_log_even_with_matching_log_receipt(setup, marker):
+    _, _, left = run_one(setup, "left")
+    _, manifest, right = run_one(setup, "right")
+    log = right / "run.log"
+    with log.open("ab") as handle:
+        handle.write(b"prefix " + marker + b" suffix\n")
+    # Represents a receipt from an older producer that admitted diagnostic logs.
+    manifest["log"] = gate.pin_run_log(log)
+    (right / "run_manifest.json").write_text(json.dumps(manifest))
+    result, report = compare(setup, [left, right])
+    assert result.returncode == 1
+    assert "skipped scoring or an ownership invariant failure" in report["errors"][0]
+
+
+@pytest.mark.parametrize("change", ["append", "truncate", "remove", "symlink"])
+def test_saved_run_log_must_remain_present_and_match_original_receipt(setup, change):
+    _, _, left = run_one(setup, "left")
+    _, _, right = run_one(setup, "right")
+    log = right / "run.log"
+    if change == "append":
+        with log.open("ab") as handle: handle.write(b"new output\n")
+    elif change == "truncate":
+        log.write_bytes(b"")
+    else:
+        log.unlink()
+        if change == "symlink": log.symlink_to(left / "run.log")
+    result, report = compare(setup, [left, right])
+    assert result.returncode == 1
+    assert "run.log" in report["errors"][0]
+
+
+@pytest.mark.parametrize("value", ["0", "false", "", "1"])
+def test_vcf_diagnostic_environment_cannot_be_overridden(setup, value):
+    result, manifest, _ = run_one(setup, "override_diag", extra=("--env", "FLEXAIDDS_VCF_DIAG=" + value))
+    assert result.returncode == 1
+    assert "protected" in manifest["errors"][0]
+
+
+@pytest.mark.parametrize("entry", ["FLEXAIDDS_ORACLE_SITE=1", "FLEXAIDDS_SCORE_NATIVE=1",
+                                 "FLEXAIDDS_GRID_CACHE_DIR=/tmp/old_grid", "FLEXAIDDS_EVAL_SCALE_DIHEDRAL=1",
+                                 "FLEXAID_UNSUPPORTED_CONTROL=1"])
+def test_explicit_scientific_overrides_fail_before_execution_without_changing_inputs(setup, entry):
+    inputs = [setup[name] for name in ("config", "receptor", "ligand")]
+    inputs.append(setup["data"] / "MC_st0r5.2_6.dat")
+    before = {path: path.read_bytes() for path in inputs}
+    result, manifest, out = run_one(setup, "science_override", extra=("--env", entry))
+    assert result.returncode == 1
+    assert "protected" in manifest["errors"][0]
+    assert not (out / "run.log").exists()
+    assert {path: path.read_bytes() for path in inputs} == before
+
+
+@pytest.mark.parametrize("entry", ["FLEXAIDDS_ORACLE_SITE", "FLEXAIDDS_SCORE_NATIVE",
+                                 "FLEXAIDDS_GRID_CACHE_DIR", "FLEXAIDDS_EVAL_SCALE_DIHEDRAL",
+                                 "FLEXAID_UNSUPPORTED_CONTROL"])
+def test_saved_run_cannot_admit_unsupported_scientific_environment(setup, entry):
+    _, _, left = run_one(setup, "left")
+    _, manifest, right = run_one(setup, "right")
+    manifest["environment"][entry] = "1"
+    (right / "run_manifest.json").write_text(json.dumps(manifest))
+    result, report = compare(setup, [left, right])
+    assert result.returncode == 1
+    assert "unsupported scientific environment" in report["errors"][0]
+
+
+def test_explicit_nonscientific_environment_is_retained(setup):
+    result, manifest, _ = run_one(setup, "nonscience_env", extra=("--env", "TEST_RECEIPT_NOTE=fixture"))
+    assert result.returncode == 0
+    assert manifest["environment"]["TEST_RECEIPT_NOTE"] == "fixture"
+
+
+@pytest.mark.parametrize("value", [None, "0", "false"])
+def test_saved_run_with_missing_or_disabled_vcf_guard_is_rejected(setup, value):
+    _, _, left = run_one(setup, "left")
+    _, manifest, right = run_one(setup, "right")
+    if value is None:
+        manifest["environment"].pop("FLEXAIDDS_VCF_DIAG")
+    else:
+        manifest["environment"]["FLEXAIDDS_VCF_DIAG"] = value
+    (right / "run_manifest.json").write_text(json.dumps(manifest))
+    result, report = compare(setup, [left, right])
+    assert result.returncode == 1
+    assert "diagnostic guard must be explicitly enabled" in report["errors"][0]
+
+
+def test_log_marker_across_read_boundary_is_rejected(tmp_path):
+    path = tmp_path / "run.log"
+    path.write_bytes(b"x" * (1024 * 1024 - 3) + b"[VCF-DIAG] boundary\n")
+    with pytest.raises(gate.GateError, match="VCF-DIAG"):
+        gate.validate_run_log(path)
 
 
 @pytest.mark.parametrize("mode", ["missing_rank", "extra_rank", "no_artifacts", "nan_cf", "no_cf", "no_atoms",
@@ -343,10 +450,12 @@ def test_gen0_duplicate_multiplicity_is_preserved(tmp_path):
 def test_inherited_science_environment_is_cleared(setup, monkeypatch):
     monkeypatch.setenv("FLEXAIDDS_ORACLE_SITE", "unintended")
     monkeypatch.setenv("FLEXAID_SEED", "98765")
+    monkeypatch.setenv("FLEXAIDDS_VCF_DIAG", "0")
     result, manifest, _ = run_one(setup, "clean_env")
     assert result.returncode == 0
     assert "FLEXAIDDS_ORACLE_SITE" not in manifest["environment"]
     assert manifest["environment"]["FLEXAID_SEED"] == "12345"
+    assert manifest["environment"]["FLEXAIDDS_VCF_DIAG"] == "1"
 
 
 def test_protected_environment_cannot_override_seed(setup):

@@ -9,6 +9,8 @@ be normalized; every other emitted byte, including the seed, is retained.
 
 All gate comparisons require generation-zero receipts. Explicit observer-off
 transparency runs are non-gate diagnostics and cannot pass a gate comparison. METHODOLOGY.md sections 1-2 define gate interpretation.
+Canonical FLEXAID_ and FLEXAIDDS_ scientific controls are pinned internally;
+they cannot be supplied or overridden through --env.
 """
 from __future__ import annotations
 
@@ -43,7 +45,16 @@ RECORD_FIELDS = {"index", "status", "genes", "cf", "evalue_bits", "app_evalue_bi
                  "boltzmann_weight_bits", "free_energy_bits", "ring_phases_bits", "ring_six", "ring_five"}
 PROTECTED_ENV = {"FLEXAID_SEED", "OMP_NUM_THREADS", "FLEXAIDDS_NO_SEC", "FLEXAIDDS_RESTARTS",
                  "FLEXAIDDS_DATA_DIR", "FLEXAIDDS_PARALLEL_REPRODUCE", "FLEXAIDDS_GEN0_RECEIPT", "FLEXAIDDS_CACHE_READONLY",
-                 "FLEXAIDDS_VORONOI_KEYED_JITTER"}
+                 "FLEXAIDDS_VORONOI_KEYED_JITTER", "FLEXAIDDS_VCF_DIAG"}
+SCIENCE_ENV_PREFIXES = ("FLEXAID_", "FLEXAIDDS_")
+CANONICAL_SCIENCE_ENV = {"FLEXAID_SEED", "FLEXAIDDS_NO_SEC", "FLEXAIDDS_RESTARTS",
+                         "FLEXAIDDS_CACHE_READONLY", "FLEXAIDDS_VCF_DIAG", "FLEXAIDDS_DATA_DIR",
+                         "FLEXAIDDS_PARALLEL_REPRODUCE", "FLEXAIDDS_GEN0_RECEIPT"}
+SCORING_FAILURE_MARKERS = (
+    b"[VCF-DIAG]",
+    b"Atom OptRes pointer is not owned by the master OptRes array",
+    b"Atom/OptRes workspace sizes changed after binding capture",
+)
 
 
 class GateError(ValueError):
@@ -362,6 +373,28 @@ def verify_pins(pins: dict) -> None:
                 raise GateError(f"input changed after pinning: {record['path']}")
 
 
+def pin_run_log(path: Path) -> dict:
+    # Empty stdout/stderr is allowed, but a missing or redirected log is not.
+    if path.is_symlink() or not path.is_file():
+        raise GateError("run.log must be an existing regular file, not a symlink")
+    return {"path": str(path.resolve(strict=True)), "bytes": path.stat().st_size,
+            "sha256": sha256(path)}
+
+
+def validate_run_log(path: Path) -> None:
+    """Reject skipped scoring and ownership failures even after child exit zero."""
+    carry = b""
+    overlap = max(map(len, SCORING_FAILURE_MARKERS)) - 1
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            data = carry + block
+            for marker in SCORING_FAILURE_MARKERS:
+                if marker in data:
+                    raise GateError("run.log reports skipped scoring or an ownership invariant failure: "
+                                    + marker.decode("ascii"))
+            carry = data[-overlap:]
+
+
 def run_one(args: argparse.Namespace) -> int:
     args.require_gen0 = not args.observer_off_transparency
     out = args.out.resolve()
@@ -392,13 +425,13 @@ def run_one(args: argparse.Namespace) -> int:
         environment = {"PATH": os.environ.get("PATH", os.defpath), "HOME": os.environ.get("HOME", str(out)),
                        "TMPDIR": str(out / "tmp"), "LANG": "C", "LC_ALL": "C", "TZ": "UTC",
                        "FLEXAID_SEED": SEED, "FLEXAIDDS_NO_SEC": "1", "FLEXAIDDS_RESTARTS": "1",
-                       "FLEXAIDDS_CACHE_READONLY": "1",
+                       "FLEXAIDDS_CACHE_READONLY": "1", "FLEXAIDDS_VCF_DIAG": "1",
                        "FLEXAIDDS_DATA_DIR": str(data_dir), "OMP_NUM_THREADS": str(args.omp_threads),
                        "OMP_DYNAMIC": "FALSE", "FLEXAIDDS_PARALLEL_REPRODUCE": "1" if args.parallel_reproduce == "on" else "0"}
         for entry in args.env:
             key, separator, value = entry.partition("=")
             if (not separator or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or key in PROTECTED_ENV
-                    or key.startswith(("OMP_", "KMP_", "GOMP_")) or "DETERMINISTIC" in key):
+                    or key.startswith(SCIENCE_ENV_PREFIXES + ("OMP_", "KMP_", "GOMP_")) or "DETERMINISTIC" in key):
                 raise GateError(f"invalid/protected explicit environment override: {entry!r}")
             if key in environment:
                 raise GateError(f"duplicate explicit environment key: {key}")
@@ -435,7 +468,8 @@ def run_one(args: argparse.Namespace) -> int:
                 manifest["timed_out"] = isinstance(exc, subprocess.TimeoutExpired)
                 raise GateError("engine timeout" if manifest["timed_out"] else "run interrupted")
         manifest["wall_seconds"] = time.monotonic() - start
-        manifest["log"] = pin_file(out / "run.log") if (out / "run.log").stat().st_size else {"path": str(out / "run.log"), "bytes": 0, "sha256": sha256(out / "run.log")}
+        manifest["log"] = pin_run_log(out / "run.log")
+        validate_run_log(out / "run.log")
         if manifest["exit_code"] != 0:
             raise GateError(f"engine exited {manifest['exit_code']}")
         verify_pins(manifest)
@@ -465,6 +499,16 @@ def load_run(path: Path) -> dict:
         raise GateError(f"run did not complete successfully: {out}")
     if manifest.get("gate_eligible") is not True or manifest.get("require_gen0") is not True:
         raise GateError("observer-off transparency runs cannot pass a gate: generation-zero evidence required")
+    unsupported = sorted(key for key in manifest["environment"]
+                         if key.startswith(SCIENCE_ENV_PREFIXES) and key not in CANONICAL_SCIENCE_ENV)
+    if unsupported:
+        raise GateError("unsupported scientific environment keys in saved run: " + ", ".join(unsupported))
+    if manifest["environment"].get("FLEXAIDDS_VCF_DIAG") != "1":
+        raise GateError("VCF diagnostic guard must be explicitly enabled for a gate")
+    log_pin = pin_run_log(out / "run.log")
+    validate_run_log(out / "run.log")
+    if log_pin != manifest.get("log"):
+        raise GateError(f"run.log changed after receipt: {out}")
     verify_pins(manifest)
     current = inspect_outputs(out, manifest.get("require_gen0") is True, int(manifest["environment"]["OMP_NUM_THREADS"]))
     if current != manifest.get("outputs"):
@@ -539,7 +583,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--require-gen0", action="store_true", help="Generation-zero receipt is mandatory for gates (default)")
     run.add_argument("--observer-off-transparency", action="store_true", help="Non-gate diagnostic only; cannot pass compare")
     run.add_argument("--timeout", type=float, default=21600)
-    run.add_argument("--env", action="append", default=[])
+    run.add_argument("--env", action="append", default=[],
+                     help="Additional nonscientific environment only; FLEXAID_/FLEXAIDDS_ overrides are forbidden")
     compare = commands.add_parser("compare")
     compare.add_argument("--kind", choices=("parity", "determinism"), required=True)
     compare.add_argument("--runs", type=Path, nargs="+", required=True)
