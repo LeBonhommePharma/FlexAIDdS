@@ -86,7 +86,8 @@ std::string utc_now() {
 }
 
 bool execution_completed(const dataset::DockingResult& result) {
-    return result.num_poses > 0 && !result.elected_pose_path.empty();
+    return result.docking_completed && result.docking_exit_code == 0 &&
+           result.num_poses > 0 && !result.stuck;
 }
 
 bool validators_complete(const dataset::DockingResult& result) {
@@ -170,6 +171,8 @@ std::string FleetRunner::serialize_chunk_result(
         out << "    {\n";
         out << "      \"pdb_id\": "; json_string(out, result.pdb_id); out << ",\n";
         out << "      \"execution_completed\": " << json_bool(execution_completed(result)) << ",\n";
+        out << "      \"docking_exit_code\": " << result.docking_exit_code << ",\n";
+        out << "      \"matrix_md5\": "; json_string(out, result.matrix_md5); out << ",\n";
         out << "      \"num_poses\": " << result.num_poses << ",\n";
         out << "      \"wall_time_s\": "; json_number(out, result.wall_time_s); out << ",\n";
         out << "      \"rmsd_hungarian_a\": "; json_number(out, result.rmsd_hungarian); out << ",\n";

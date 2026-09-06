@@ -4,6 +4,7 @@
 #include "statmech.h"
 #include "SoftBetaFreeEnergy.h"
 #include "EnvFlags.h"
+#include "PoseProvenance.h"
 #include "ClusterRepMode.h"
 #include "TargetServer.h"
 #include "tencom_ledger.h"
@@ -844,7 +845,8 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 		//printf("filename=<%s>\n",tmp_end_strfile);
 		//PAUSE;
-		write_pdb(FA,atoms,residue,tmp_end_strfile,remark);
+		std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(remark);
+		write_pdb(FA,atoms,residue,tmp_end_strfile,pose_remarks.data());
 
 		// ── Write the receptor AS SCORED (FLEXAIDDS_WRITE_FLEXED_RECEPTOR) ──
 		// DEFAULT OFF. Nothing above this point is touched: the pose PDB has

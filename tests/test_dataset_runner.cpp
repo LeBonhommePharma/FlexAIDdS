@@ -30,6 +30,7 @@
 #include <filesystem>
 #include <fstream>
 #include <numeric>
+#include <map>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -2313,3 +2314,95 @@ TEST(RestartThrottle, SlidingWindowBoundsLiveChildren) {
     EXPECT_EQ(guard.active_count(), 0u);
 }
 #endif  // !_MSC_VER
+
+
+TEST(ReportRuntime, CompletionIsIndependentOfScientificSuccess) {
+    BenchmarkReport report;
+    EXPECT_EQ(benchmark_runtime_exit_code(report), 2);
+    EXPECT_EQ(benchmark_runtime_exit_code(report, true), 0);
+    report.total_systems = 1;
+    DockingResult result;
+    result.pdb_id = "1G9V";
+    result.num_poses = 2;
+    result.rmsd_to_crystal = 9.0f;
+    result.docking_completed = true;
+    result.docking_exit_code = 0;
+    report.results = {result};
+    // An inaccurate, PB-failing completed search is a completed process.
+    EXPECT_FALSE(report.results[0].success);
+    EXPECT_FALSE(report.results[0].claim_ready);
+    EXPECT_EQ(benchmark_runtime_exit_code(report), 0);
+    report.results[0].docking_exit_code = 139;
+    EXPECT_EQ(benchmark_runtime_exit_code(report), 2);
+    report.results[0].docking_exit_code = 0;
+    report.results[0].num_poses = 0;
+    EXPECT_EQ(benchmark_runtime_exit_code(report), 2);
+    report.results[0] = result;
+    report.results[0].docking_completed = false;
+    EXPECT_EQ(benchmark_runtime_exit_code(report), 2);
+    report.results[0] = result;
+    report.results[0].stuck = true;
+    EXPECT_EQ(benchmark_runtime_exit_code(report), 2);
+    report.results[0] = result;
+    report.total_systems = 2;
+    EXPECT_EQ(benchmark_runtime_exit_code(report), 2);
+}
+
+TEST(ReportRmsd, MissingMeasurementsAreNotZero) {
+    const auto missing = summarize_rmsds({-1.0, std::numeric_limits<double>::quiet_NaN(),
+                                        std::numeric_limits<double>::infinity()});
+    EXPECT_EQ(missing.count, 0u);
+    EXPECT_TRUE(std::isnan(missing.mean));
+    EXPECT_TRUE(std::isnan(missing.median));
+    const auto measured = summarize_rmsds({-1.0, 0.0, 2.0, 4.0, 8.0});
+    EXPECT_EQ(measured.count, 4u);
+    EXPECT_DOUBLE_EQ(measured.mean, 3.5);
+    EXPECT_DOUBLE_EQ(measured.median, 3.0);
+}
+
+TEST(ReportGeneration, ZeroPoseReportPreservesMissingnessAndRuntime) {
+    BenchmarkReport report;
+    report.dataset_name = "Audit Missing";
+    report.total_systems = 1;
+    DockingResult result;
+    result.pdb_id = "1MQ6";
+    result.rmsd_fail_reason = "docking_incomplete";
+    result.docking_exit_code = 139;
+    report.results = {result};
+    const auto dir = fs::temp_directory_path() / "flexaidds_audit_missing_report";
+    fs::create_directories(dir);
+    DatasetRunner runner((dir / "cache").string());
+    runner.write_report(report, dir.string());
+    std::ifstream md(dir / "audit_missing_report.md");
+    const std::string text((std::istreambuf_iterator<char>(md)), {});
+    EXPECT_NE(text.find("| Valid elected ordered RMSDs | 0 |"), std::string::npos);
+    EXPECT_NE(text.find("| Mean elected ordered RMSD (Å) | NA |"), std::string::npos);
+    EXPECT_NE(text.find("| Median elected ordered RMSD (Å) | NA |"), std::string::npos);
+    std::ifstream summary(dir / "audit_missing_summary.csv");
+    std::string header, row;
+    std::getline(summary, header); std::getline(summary, row);
+    EXPECT_EQ(std::count(header.begin(), header.end(), ','), std::count(row.begin(), row.end(), ','));
+    std::stringstream hs(header), rs(row);
+    std::string key, value;
+    std::map<std::string, std::string> fields;
+    while (std::getline(hs, key, ',') && std::getline(rs, value, ',')) fields[key] = value;
+    EXPECT_EQ(fields["mean_rmsd"], "");
+    EXPECT_EQ(fields["median_rmsd"], "");
+    EXPECT_EQ(fields["valid_rmsd_count"], "0");
+    EXPECT_EQ(fields["completed_systems"], "0");
+    std::ifstream results(dir / "audit_missing_results.csv");
+    std::getline(results, header); std::getline(results, row);
+    EXPECT_NE(header.find("rmsd_fail_reason,docking_exit_code,docking_completed"), std::string::npos);
+    EXPECT_NE(row.find("docking_incomplete,139,0"), std::string::npos);
+    fs::remove_all(dir);
+}
+
+TEST(ReportRuntime, CachedExitCodesRetainRecordedFailures) {
+    EXPECT_EQ(docking_exit_code_or_unknown("0"), 0);
+    EXPECT_EQ(docking_exit_code_or_unknown("139"), 139);
+    EXPECT_EQ(docking_exit_code_or_unknown("6"), 6);
+    EXPECT_EQ(docking_exit_code_or_unknown("-1"), -1);
+    EXPECT_EQ(docking_exit_code_or_unknown(""), -1);
+    EXPECT_EQ(docking_exit_code_or_unknown("0garbage"), -1);
+    EXPECT_EQ(docking_exit_code_or_unknown("9999999999999999999999"), -1);
+}

@@ -8,25 +8,8 @@
 #include "fast_optics.hpp"
 #include "SoftBetaFreeEnergy.h"
 #include "RngSeed.h"
+#include "PoseProvenance.h"
 #include "tencom_ledger.h"
-
-// Build provenance, normally injected by CMakeLists.txt via
-// add_compile_definitions().  Defaulted here so a build outside CMake (or one
-// where git was unavailable and the rev-parse produced nothing) still compiles
-// and still emits an honest, obviously-unknown value rather than failing.
-#ifndef FLEXAIDS_GIT_COMMIT
-#define FLEXAIDS_GIT_COMMIT "unknown"
-#endif
-// 0 = clean, 1 = dirty, 2 = unknown.  This default was 0, which made the
-// comment above ("still emits an honest, obviously-unknown value") true of
-// FLEXAIDS_GIT_COMMIT and false of this macro: a build that reached the
-// fallback stamped `FLEXAID.dirty=0` into every pose it wrote -- a positive
-// assertion that the tree was clean, produced by the very code path that
-// exists because nothing was known about the tree.  `unknown` and `clean` are
-// not the same claim, and 0 is not available to say the first one.
-#ifndef FLEXAIDS_GIT_DIRTY
-#define FLEXAIDS_GIT_DIRTY 2
-#endif
 
 #include <algorithm>
 #include <cfloat>
@@ -850,14 +833,7 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	// therefore in the only region truncation cannot reach first -- which is
 	// where the line identifying the whole file belongs.  Moving it down would
 	// make the provenance the first thing lost on a REMARK-heavy target.
-	snprintf(tmpremark, MAX_REMARK,
-		"REMARK FLEXAID.commit=%s FLEXAID.dirty=%d FLEXAID.seed=%llu\n",
-		FLEXAIDS_GIT_COMMIT,
-		FLEXAIDS_GIT_DIRTY,
-		flexaids_rng::has_master_seed()
-			? static_cast<unsigned long long>(flexaids_rng::master_seed())
-			: 0ULL);
-	safe_remark_cat(remark, tmpremark, &remark_len);
+	safe_remark_cat(remark, flexaids::pose_provenance::remark().c_str(), &remark_len);
 
 	if (pb_promotion) {
 		snprintf(tmpremark, MAX_REMARK,
@@ -1188,13 +1164,16 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 
 		snprintf(sufix, sizeof(sufix), "_%d_MODEL_%d.pdb", minPoints, num_result);
 		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
+		// Only the first MODEL writes this expanded header. Preserve the
+		// complete pre-existing scientific buffer when adding provenance.
+		std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(remark);
 		if (Pose == this->Poses.begin() && Pose + 1 == this->Poses.end())
 		{
-			write_MODEL_pdb(true, true, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
+			write_MODEL_pdb(true, true, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, pose_remarks.data());
 		}
 		else if (Pose == this->Poses.begin())
 		{
-			write_MODEL_pdb(true, false, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
+			write_MODEL_pdb(true, false, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, pose_remarks.data());
 		}
 		else if (Pose + 1 == this->Poses.end())
 		{

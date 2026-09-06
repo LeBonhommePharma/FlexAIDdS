@@ -1,9 +1,12 @@
-#!/usr/bin/env python3
-"""Unit tests for scripts/aggregate_claim_metrics.py admission + STRICT contract."""
+"""Receipt consistency, frozen observation units, and CLI rejection regressions.
 
+Synthetic CSV controls exercise admission logic. They do not stand in for real
+validator execution; every report must state that limitation.
+"""
 from __future__ import annotations
 
 import csv
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -13,308 +16,397 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "aggregate_claim_metrics.py"
+SCRIPT = ROOT / "scripts/aggregate_claim_metrics.py"
 DEFAULT_PIN = "9dc93717dfed0698006d88dd6a9627bc"
-
-CSV_FIELDS = [
-    "pdb_id",
-    "rmsd_to_crystal",
-    "rmsd_hungarian",
-    "best_cluster_rmsd",
-    "conditional_scanned_pool_ceiling",
-    "success",
-    "success_rmsd",
-    "pb_pass",
-    "success_pb",
-    "claim_ready",
-    "seed_echo",
-    "native_pose_seeded",
-    "protocol_claim_eligible",
-    "matrix_md5",
-    "pose_sha256",
-    "rmsd_pose_sha256",
-    "posebusters_pose_sha256",
-    "tencom_pose_sha256",
-    "tencom_status",
-    "eigen_status",
-    "pb_backend",
-]
+POSE = hashlib.sha256(b"synthetic elected pose").hexdigest()
+PB_INPUT = hashlib.sha256(b"synthetic PB input SDF").hexdigest()
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("aggregate_claim_metrics", SCRIPT)
-    assert spec and spec.loader
+    spec = importlib.util.spec_from_file_location("aggregate_claim_metrics_test", SCRIPT)
     mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
 
-def _write_campaign(tmp: Path, rows: list[dict], receipt_md5: str | None = DEFAULT_PIN) -> Path:
-    camp = tmp / "campaign"
-    camp.mkdir(parents=True, exist_ok=True)
-    for r in rows:
-        pid = r["pdb_id"]
-        d = camp / pid
-        d.mkdir(exist_ok=True)
-        path = d / "result.csv"
-        with path.open("w", newline="") as fh:
-            w = csv.DictWriter(fh, fieldnames=CSV_FIELDS, extrasaction="ignore")
-            w.writeheader()
-            full = {k: r.get(k, "") for k in CSV_FIELDS}
-            w.writerow(full)
-    if receipt_md5 is not None:
-        (camp / "RUN_RECEIPT.json").write_text(
-            json.dumps({"matrix_md5": receipt_md5, "run_id": "fixture"})
-        )
-    return camp
+@pytest.fixture
+def agg():
+    return _load()
 
 
-def _row(
-    pdb_id: str,
-    *,
-    rmsd_ordered: float,
-    bcr: float,
-    pb: int = 0,
-    seed_echo: int = 0,
-    native_seeded: int = 0,
-    claim: int = 1,
-    claim_ready: int | None = None,
-    matrix_md5: str = "",
-    rmsd_h: float | None = None,
-    pose_hash: str = "abc123",
-) -> dict:
-    """Build a claim row. rmsd_ordered is rmsd_to_crystal (S1 metric)."""
-    s1 = 1 if 0.0 <= rmsd_ordered <= 2.0 and seed_echo == 0 else 0
-    cr = claim_ready if claim_ready is not None else (1 if s1 and pb and claim else 0)
-    h = rmsd_h if rmsd_h is not None else rmsd_ordered + 0.3  # hungarian may differ
-    return {
-        "pdb_id": pdb_id,
-        "rmsd_to_crystal": f"{rmsd_ordered:.4f}",
-        "rmsd_hungarian": f"{h:.4f}",
-        "best_cluster_rmsd": f"{bcr:.4f}",
-        "conditional_scanned_pool_ceiling": f"{bcr:.4f}",
-        "success": str(s1),
-        "success_rmsd": str(s1),
-        "pb_pass": str(pb),
-        "success_pb": str(1 if s1 and pb else 0),
-        "claim_ready": str(cr),
-        "seed_echo": str(seed_echo),
-        "native_pose_seeded": str(native_seeded),
-        "protocol_claim_eligible": str(claim),
-        "matrix_md5": matrix_md5,
-        "pose_sha256": pose_hash if cr else "",
-        "rmsd_pose_sha256": pose_hash if cr else "",
-        "posebusters_pose_sha256": pose_hash if cr else "",
-        "tencom_pose_sha256": pose_hash if cr else "",
-        "tencom_status": "ok" if cr else "not_run",
-        "eigen_status": "ok" if cr else "not_run",
-        "pb_backend": "bust_cli" if cr else "skipped",
-    }
+def _row(pdb_id="1G9V", **changes):
+    row = dict(pdb_id=pdb_id, seed="12345", endpoint="argmin(ACF)",
+               seed_echo="0", native_pose_seeded="0", protocol_claim_eligible="1",
+               matrix_md5=DEFAULT_PIN, rmsd_to_crystal="1.0", rmsd_hungarian="0.4",
+               success_rmsd="1", success_pb="1", pb_pass="1", claim_ready="1",
+               score_pose_consistent="1", score_pose_delta="0", pb_backend="bust_cli",
+               tencom_status="ok", eigen_status="ok", eigen_n_modes="1", elected_H_vib="-1.5",
+               pb_ran="1", pb_n_pass="27", pb_n_fail="0", pb_n_checks="27",
+               pose_sha256=POSE, rmsd_pose_sha256=POSE, posebusters_pose_sha256=POSE,
+               tencom_pose_sha256=POSE, posebusters_input_sha256=PB_INPUT,
+               best_cluster_rmsd="0.5")
+    row.update({k: str(v) for k, v in changes.items()})
+    return row
 
 
-def test_claim_filter_drops_seeded_rows(tmp_path: Path):
-    mod = _load()
-    rows = [
-        _row("1G9V", rmsd_ordered=1.2, bcr=0.8, pb=1, claim_ready=1),
-        _row("SEED1", rmsd_ordered=0.5, bcr=0.4, pb=1, seed_echo=1, claim=0, claim_ready=0),
-        _row("NAT1", rmsd_ordered=0.9, bcr=0.7, pb=1, native_seeded=1, claim=0, claim_ready=0),
-        _row("GOOD2", rmsd_ordered=3.5, bcr=1.1, pb=0, claim_ready=0),
-    ]
-    camp = _write_campaign(tmp_path, rows)
-    pin, src = mod.load_matrix_pin(camp, None)
-    assert pin == DEFAULT_PIN
-    report = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, src, str(camp))
-    # Only 1G9V has claim_ready=1 (and is on the frozen 85-target manifest)
-    assert report["N_claim"] == 1
+def _write(path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = list(dict.fromkeys(key for row in rows for key in row))
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def _cli(path, *args, script=SCRIPT):
+    result = subprocess.run([sys.executable, "-B", str(script), "--csv", str(path), "--quiet", *args],
+                            text=True, capture_output=True, timeout=15)
+    report = json.loads(result.stdout) if result.stdout.strip() else None
+    return result, report
+
+
+def _aggregate(agg, rows, **kwargs):
+    return agg.aggregate_rows(rows, DEFAULT_PIN, "test", **kwargs)
+
+
+def test_valid_receipt_control_cli(tmp_path):
+    result, report = _cli(_write(tmp_path / "result.csv", [_row()]))
+    assert result.returncode == 0, result.stderr
     assert report["metrics"]["STRICT"]["n"] == 1
-    assert report["metrics"]["S1"]["ids"] == ["1G9V"]
+    assert report["headline"]["rate"] == 1 / 85
+    assert report["evidence_level"] == "validated_receipt_fields"
+    assert report["artifacts_verified"] is False
+    assert report["aggregation"]["mode"] == "single_observation"
 
 
-def test_s1_uses_ordered_not_hungarian(tmp_path: Path):
-    """Hungarian ≤2 must not admit S1 when ordered >2."""
-    mod = _load()
-    rows = [
-        _row(
-            "HU",
-            rmsd_ordered=5.0,
-            bcr=1.0,
-            pb=1,
-            rmsd_h=0.5,
-            claim_ready=0,
-        ),
-    ]
-    camp = _write_campaign(tmp_path, rows)
-    # claim_ready=0 → dropped from claim table
-    pin, src = mod.load_matrix_pin(camp, None)
-    report = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, src, str(camp))
+@pytest.mark.parametrize("changes", [
+    {"pb_pass": "0", "success_pb": "0"},
+    {"pb_pass": "0", "success_pb": "1"},
+    {"rmsd_to_crystal": "-1"}, {"rmsd_to_crystal": "9"},
+    {"rmsd_to_crystal": "nan"}, {"rmsd_to_crystal": "inf"},
+    {"score_pose_consistent": "0"}, {"score_pose_delta": "0.0001001"},
+    {"score_pose_delta": "nan"}, {"score_pose_delta": "inf"},
+    {"score_pose_delta": ""}, {"tencom_status": ""}, {"eigen_status": "fail"},
+    {"pb_backend": "internal"}, {"pose_sha256": ""}, {"rmsd_pose_sha256": ""},
+    {"tencom_pose_sha256": "c" * 64}, {"posebusters_pose_sha256": "missing"},
+    {"posebusters_input_sha256": ""}, {"matrix_md5": ""}, {"matrix_md5": "0" * 32},
+    {"protocol_claim_eligible": ""}, {"protocol_claim_eligible": "0"},
+    {"seed_echo": ""}, {"seed_echo": "1"}, {"native_pose_seeded": "1"},
+    {"native_pose_seed_fraction": "0.1"}, {"claim_ready": "0"},
+    {"success_rmsd": "0"}, {"success_pb": "0"},
+    {"docking_completed": "0"}, {"docking_completed": ""},
+    {"docking_exit_code": "-1"}, {"docking_exit_code": ""},
+    {"num_poses": "0"}, {"num_poses": "-1"}, {"num_poses": "1.5"},
+    {"pb_ran": "0"}, {"pb_n_fail": "1"}, {"pb_n_checks": "0"},
+    {"pb_n_pass": "0"}, {"pb_n_pass": "26", "pb_n_checks": "27", "pb_n_fail": "0"},
+    {"eigen_n_modes": "0"}, {"eigen_n_modes": "nan"},
+    {"elected_H_vib": "nan"}, {"native_pose_seed_fraction": ""},
+    {"pb_n_checks": "1", "pb_n_pass": "1"},
+    {"pb_failed_keys": "bond_lengths"}, {"rmsd_fail_reason": "ref_empty"},
+    {"pb_ran": ""}, {"pb_n_checks": ""}, {"elected_H_vib": ""},
+])
+def test_stale_strict_flag_cannot_override_bad_evidence(tmp_path, changes):
+    result, report = _cli(_write(tmp_path / "result.csv", [_row(**changes)]))
+    assert result.returncode == 1, result.stderr
+    assert report["metrics"]["STRICT"]["n"] == 0
+    assert report["dropped_rows"][0]["reasons"]
+
+
+def test_four_field_self_attestation_is_not_strict(tmp_path):
+    minimal = dict(pdb_id="1G9V", seed_echo="0", native_pose_seeded="0", claim_ready="1")
+    result, report = _cli(_write(tmp_path / "result.csv", [minimal]))
+    assert result.returncode == 1
+    assert report["metrics"]["STRICT"]["n"] == 0
+
+
+def test_matching_malformed_hashes_not_receipts(agg):
+    row = _row(**{key: "abc" for key in (
+        "pose_sha256", "rmsd_pose_sha256", "posebusters_pose_sha256", "tencom_pose_sha256", "posebusters_input_sha256")})
+    assert not agg.is_strict_success(row)
+
+
+def test_score_tolerance_and_rmsd_boundary(agg):
+    assert agg.is_strict_success(_row(score_pose_delta="-0.0001", rmsd_to_crystal="2.0"))
+    assert not agg.is_strict_success(_row(score_pose_delta="-0.0001000001"))
+
+
+def test_diagnostics_survive_strict_failure(agg):
+    report = _aggregate(agg, [_row(claim_ready="0", tencom_status="fail")])
     assert report["N_claim"] == 0
-    # Direct unit check
-    r = rows[0]
-    r["claim_ready"] = "1"
-    r["seed_echo"] = "0"
-    assert not mod.is_s1(r)
-    assert mod.elected_rmsd(r) == pytest.approx(5.0)
+    assert report["N_protocol_eligible"] == 1
+    assert {key: metric["n"] for key, metric in report["metrics"].items()} == dict(S1=1, S2=1, STRICT=0, S3=1)
 
 
-def test_s1_vs_s3_diverge_election_gap(tmp_path: Path):
-    mod = _load()
-    rows = [
-        _row("1G9V", rmsd_ordered=1.5, bcr=0.9, pb=1, claim_ready=1),
-        _row("GAP1", rmsd_ordered=5.7, bcr=1.6, pb=0, claim_ready=0),
-        _row("GAP2", rmsd_ordered=4.2, bcr=1.9, pb=0, claim_ready=0),
-        _row("MISS", rmsd_ordered=6.0, bcr=3.5, pb=0, claim_ready=0),
-        _row("NOPB", rmsd_ordered=1.1, bcr=1.0, pb=0, claim_ready=0),
-    ]
-    # Admit GAP/NOPB for S1/S3 comparison by not requiring claim_ready in row
-    # when testing aggregate — only HIT is claim_ready=1.
-    camp = _write_campaign(tmp_path, rows)
-    pin, src = mod.load_matrix_pin(camp, None)
-    report = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, src, str(camp))
-    assert report["N_claim"] == 1
+def test_nonfinite_rmsd_does_not_fall_back_to_stale_success_flags(agg):
+    assert not agg.is_s1(_row(rmsd_to_crystal="nan"))
+    assert not agg.is_s3(_row(best_cluster_rmsd="nan", success_s3="1"))
+
+
+def test_hungarian_never_substitutes_for_serial(agg):
+    row = _row(rmsd_to_crystal="5.0", rmsd_hungarian="0.1")
+    assert not agg.is_s1(row)
+    assert not agg.is_strict_success(row)
+
+
+def test_s2_recomputes_pb_and_requires_pose_identity(agg):
+    assert not agg.is_s2(_row(pb_pass="0", success_pb="1"), True)
+    assert not agg.is_s2(_row(posebusters_pose_sha256=""), True)
+    # Engine success_pb includes serial RMSD; it must not veto a graph-symmetry diagnostic.
+    assert agg.is_s2(_row(success_pb="0"), True)
+
+
+def test_seeded_rows_excluded_from_diagnostics(agg):
+    report = _aggregate(agg, [_row(seed_echo="1")])
+    assert all(metric["n"] == 0 for metric in report["metrics"].values())
+
+
+def test_off_manifest_targets_never_inflate_any_metric(agg):
+    report = _aggregate(agg, [_row(), _row("9XXX")])
+    assert all(metric["n"] == 1 for metric in report["metrics"].values())
+    assert report["off_manifest_targets"] == ["9XXX"]
+
+
+@pytest.mark.parametrize("count", [2, 86])
+def test_duplicate_observations_rejected_cli(tmp_path, count):
+    result, report = _cli(_write(tmp_path / "result.csv", [_row()] * count))
+    assert result.returncode == 2
+    assert report is None
+    assert "duplicate observation" in result.stderr
+
+
+def test_repeated_targets_require_frozen_seed_list(agg):
+    rows = [_row(seed=seed) for seed in ("1", "2", "3")]
+    with pytest.raises(ValueError, match="expected-seeds"):
+        _aggregate(agg, rows)
+
+
+def test_majority_of_expected_seeds_not_union(agg):
+    rows = [_row(seed="1"), _row(seed="2", claim_ready="0"), _row(seed="3", claim_ready="0")]
+    report = _aggregate(agg, rows, expected_seeds=["1", "2", "3"])
+    assert report["metrics"]["STRICT"]["n"] == 0
+    assert report["metrics"]["S1"]["n"] == 1
+    report = _aggregate(agg, [_row(seed="1"), _row(seed="2")], expected_seeds=["1", "2", "3"])
     assert report["metrics"]["STRICT"]["n"] == 1
-    assert report["headline"]["metric"] == "STRICT"
+    assert dict(pdb_id="1G9V", seed="3") in report["aggregation"]["missing_expected_observations"]
 
 
-def test_headline_s3_rejected_without_diagnostic_flag():
-    mod = _load()
-    report = {
-        "N_claim": 1,
-        "metrics": {
-            "S1": {"n": 0, "rate": 0.0, "definition": "s1", "role": "rmsd_only_diagnostic"},
-            "S2": {"n": 0, "rate": 0.0, "definition": "s2", "role": "secondary"},
-            "STRICT": {"n": 0, "rate": 0.0, "definition": "strict", "role": "primary_headline"},
-            "S3": {
-                "n": 1,
-                "rate": 1.0,
-                "definition": "s3",
-                "role": "diagnostic_only",
-            },
-        },
-    }
-    _, err = mod.apply_headline(report, "s3", diagnostic_only=False)
-    assert err == 2
-    out, err2 = mod.apply_headline(report, "s3", diagnostic_only=True)
-    assert err2 is None
-    assert out["headline"]["metric"] == "S3"
+def test_missing_seeds_and_even_seed_ties_fail(agg):
+    report = _aggregate(agg, [_row(seed="1")], expected_seeds=["1", "2", "3"])
+    assert report["metrics"]["STRICT"]["n"] == 0
+    report = _aggregate(agg, [_row(seed="1"), _row(seed="2")], expected_seeds=["1", "2", "3", "4"])
+    assert report["metrics"]["STRICT"]["n"] == 0
 
 
-def test_cli_headline_s3_exits_nonzero(tmp_path: Path):
-    rows = [_row("A", rmsd_ordered=5.0, bcr=1.0, claim_ready=1, pb=1)]
-    camp = _write_campaign(tmp_path, rows)
-    proc = subprocess.run(
-        [sys.executable, str(SCRIPT), str(camp), "--headline", "s3"],
-        capture_output=True,
-        text=True,
-    )
-    assert proc.returncode == 2
-    assert "CONTRACT VIOLATION" in proc.stderr
+@pytest.mark.parametrize("seeds", [["1", "1"], [], [""]])
+def test_invalid_expected_seed_lists_rejected(agg, seeds):
+    with pytest.raises(ValueError, match="expected seeds"):
+        _aggregate(agg, [_row()], expected_seeds=seeds)
 
 
-def test_cli_happy_path_json(tmp_path: Path):
-    rows = [
-        _row("1G9V", rmsd_ordered=1.0, bcr=0.5, pb=1, claim_ready=1),
-        _row("P2", rmsd_ordered=4.0, bcr=1.5, pb=0, claim_ready=0),
-        _row("SEED", rmsd_ordered=0.1, bcr=0.1, pb=1, seed_echo=1, claim=0, claim_ready=0),
-    ]
-    camp = _write_campaign(tmp_path, rows)
-    out_json = tmp_path / "out.json"
-    proc = subprocess.run(
-        [sys.executable, str(SCRIPT), str(camp), "--json", str(out_json), "--quiet"],
-        capture_output=True,
-        text=True,
-    )
-    assert proc.returncode == 0, proc.stderr
-    report = json.loads(out_json.read_text())
-    assert report["N_claim"] == 1
+def test_unexpected_seed_rejected(agg):
+    with pytest.raises(ValueError, match="unexpected seed"):
+        _aggregate(agg, [_row(seed="4")], expected_seeds=["1", "2", "3"])
+
+
+def test_mixed_arms_rejected_and_explicit_selection_counted(agg):
+    rows = [_row(arm="A"), _row(arm="B")]
+    with pytest.raises(ValueError, match="mixed arm"):
+        _aggregate(agg, rows)
+    report = _aggregate(agg, rows, arm="A")
+    assert report["aggregation"]["N_filtered_by_arm"] == 1
+    assert report["aggregation"]["arm"] == "A"
     assert report["metrics"]["STRICT"]["n"] == 1
-    assert report["metrics"]["S3"]["role"] == "diagnostic_only"
-    assert report["headline"]["metric"] == "STRICT"
-    assert "hungarian" not in report["metrics"]["S1"]["definition"].lower() or True
-    assert "ordered" in report["metrics"]["S1"]["definition"].lower()
 
 
-def test_claim_ready_required_when_column_present(tmp_path: Path):
-    mod = _load()
-    r = _row("X", rmsd_ordered=1.0, bcr=0.5, pb=1, claim_ready=0)
-    camp = _write_campaign(tmp_path, [r])
-    pin, src = mod.load_matrix_pin(camp, None)
-    report = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, src, str(camp))
-    assert report["N_claim"] == 0
-    assert "claim_ready=0" in report["dropped_rows"][0]["reasons"]
+def test_mixed_endpoints_rejected(agg):
+    with pytest.raises(ValueError, match="mixed endpoint"):
+        _aggregate(agg, [_row(), _row("1GM8", endpoint="argmin(CF)")])
 
 
-def test_hash_mismatch_drops_claim(tmp_path: Path):
-    mod = _load()
-    r = _row("H", rmsd_ordered=1.0, bcr=0.5, pb=1, claim_ready=1, pose_hash="aaa")
-    r["rmsd_pose_sha256"] = "bbb"
-    camp = _write_campaign(tmp_path, [r])
-    pin, src = mod.load_matrix_pin(camp, None)
-    report = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, src, str(camp))
-    assert report["N_claim"] == 0
-    assert any("rmsd_pose_sha256_mismatch" in x for x in report["dropped_rows"][0]["reasons"])
+@pytest.mark.parametrize("text", [
+    "pdb_id,claim_ready,claim_ready\n1G9V,0,1\n",
+    "pdb_id,claim_ready\n1G9V,1,extra\n",
+    "pdb_id,claim_ready\n1G9V\n", "pdb_id,\n1G9V,1\n",
+    "pdb_id,target\n1G9V,1GM8\n", "claim_ready\n1\n",
+])
+def test_malformed_csv_rejected_cli(tmp_path, text):
+    path = tmp_path / "result.csv"
+    path.write_text(text)
+    result, report = _cli(path)
+    assert result.returncode == 2
+    assert report is None
 
 
-def test_missing_seed_columns_fail_closed(tmp_path: Path):
-    mod = _load()
-    r = _row("1AAA", rmsd_ordered=1.0, bcr=0.5, claim_ready=1, pb=1)
-    del r["seed_echo"]
-    del r["native_pose_seeded"]
-    camp = _write_campaign(tmp_path, [r])
-    path = camp / "1AAA" / "result.csv"
-    fields = [c for c in CSV_FIELDS if c not in ("seed_echo", "native_pose_seeded")]
-    row = {k: r.get(k, "") for k in fields}
-    with path.open("w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=fields)
-        w.writeheader()
-        w.writerow(row)
-    pin, _ = mod.load_matrix_pin(camp, None)
-    rep = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, "test", str(camp))
-    assert rep["N_claim"] == 0
+def test_stale_tree_cannot_override_summary(agg, tmp_path):
+    _write(tmp_path / "old" / "result.csv", [_row()])
+    _write(tmp_path / "summary.csv", [_row(claim_ready="0")])
+    with pytest.raises(ValueError, match="ambiguous campaign sources"):
+        agg.load_campaign_rows(tmp_path)
 
 
-def test_success_s1_flag_cannot_override_high_rmsd(tmp_path: Path):
-    mod = _load()
-    r = _row("1CCC", rmsd_ordered=5.0, bcr=5.0, claim_ready=1, pb=1)
-    r["success_s1"] = "1"
-    r["success_rmsd"] = "1"
-    camp = _write_campaign(tmp_path, [r])
-    path = camp / "1CCC" / "result.csv"
-    fields = CSV_FIELDS + ["success_s1"]
-    with path.open("w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
-        w.writeheader()
-        full = {k: r.get(k, "") for k in CSV_FIELDS}
-        full["success_s1"] = "1"
-        w.writerow(full)
-    pin, _ = mod.load_matrix_pin(camp, None)
-    rep = mod.aggregate_rows(mod.load_campaign_rows(camp), pin, "test", str(camp))
-    assert rep["N_claim"] == 1
-    assert rep["metrics"]["S1"]["n"] == 0
+def test_multiple_flat_summaries_require_explicit_selection(agg, tmp_path):
+    _write(tmp_path / "results.csv", [_row()])
+    _write(tmp_path / "summary.csv", [_row()])
+    with pytest.raises(ValueError, match="ambiguous"):
+        agg.load_campaign_rows(tmp_path)
 
 
-def test_off_manifest_strict_success_does_not_inflate_numerator():
-    """An off-manifest claim_ready row must not bump STRICT n (denom stays 85)."""
-    mod = _load()
-    codes, _ = mod.load_target_manifest()
-    assert codes and len(codes) == 85
-    on = _row(codes[0], rmsd_ordered=1.0, bcr=0.5, pb=1, claim_ready=1)
-    extra = _row("9XXX", rmsd_ordered=0.4, bcr=0.3, pb=1, claim_ready=1)
-    report = mod.aggregate_rows([on, extra], DEFAULT_PIN, "test", fixed_denominator=True)
+def test_per_target_file_cannot_discard_extra_rows(agg, tmp_path):
+    _write(tmp_path / "one" / "result.csv", [_row(), _row("1GM8")])
+    with pytest.raises(ValueError, match="exactly one"):
+        agg.load_campaign_rows(tmp_path)
+
+
+def test_manifest_integrity_and_fixed_denominator(agg):
+    codes, digest = agg.load_target_manifest()
+    assert len(codes) == 85
+    assert digest == hashlib.sha256(",".join(codes).encode()).hexdigest()
+    report = _aggregate(agg, [_row()])
     assert report["N_denominator"] == 85
+    assert report["N_missing_from_manifest"] == 84
+
+
+@pytest.mark.parametrize("mutation", ["digest", "duplicate", "count", "empty"])
+def test_corrupt_manifest_fails(agg, tmp_path, mutation):
+    codes, digest = agg.load_target_manifest()
+    data = dict(schema="flexaidds.astex.target_manifest/v1", N=85, targets=codes, sha256_of_sorted_codes=digest)
+    if mutation == "digest": data["sha256_of_sorted_codes"] = "0" * 64
+    if mutation == "duplicate": data["targets"][-1] = data["targets"][0]
+    if mutation == "count": data["N"] = 84
+    if mutation == "empty": data["targets"] = []
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError):
+        agg.load_target_manifest(path)
+
+
+def test_missing_manifest_never_silently_shrinks_denominator(tmp_path):
+    script = tmp_path / "standalone" / "aggregate_claim_metrics.py"
+    script.parent.mkdir()
+    script.write_bytes(SCRIPT.read_bytes())
+    source = _write(tmp_path / "result.csv", [_row()])
+    result, report = _cli(source, script=script)
+    assert result.returncode == 2
+    assert report is None
+    assert "manifest missing" in result.stderr
+    result, report = _cli(source, "--legacy-observed-denominator", "--diagnostic-only", "--headline", "s1", script=script)
+    assert result.returncode == 0
+    assert report["headline"]["diagnostic_only"]
+    assert report["metrics"]["STRICT"]["rate"] is None
+    assert report["metrics"]["STRICT"]["n"] == 0
+
+
+def test_legacy_denominator_cannot_emit_strict_headline(tmp_path):
+    result, report = _cli(_write(tmp_path / "result.csv", [_row()]), "--legacy-observed-denominator", "--diagnostic-only")
+    assert result.returncode == 2
+    assert report is None
+
+
+def test_matrix_receipt_conflicts_are_errors(agg, tmp_path):
+    (tmp_path / "RUN_RECEIPT.json").write_text(json.dumps(dict(matrix_md5="0" * 32)))
+    with pytest.raises(ValueError, match="conflicting matrix pins"):
+        agg.load_matrix_pin(tmp_path, DEFAULT_PIN)
+
+
+@pytest.mark.parametrize("sha", ["", "abc", "c" * 64])
+def test_sidecar_requires_matching_valid_pose_hash(agg, sha):
+    row = _row()
+    sidecar = {"1G9V": dict(pdb_id="1G9V", rmsd_symmcorr="0.5", pose_sha256=sha)}
+    report = agg.join_symmcorr([row], sidecar)
+    assert report["joined"] == 0
+    assert report["refused_sha_mismatch"] == ["1G9V"]
+    assert "rmsd_symmcorr" not in row
+
+
+def test_sidecar_same_target_multiple_poses_joins_by_hash(agg, tmp_path):
+    second = hashlib.sha256(b"second elected pose").hexdigest()
+    side = [dict(pdb_id="1G9V", rmsd_symmcorr="0.5", pose_sha256=POSE, status="ok"),
+            dict(pdb_id="1G9V", rmsd_symmcorr="1.5", pose_sha256=second, status="ok")]
+    rows = [_row(), _row(pose_sha256=second, seed="2")]
+    report = agg.join_symmcorr(rows, agg.load_symmcorr_sidecar(_write(tmp_path / "side.csv", side)))
+    assert report["joined"] == 2
+    assert [r["rmsd_symmcorr"] for r in rows] == ["0.5", "1.5"]
+
+
+def test_sidecar_duplicate_identity_rejected(agg, tmp_path):
+    row = dict(pdb_id="1G9V", rmsd_symmcorr="0.5", pose_sha256=POSE, status="ok")
+    with pytest.raises(ValueError, match="duplicate sidecar"):
+        agg.load_symmcorr_sidecar(_write(tmp_path / "side.csv", [row, row]))
+
+
+def test_s3_primary_requires_diagnostic_flag(tmp_path):
+    source = _write(tmp_path / "result.csv", [_row()])
+    result, _ = _cli(source, "--headline", "s3")
+    assert result.returncode == 2
+    result, report = _cli(source, "--headline", "s3", "--diagnostic-only")
+    assert result.returncode == 0
+    assert report["headline"]["diagnostic_only"]
+
+
+def test_cloud_docs_requires_staging(agg):
+    with pytest.raises(ValueError, match="stage CloudDocs"):
+        agg.load_rows_from_csv(Path("/tmp/Mobile Documents/com~apple~CloudDocs/result.csv"))
+
+
+def test_seed_echo_explicit_zero_float_accepted(agg):
+    assert agg.is_strict_success(_row(seed_echo="0.0", native_pose_seeded="0.0"))
+
+
+def test_explicit_completed_runtime_receipt_accepted(agg):
+    assert agg.is_strict_success(_row(docking_completed="1", docking_exit_code="0", num_poses="2",
+                                      pb_ran="1", pb_n_checks="27", pb_n_fail="0", pb_n_pass="27",
+                                      eigen_n_modes="3", elected_H_vib="-1.5"))
+
+
+def test_cli_exit_uses_target_majority_not_individual_seed_success(tmp_path):
+    result, report = _cli(_write(tmp_path / "result.csv", [_row(seed="1")]), "--expected-seeds", "1,2,3")
+    assert report["N_claim"] == 1
+    assert report["metrics"]["STRICT"]["n"] == 0
+    assert result.returncode == 1
+
+
+
+def test_decimal_seed_aliases_cannot_manufacture_a_majority(agg):
+    with pytest.raises(ValueError, match="duplicate observation"):
+        _aggregate(agg, [_row(seed="1"), _row(seed="01")], expected_seeds=["1", "01", "2"])
+    with pytest.raises(ValueError, match="unique list"):
+        _aggregate(agg, [_row(seed="1")], expected_seeds=["1", "01", "2"])
+
+
+@pytest.mark.parametrize("seed", ["abc", "-1", "1e3", str(2**64)])
+def test_invalid_seed_domain_rejected(agg, seed):
+    with pytest.raises(ValueError, match="unsigned 64-bit"):
+        _aggregate(agg, [_row(seed=seed)])
+
+
+def test_valid_decimal_seed_alias_normalizes_identity(agg):
+    report = _aggregate(agg, [_row(seed="0001")], expected_seeds=["1"])
     assert report["metrics"]["STRICT"]["n"] == 1
-    assert report["headline"]["n"] == 1
-    ids = {str(x).upper() for x in report["metrics"]["STRICT"]["ids"]}
-    assert codes[0].upper() in ids
-    assert "9XXX" not in ids
+    assert report["aggregation"]["expected_seeds"] == ["1"]
 
 
-def test_seed_echo_0_0_accepted():
-    mod = _load()
-    row = {"seed_echo": "0.0", "native_pose_seeded": "0.0", "matrix_md5": ""}
-    assert mod._flag0(row, "seed_echo")
-    assert mod._flag0(row, "native_pose_seeded")
+
+def test_explicit_local_results_root_preserved(agg, monkeypatch, tmp_path):
+    monkeypatch.setenv("FLEXAIDDS_RESULTS", str(tmp_path / "chosen"))
+    monkeypatch.setenv("FLEXAIDDS_LOCAL_ROOT", str(tmp_path / "other"))
+    assert agg.resolve_c0_full85_dir() == tmp_path / "chosen" / agg.C0_FULL85_REL
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+@pytest.mark.parametrize("field", ["pb_ran", "pb_n_checks", "pb_n_pass", "pb_n_fail", "eigen_n_modes", "elected_H_vib"])
+def test_current_strict_requires_complete_pb_eigen_receipts(agg, field):
+    row = _row()
+    del row[field]
+    report = _aggregate(agg, [row])
+    assert report["metrics"]["STRICT"]["n"] == 0
+    assert report["metrics"]["S1"]["n"] == 1
+
+
+
+@pytest.mark.parametrize("changes", [dict(pb_ran="0"), dict(pb_n_checks="1"),
+                                    dict(pb_n_fail="1"), dict(pb_failed_keys="bond_lengths"),
+                                    dict(pb_backend="internal")])
+def test_s2_cannot_ignore_its_own_pb_contradictions(agg, changes):
+    report = _aggregate(agg, [_row(**changes)])
+    assert report["metrics"]["S1"]["n"] == 1
+    assert report["metrics"]["S2"]["n"] == 0

@@ -167,6 +167,11 @@ struct DockingResult {
     float shannon_entropy{0.0f};      // conformational Shannon entropy -Σ p_i ln p_i (nats)
     float search_entropy_proxy{0.0f}; // legacy H_final collapse proxy from GA energy histogram (nats)
     int   num_poses{0};               // number of binding modes found
+    // Runtime completion is independent of RMSD/PB success. -1 includes not
+    // started or a timeout; the retained child log distinguishes those causes.
+    int   docking_exit_code{-1};
+    bool  docking_completed{false};
+    std::string matrix_md5;          // actual selected matrix input, not an expected default
     double wall_time_s{0.0};          // docking wall time
     // ── Success gates (fixed semantics; never remapped by env) ────────────
     // success_rmsd : ordered direct rmsd_to_crystal <= 2 Å && !seed_echo
@@ -330,8 +335,10 @@ struct BenchmarkReport {
     double success_rate_rmsd{0.0};
     double success_rate_pb{0.0};
     double claim_ready_rate{0.0};
-    double mean_rmsd{0.0};
-    double median_rmsd{0.0};
+    int completed_systems{0};
+    int valid_rmsd_count{0};
+    double mean_rmsd{std::numeric_limits<double>::quiet_NaN()};
+    double median_rmsd{std::numeric_limits<double>::quiet_NaN()};
     // Zero-success plausibility gate (DatasetRunnerStats.h): true when the
     // summary would certify 0% while poses exist and negative RMSDs are
     // dominated by wholesale measurement-side reasons (bug 2026-08-22,
@@ -357,6 +364,20 @@ struct BenchmarkReport {
 };
 
 // =============================================================================
+// Runtime exit status for the CLI; a completed inaccurate pose is not a
+// process failure. Preparation/listing intentionally has no docking results.
+inline int benchmark_runtime_exit_code(const BenchmarkReport& report,
+                                       bool no_docking = false) {
+    if (no_docking) return 0;
+    if (report.total_systems <= 0 ||
+        report.results.size() != static_cast<size_t>(report.total_systems)) return 2;
+    for (const auto& result : report.results) {
+        if (!result.docking_completed || result.docking_exit_code != 0 ||
+            result.num_poses <= 0 || result.stuck) return 2;
+    }
+    return 0;
+}
+
 // Lightweight docking config for benchmarks
 // =============================================================================
 
