@@ -1,3 +1,9 @@
+# Populate .git_archival.txt at `git archive` time so release tarballs
+# (GitHub /archive/refs/tags/*.tar.gz — every Homebrew stable install) carry
+# their own commit hash. Without this, a tarball build stamps an EMPTY commit
+# and falsely reports a clean tree. See the provenance block in CMakeLists.txt.
+.git_archival.txt  export-subst
+
 site/**       linguist-documentation
 site/**       linguist-vendored
 docs/**       linguist-documentation

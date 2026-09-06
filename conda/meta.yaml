@@ -1,5 +1,10 @@
 {% set name = "flexaidds" %}
-{% set version = "2.0.0" %}
+{# Single source of truth. Hardcoding drifted before: this file sat at 2.0.0
+   while python/flexaidds/__version__.py and pyproject.toml shipped 2.0.3, so a
+   conda build would have published 2.0.3 code labelled 2.0.0. #}
+{% set version = load_file_regex(
+     load_file="../python/flexaidds/__version__.py",
+     regex_pattern='__version__\s*=\s*"([^"]+)"')[1] %}
 
 package:
   name: {{ name|lower }}
@@ -10,35 +15,48 @@ source:
 
 build:
   number: 0
-  # We build the Python package (which optionally compiles the pybind11 _core extension)
+  # conda-build copies the source tree without .git, so the CMake provenance
+  # probe cannot find a commit. Pass it explicitly when the caller knows it:
+  #   FLEXAIDS_GIT_COMMIT_OVERRIDE=$(git rev-parse --short HEAD) conda build conda/
+  # Without it the build is still installable, but its origin is unrecoverable.
+  script_env:
+    - FLEXAIDS_GIT_COMMIT_OVERRIDE
   script: "{{ PYTHON }} -m pip install ./python -vv --no-deps --no-build-isolation"
   # The extension is optional at runtime (package has pure-Python fallbacks)
   ignore_run_exports:
     - libeigen
 
 requirements:
+  # Pinned, not floating. A recipe that resolves differently on each build is
+  # not a reproducible install path.
+  #   - C++26 is a hard requirement of the accelerated _core extension; the
+  #     compiler gate in CMakeLists.txt rejects GCC < 14.
+  #   - setuptools >= 82 is required by pyproject's build-system.
   build:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
-    - cmake
-    - ninja  # [not win]
-    - pybind11
-    - eigen
+    - cmake >=3.28,<5
+    - ninja >=1.11  # [not win]
+    - pybind11 >=3.0.3,<4
+    - eigen >=3.4,<4
     - python
     - pip
-    - setuptools >=82
+    - setuptools >=82.0.1
     - wheel
   host:
     - python
-    - pybind11
-    - eigen
+    - pybind11 >=3.0.3,<4
+    - eigen >=3.4,<4
     - pip
-    - setuptools
+    - setuptools >=82.0.1
   run:
-    - python
-    - numpy
-    - pyyaml
-    - scipy
+    - python >=3.9
+    - numpy >=1.22
+    # linear_sum_assignment, used unguarded in the symmetry-corrected RMSD
+    # pass/fail path (benchmark.py) — a hard runtime dependency, not optional.
+    - scipy >=1.7
+    # DatasetRunner reads YAML dataset configs.
+    - pyyaml >=6.0.3
     # The C++ extension (if built) is a separate .so; no strict run dep on eigen needed at runtime for most paths
 
 test:
@@ -46,7 +64,11 @@ test:
     - flexaidds
   commands:
     - python -c "import flexaidds as fd; print('flexaidds', fd.__version__); print('HAS_CORE_BINDINGS=', getattr(fd, 'HAS_CORE_BINDINGS', False))"
-    - python -m flexaidds --help || python -c "from flexaidds.__main__ import main; print('CLI entry present')"
+    # The built package must carry the version this recipe claims. Guards the
+    # exact drift that made this file say 2.0.0 while shipping 2.0.3.
+    - python -c "import flexaidds as fd, sys; sys.exit(0 if fd.__version__ == '{{ version }}' else 1)"
+    - python -m flexaidds --help
+    - python -m flexaidds --version
 
 about:
   home: https://github.com/LeBonhommePharma/FlexAIDdS
@@ -58,6 +80,10 @@ about:
     docking engine. It includes result loading, statistical mechanics
     (partition functions, free energy, entropy), docking data models,
     and optional C++ accelerated components built via pybind11.
+
+    This recipe packages the *Python* side only. The native docking engine
+    (FlexAIDdS, tENCoM) is built from CMake — see the Homebrew formula or
+    containers/Dockerfile.locked.
   doc_url: https://github.com/LeBonhommePharma/FlexAIDdS/tree/master/docs
   dev_url: https://github.com/LeBonhommePharma/FlexAIDdS
 

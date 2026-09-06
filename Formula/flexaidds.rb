@@ -50,6 +50,20 @@ class Flexaidds < Formula
       -DENABLE_DIFT_TOOL=OFF
     ]
 
+    # Provenance. A `brew install` builds from an extracted tarball with no
+    # .git, so CMake's git probe finds nothing. Two routes cover it:
+    #   * stable — the release tarball carries .git_archival.txt, populated by
+    #     `export-subst` at `git archive` time, and CMake reads the commit from
+    #     it (source_provenance=archive).
+    #   * --HEAD — Homebrew clones the repo, so the git probe works directly.
+    # Tarballs cut BEFORE .git_archival.txt was added (v2.0.3 and earlier) have
+    # neither; those builds stamp commit=unknown dirty=2, which is honest but
+    # untraceable. Pass the tag as an explicit override so even an old tarball
+    # is identifiable.
+    unless build.head?
+      args << "-DFLEXAIDS_GIT_COMMIT_OVERRIDE=v#{version}"
+    end
+
     if OS.mac?
       libomp = formula_opt_prefix("libomp")
       args += %W[
@@ -70,19 +84,92 @@ class Flexaidds < Formula
     (libexec/"bin").mkpath
     (libexec/"share").mkpath
 
-    %w[FlexAIDdS tENCoM FlexAID tencom_entropy_diff flexaids_process_ligand].each do |exe|
-      %W[build/#{exe} build_lto/#{exe}].each do |candidate|
-        next unless File.exist?(candidate)
+    # One build directory, one producer.
+    #
+    # This selected the binary here and the provenance JSON in a separate loop
+    # below, each re-deciding build/ vs build_lto/ from scratch. Two independent
+    # decisions over one fact can disagree: CMake writes the provenance file to
+    # CMAKE_BINARY_DIR, so it describes one configure of one directory. A stale
+    # build/ holding a binary but no JSON, next to a build_lto/ holding a JSON,
+    # installed a provenance record for a build that was not the installed
+    # build -- and said nothing. The per-exe inner loop made it worse: FlexAIDdS
+    # could come from build/ and tENCoM from build_lto/, so a single JSON could
+    # not have described both even in principle.
+    #
+    # That is the defect this branch exists to remove, in the branch's own code:
+    # a claim asserted about something that was never checked. Resolve the
+    # directory once; take everything from it.
+    build_dir = %w[build build_lto].find { |dir| File.exist?("#{dir}/FlexAIDdS") }
+    odie "no FlexAIDdS binary in build/ or build_lto/ after a successful build" if build_dir.nil?
+    ohai "installing from #{build_dir}/"
 
-        (libexec/"bin").install candidate
-        break
-      end
+    %w[FlexAIDdS tENCoM FlexAID tencom_entropy_diff flexaids_process_ligand].each do |exe|
+      candidate = "#{build_dir}/#{exe}"
+      next unless File.exist?(candidate)
+
+      (libexec/"bin").install candidate
     end
 
     # Install data BOTH next to the real binary (base_path lookup) and under
     # share/ (FLEXAIDDS_DATA_DIR for engines that honor it after the path fix).
     install_runtime_data!(libexec/"bin")
     install_runtime_data!(libexec/"share")
+
+    # Make the installed engine identifiable without running a dock. The commit
+    # otherwise only surfaces in the REMARK block of emitted pose files, so a
+    # freshly installed binary cannot be told apart from any other build.
+    # Bound to build_dir, not re-decided. If that directory produced a binary
+    # but no provenance file, the install is unidentifiable; fail rather than
+    # borrow a plausible-looking JSON from a directory that produced nothing
+    # that is being installed.
+    prov_src = "#{build_dir}/flexaidds-build-provenance.json"
+    unless File.exist?(prov_src)
+      odie "#{build_dir}/ produced FlexAIDdS but no flexaidds-build-provenance.json; " \
+           "installing would put an unidentifiable binary on PATH"
+    end
+    (libexec/"share").install prov_src
+
+    (bin/"flexaidds-buildinfo").write <<~EOS
+      #!/bin/bash
+      # Report what the installed FlexAIDdS actually is.
+      set -euo pipefail
+      prov="#{libexec}/share/flexaidds-build-provenance.json"
+      if [ -f "$prov" ]; then
+        cat "$prov"
+      else
+        echo '{"error":"no provenance file installed"}'
+        exit 1
+      fi
+      # The previous "second, independent source" grepped the binary for
+      # ^REMARK FLEXAID.commit= . That pattern matches the printf FORMAT string
+      # in LIB/BindingMode.cpp:790, so on a real binary it returns
+      #   REMARK FLEXAID.commit=%s FLEXAID.dirty=%d FLEXAID.seed=%llu
+      # -- a literal %s, never a commit. It was not a second source, and
+      # nothing compared it to the first, so a disagreement could not surface.
+      #
+      # The commit IS in the binary, as the separate string constant that %s
+      # consumes, but it is an unanchored token: its presence can be tested,
+      # its identity cannot be read back. So this checks the one direction that
+      # is sound. Absence is proof of disagreement; presence is consistency,
+      # not verification, and is labelled as such.
+      json_commit=$(grep -o '"git_commit"[^,]*' "$prov" | head -1 | cut -d'"' -f4 || true)
+      echo "--- identity cross-check ---"
+      echo "provenance_json_commit=${json_commit:-missing}"
+      if [ -z "${json_commit:-}" ] || [ "$json_commit" = "unknown" ]; then
+        echo "status=unverifiable (provenance file carries no commit to look for)"
+        exit 0
+      fi
+      if /usr/bin/strings "#{libexec}/bin/FlexAIDdS" 2>/dev/null | grep -qxF "$json_commit"; then
+        echo "status=consistent (commit from the provenance file is present in the binary)"
+        exit 0
+      fi
+      echo "status=MISMATCH"
+      echo "The installed provenance file names a commit that does not appear in" >&2
+      echo "the installed binary. They describe different builds; do not trust" >&2
+      echo "results attributed to this install." >&2
+      exit 1
+    EOS
+    chmod 0755, bin/"flexaidds-buildinfo"
 
     # Prefer root matrix over WRK/ when both exist (v2.0.2+ ships production both).
     write_wrappers!
@@ -197,5 +284,21 @@ class Flexaidds < Formula
     assert_match "base path", output
 
     system bin/"tENCoM", "--help"
+
+    # The installed engine must be identifiable. A build that cannot be tied to
+    # a source revision silently invalidates any comparison it takes part in.
+    assert_path_exists libexec/"share"/"flexaidds-build-provenance.json"
+    prov = JSON.parse((libexec/"share"/"flexaidds-build-provenance.json").read)
+    refute_empty prov["git_commit"].to_s, "provenance file has an empty commit"
+    assert_match(/^(git|archive|override)$/, prov["source_provenance"],
+                 "installed build has unrecoverable provenance: #{prov}")
+
+    # This asserted that buildinfo's output contained the JSON's commit -- but
+    # buildinfo begins by printing that same JSON, so the assertion compared a
+    # string to itself and could not fail. Assert against the cross-check line,
+    # which is derived from the binary.
+    info = shell_output("#{bin}/flexaidds-buildinfo")
+    assert_match "provenance_json_commit=#{prov['git_commit']}", info
+    refute_match "status=MISMATCH", info
   end
 end

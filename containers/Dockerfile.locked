@@ -1,8 +1,19 @@
 # FlexAIDdS locked-arch Linux image (VALIDATION G Docker equivalent)
 # SPDX-License-Identifier: Apache-2.0
 #
-# Build (from repo root):
-#   docker build -f containers/Dockerfile.locked -t flexaidds:locked-x86_64 .
+# Build (from repo root) — ALWAYS pass the commit, see PROVENANCE below:
+#   docker build -f containers/Dockerfile.locked \
+#     --build-arg FLEXAIDS_GIT_COMMIT="$(git rev-parse --short HEAD)" \
+#     -t flexaidds:locked-x86_64 .
+#
+# PROVENANCE
+#   This image installs no git, and .dockerignore excludes .git from the build
+#   context, so CMake's git probe cannot resolve a commit on its own. Without
+#   --build-arg the image builds fine but its FlexAIDdS binary reports
+#   commit=unknown dirty=2 — honest, but untraceable. Passing the arg stamps the
+#   binary and writes /opt/flexaidds/flexaidds-build-provenance.json.
+#   Before the provenance fix this case stamped an EMPTY commit and dirty=0,
+#   i.e. it silently claimed to be a clean build of nothing identifiable.
 #
 # Smoke (bind repo as /work):
 #   docker run --rm -v "$PWD:/work" -w /work flexaidds:locked-x86_64 \
@@ -13,7 +24,17 @@
 # Note: Apptainer .sif remains the Narval/Alliance artifact; this Dockerfile is
 # the portable Docker twin of containers/flexaidds_locked_x86_64.def.
 
-FROM ubuntu:22.04
+# Pin the base by digest for a genuinely reproducible image. Override with
+#   --build-arg BASE_IMAGE=ubuntu@sha256:<digest>
+# Resolve the current digest with:
+#   docker buildx imagetools inspect ubuntu:22.04 --format '{{.Manifest.Digest}}'
+# Left as a tag here rather than a fabricated digest — an unverified digest is
+# worse than an honest tag.
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE}
+
+# Commit stamp supplied by the caller (see PROVENANCE at the top of this file).
+ARG FLEXAIDS_GIT_COMMIT=""
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
@@ -55,13 +76,33 @@ RUN mkdir -p /opt/flexaidds/bin /opt/flexaidds/data /opt/flexaidds/build \
          -DFLEXAIDS_USE_METAL=OFF \
          -DCMAKE_CXX_COMPILER=g++-14 \
          -DCMAKE_C_COMPILER=gcc-14 \
+         -DFLEXAIDS_GIT_COMMIT_OVERRIDE="${FLEXAIDS_GIT_COMMIT}" \
     && cmake --build /opt/flexaidds/build -j"$(nproc)" --target FlexAIDdS \
     && cp -f /opt/flexaidds/build/FlexAIDdS /opt/flexaidds/bin/FlexAIDdS \
+    && cp -f /opt/flexaidds/build/flexaidds-build-provenance.json /opt/flexaidds/ \
     && (cp -f /opt/flexaidds/build/*.def /opt/flexaidds/data/ 2>/dev/null || true) \
     && (cp -f /opt/flexaidds/build/*.dat /opt/flexaidds/data/ 2>/dev/null || true) \
     && (cp -f /opt/flexaidds/src/.grok/skills/flexaidds/data/* /opt/flexaidds/data/ 2>/dev/null || true) \
     && chmod +x /opt/flexaidds/bin/FlexAIDdS
 
+# Fail the build if the binary cannot be identified after the fact. An image
+# whose engine reports commit=unknown is exactly the artifact that invalidated
+# a comparison on 2026-08-28; catching it here beats discovering it in a
+# results directory three weeks later. Set ALLOW_UNKNOWN_PROVENANCE=1 to
+# deliberately build a throwaway image.
+ARG ALLOW_UNKNOWN_PROVENANCE=0
+RUN set -eu; \
+    p=/opt/flexaidds/flexaidds-build-provenance.json; \
+    test -f "$p" || { echo "FATAL: no provenance file emitted"; exit 1; }; \
+    cat "$p"; \
+    if grep -q '"git_commit": *"unknown"' "$p" && [ "${ALLOW_UNKNOWN_PROVENANCE}" != "1" ]; then \
+      echo "FATAL: image has no recoverable commit."; \
+      echo "       rebuild with --build-arg FLEXAIDS_GIT_COMMIT=\$(git rev-parse --short HEAD)"; \
+      exit 1; \
+    fi
+
 LABEL arch="x86_64" toolchain="locked" org="LeBonhommePharma" license="Apache-2.0"
+LABEL org.opencontainers.image.revision="${FLEXAIDS_GIT_COMMIT}"
+LABEL org.opencontainers.image.source="https://github.com/LeBonhommePharma/FlexAIDdS"
 
 ENTRYPOINT ["FlexAIDdS"]

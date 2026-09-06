@@ -105,6 +105,13 @@ flag therefore does not currently enforce a physics filter on the elected pose.
 
 ## Quick Start
 
+> **All install paths, per platform:** [`docs/INSTALL.md`](docs/INSTALL.md) —
+> CMake, Homebrew, Docker, pip, conda, release binaries, the C++26 compiler
+> floor, and how to tell which build you actually installed.
+>
+> The native engine and the `flexaidds` Python package are **separate**.
+> Installing one does not give you the other.
+
 ### Build
 
 ```bash
@@ -118,6 +125,9 @@ The build produces:
 - `build/FlexAIDdS` — the main docking executable (LTO-optimized)
 - `build/FlexAID` — legacy-compatible interface
 - `build/tENCoM` — standalone vibrational entropy tool
+- `build/flexaidds-build-provenance.json` — commit, dirty state, compiler and
+  build type for this binary. Check it before trusting a comparison; a build
+  that reports `"git_commit": "unknown"` cannot be tied to a source revision.
 
 ### Dock a Ligand
 

@@ -285,6 +285,27 @@ elseif(MSVC)
     set(CMAKE_CXX_STANDARD 20)   # override normal variable — CACHE form leaves it shadowed at 26
 endif()
 
+# ── Machine-readable provenance artifact ──────────────────────────────────
+# `--version` answers only once the binary exists and only for the binary that
+# is asked.  Every packaging route (Homebrew, conda, Docker) also installs this
+# file next to the binary, so an install's origin is recoverable from the
+# filesystem alone -- and the release tarballs the Formula can currently pin
+# (v2.0.3 .. v2.2.0) predate `--version` entirely.
+#
+# It is written from the SAME variables and the SAME configure as the
+# `--version` stamp above: one FLEXAIDS_BUILT_UTC, one FLEXAIDS_VERSION_STR,
+# one commit/dirty/provenance triple.  Two clocks read in two places can
+# straddle a second and disagree, and a JSON that disagrees with the binary it
+# sits beside is the exact defect Formula/flexaidds.rb exists to catch.
+#
+# Placed after the C++ standard is FINAL (26, or 23 on AppleClang, or 20 on
+# MSVC) because the template also records @CMAKE_CXX_STANDARD@; stamped any
+# earlier, that field is an empty string.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-provenance.json.in"
+    "${CMAKE_BINARY_DIR}/flexaidds-build-provenance.json"
+    @ONLY)
+
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
@@ -1592,6 +1613,7 @@ flexaids_add_unit_test(test_protocol_config
             tests/test_cf_aggregator.cpp
             tests/cf_aggregator_stubs.cpp
             LIB/ic2cf.cpp
+            LIB/rot_gene_index.cpp   # ic2cf.cpp calls it since 94d2d0ba
         TEST_NAME CFAggregatorTests
     )
 
@@ -3015,6 +3037,7 @@ flexaids_add_unit_test(test_protocol_config
             LIB/calc_rmsd.cpp
             LIB/rot_gene_index.cpp
             LIB/geometry.cpp
+            LIB/rot_gene_index.cpp   # calc_rmsd.cpp calls it since 94d2d0ba
         TEST_NAME HungarianRmsdBoundsTests
     )
 
