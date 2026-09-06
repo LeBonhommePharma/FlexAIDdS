@@ -1457,6 +1457,11 @@ if(BUILD_TESTING)
         target_link_libraries(test_ga_population_receipt PRIVATE OpenMP::OpenMP_CXX)
     endif()
 
+    flexaids_add_unit_test(test_pose_provenance
+        SOURCES tests/test_pose_provenance.cpp LIB/write_pdb.cpp LIB/fileio.cpp
+        TEST_NAME PoseProvenanceTests
+    )
+
     # test_statmech — StatMechEngine unit tests
     flexaids_add_unit_test(test_statmech
         SOURCES
