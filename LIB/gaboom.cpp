@@ -13,6 +13,7 @@
 #include "niche_distance.h"
 #include "niche_hash.h"
 #include "new_search_arch.h"
+#include "AtomOptResBinding.h"
 
 #include <random>
 #include <functional>
@@ -4024,6 +4025,9 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		const int nopt  = FA->num_optres;
 		const int nctb  = FA->ntypes * FA->ntypes;
 		const int range = GB->num_chrom - popoffset;
+		const flexaids::AtomOptResBinding p_optres_binding(
+		    std::span<const atom>(atoms + 1, natm),
+		    std::span<const OptRes>(FA->optres, nopt));
 
 		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm + 1));
 		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres + 1));
@@ -4123,7 +4127,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 	shared(chrom, FA, GB, VC, gene_lim, atoms, residue, cleftgrid, target, \
 	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt, \
 	       n_receptor_chains, p_use_selective, p_dirty_atm, p_dirty_res_idx, \
-	       p_n_dirty_atm, p_n_dirty_res)
+	       p_n_dirty_atm, p_n_dirty_res, p_optres_binding)
 #endif
 		for(i=popoffset;i<GB->num_chrom;i++){
 #ifdef _OPENMP
@@ -4144,14 +4148,10 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				std::copy(atoms,   atoms + natm + 1,   p_atoms[tid].begin());
 				std::copy(residue, residue + nres + 1, p_res[tid].begin());
 			}
-			// Redirect per-thread atom optres pointers to per-thread optres array.
-			for (int ai = 1; ai <= natm; ++ai) {
-				atom& a = p_atoms[tid][ai];
-				if (a.optres) {
-					ptrdiff_t oidx = a.optres - FA->optres;
-					a.optres = &p_optres[tid][oidx];
-				}
-			}
+			// Non-dirty atoms already point into this workspace on its second
+			// chromosome. Rebind from immutable master indices, not those pointers.
+			p_optres_binding.bind(
+			    std::span<atom>(p_atoms[tid].data() + 1, natm), p_optres[tid]);
 			for (int o = 0; o < nopt; ++o) {
 				p_optres[tid][o].cf.com    = 0.0;
 				p_optres[tid][o].cf.wal    = 0.0;

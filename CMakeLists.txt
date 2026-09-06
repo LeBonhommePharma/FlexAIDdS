@@ -1444,6 +1444,11 @@ if(BUILD_TESTING)
     # flexaids_configure_msvc_test is provided by cmake/FlexAIDOptions.cmake
     # (single definition, available for all test targets below).
 
+    flexaids_add_unit_test(test_atom_pointer_lifetimes
+        SOURCES tests/test_atom_pointer_lifetimes.cpp
+        TEST_NAME AtomPointerLifetimeTests
+    )
+
     # test_statmech — StatMechEngine unit tests
     flexaids_add_unit_test(test_statmech
         SOURCES
@@ -2995,6 +3000,7 @@ flexaids_add_unit_test(test_protocol_config
             tests/test_hungarian_rmsd_bounds.cpp
             tests/hungarian_rmsd_stubs.cpp
             LIB/calc_rmsd.cpp
+            LIB/rot_gene_index.cpp
             LIB/geometry.cpp
         TEST_NAME HungarianRmsdBoundsTests
     )

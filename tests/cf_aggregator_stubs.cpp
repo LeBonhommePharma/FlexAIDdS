@@ -11,6 +11,7 @@
 #include "gaboom.h"
 #include <vector>
 #include <utility>
+#include <stdexcept>
 #include "tENCoM/tencm.h"
 
 namespace vibentropy {
@@ -23,6 +24,9 @@ void apply_sugar_puckers(atom*, const std::vector<std::vector<int>>&,
 }
 namespace tencm {
 void TorsionalENM::build_from_ligand(const atom*, int, int, float, float) {}
+std::vector<double> TorsionalENM::vibrational_eigenvalues(int*, int*) const {
+    throw std::logic_error("CF aggregator fixture must not execute tENCoM");
+}
 }
 
 // Controllable fail points for serial contamination tests (ic2cf restore).

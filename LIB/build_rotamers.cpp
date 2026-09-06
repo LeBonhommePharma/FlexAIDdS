@@ -1,5 +1,6 @@
 #include "flexaid.h"
 #include "fileio.h"
+#include "rotamer_output.h"
 // Receptor side-chain conformational strain (FLEXAIDDS_RECEPTOR_STRAIN,
 // default OFF). Header-only; every entry point below is a no-op when the
 // gate is unset, so this build stays bit-identical without it.
@@ -104,7 +105,7 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 
 				if(strcmp(rotamer[l].res,residue[kres].name) == 0){
 
-					atom* at_cb = NULL;
+					int cb_index = 0;
 
 					/*
 					printf("---------------------\n");
@@ -171,7 +172,7 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 							if((*atoms)[j].rec[3] != 0){
 								(*atoms)[j].shift = (*atoms)[(*atoms)[j].rec[3]].dih - (*atoms)[j].dih;
 							}
-						}else if(!strcmp((*atoms)[j].name," CB ")){ at_cb = &(*atoms)[j]; }
+						}else if(!strcmp((*atoms)[j].name," CB ")){ cb_index = j; }
 
 						(*atoms)[j+delta_atm] = (*atoms)[j];
 						//(*atoms)[j+delta_atm].number += delta_atm;
@@ -259,20 +260,10 @@ void build_rotamers(FA_Global* FA,atom** atoms,resid* residue,rot* rotamer){
 								}
 							}
 
-							fprintf(outrot, "MODEL       %2d\n", residue[kres].trot);
-							resid* res = &residue[at_cb->ofres];
-							fprintf(outrot, "ATOM  %5d %4s %3s %c%4d    %8.3f%8.3f%8.3f\n",
-								at_cb->number, at_cb->name,
-								res->name, res->chn, res->number,
-								at_cb->coor[0], at_cb->coor[1], at_cb->coor[2] );
-							for(int m=0; m<total_build; m++){
-								atom* at = &(*atoms)[buildcc_list[m]];
-								fprintf(outrot, "ATOM  %5d %4s %3s %c%4d    %8.3f%8.3f%8.3f\n",
-									at->number, at->name,
-									res->name, res->chn, res->number,
-									at->coor[0], at->coor[1], at->coor[2] );
-							}
-							fprintf(outrot, "ENDMDL\n");
+							flexaids::write_rotamer_model(outrot,
+							    std::span<const atom>(*atoms, FA->atm_cnt + 1),
+							    std::span<const resid>(residue, FA->res_cnt + 1), cb_index,
+							    std::span<const int>(buildcc_list, total_build), residue[kres].trot);
 						}
 
 						if(FA->nrg_suite){
