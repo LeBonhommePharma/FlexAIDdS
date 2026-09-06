@@ -35,7 +35,11 @@ def strict_row(pid, sha="a" * 64):
         "pdb_id": pid, "seed_echo": "0", "native_pose_seeded": "0",
         "matrix_md5": PIN, "protocol_claim_eligible": "1", "claim_ready": "1",
         "rmsd_to_crystal": "1.0", "pb_pass": "1", "success_pb": "1",
+        "success_rmsd": "1", "score_pose_consistent": "1", "score_pose_delta": "0",
+        "posebusters_input_sha256": "b" * 64,
         "pb_backend": "bust_cli", "tencom_status": "ok", "eigen_status": "ok",
+        "pb_ran": "1", "pb_n_pass": "27", "pb_n_fail": "0", "pb_n_checks": "27",
+        "eigen_n_modes": "1", "elected_H_vib": "-1.5",
         "pose_sha256": sha, "rmsd_pose_sha256": sha,
         "posebusters_pose_sha256": sha, "tencom_pose_sha256": sha,
     }

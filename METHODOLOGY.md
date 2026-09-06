@@ -27,7 +27,8 @@ numbers into other files — reference `METHODOLOGY.md §N`.
 - **Deterministic seed:** `FLEXAID_SEED=12345`. This is the ONLY determinism seed. Do **not** use
   `FLEXAIDDS_SEED_BASE` for determinism (it offsets per-restart seeds).
 - **Benchmark GA budget:** **2000 generations, population 1000** (the FlexAID/FlexAIDdS norm =
-  2,000,000 evals/restart). Do not change for accuracy runs.
+  a nominal population-generation product of 2,000,000 per restart). Do not change for accuracy runs.
+  This product is not an observed evaluation count; throughput requires a witnessed evaluator-boundary counter.
 - **Restarts:** `FLEXAIDDS_RESTARTS=<n>`. Published Astex protocol = 10 restarts; a fast A/B may
   use 1–3 but MUST state it.
 - **Security channel off for benchmarks:** `FLEXAIDDS_NO_SEC=1`.
@@ -189,36 +190,113 @@ receipt, so a completed run cannot be told apart from one at different weights.
 
 ---
 
+## 0.3 Admission identity, missingness, and repair evidence
+
+The CSV aggregator validates receipt fields; it does not independently witness engine or
+validator execution. Its report must identify that evidence level and must not describe
+string equality as verification of raw artifacts. STRICT requires complete, consistent
+protocol, matrix, finite serial RMSD, PoseBusters, score-pose consistency, tENCoM/Eigen,
+and syntactically valid pose-linked hash fields. A stored `claim_ready` or success flag
+cannot override contradictory or missing measurements. This hardening does not change
+the RMSD instrument or pose election described in §0.0.
+
+The frozen manifest is mandatory for a primary rate: validate its schema, unique codes,
+declared count, and sorted-code digest. Never silently substitute admitted row count.
+Each target contributes at most once. Existing one-row-per-target producer output is
+explicitly a **single-observation** analysis. Repeated seeds require an explicit expected
+seed list; a target passes only on a strict majority of that list, with absent/failed
+seeds counting as failures. Reject duplicate observation identities and implicit mixing
+of arms or endpoints; any explicit arm selection must be recorded. Do not infer a union
+or majority across unrelated experiments. A diagnostic mode may expose legacy data but
+must not emit a primary STRICT rate without this contract.
+
+Reject duplicate CSV headers, inconsistent widths, ambiguous source layouts, and sidecar
+joins lacking matching pose identity. Report S1/S2 diagnostics over their declared eligible
+population independently of filtering on STRICT success. Empty measurement populations
+have unavailable statistics and an explicit valid count, never an invented zero RMSD.
+Process completion and scientific success are separate: a wrapper must retain runtime
+failure state and signal incomplete docking without calling a completed inaccurate pose
+a process failure.
+
+Memory-ownership repairs are checked against allocation and workspace invariants. Correct
+paths must retain their outputs; paths that use invalid pointers are not a scientifically
+valid parity baseline. Document those intentional invalid-path corrections and test the
+production ownership transitions, including repeated and parallel workspace use. Do not
+hide an invalid-pointer repair behind an option that leaves undefined behavior as default.
+Changes to valid scoring, ranking, clustering, or thermodynamic models still require the
+feature flags and science gates below. No claim of historical crash attribution follows
+from a source fix alone.
+
 ## 1. Reproducibility / parity gate (run before ANY merge)
 
-Purpose: prove a change is bit-identical to the baseline under default flags.
+Purpose: compare the baseline and candidate's emitted scientific results under default
+flags, with exact input and executable provenance. Publication acceptance is separate.
 
-1. Build the candidate engine and the baseline engine (main) separately; record both md5s.
-2. Dock 1G9V, `FLEXAID_SEED=12345`, `OMP_NUM_THREADS=1`, config `/tmp/parity.json`
-   (2000 gen / pop 1000, no crystal-pose seed: `pose_seed_enabled=false, seed_fraction=0`).
-3. Assert: elected CF equal AND all 10 elected poses byte-identical between candidate and main.
-4. PASS = default-flag behavior unchanged. Any intended behavior change must be opt-in behind an
-   env flag that defaults OFF, and parity must hold with the flag OFF.
+1. Build main and candidate in separate pinned checkouts using the same compiler/options.
+   Preserve source commits and any diagnostic-only patch, compiler commands, binary MD5
+   and SHA-256, runtime-data hashes, input hashes and exact argv/environment.
+2. Dock 1G9V, `FLEXAID_SEED=12345`, `OMP_NUM_THREADS=1`, population 1000 and generations
+   2000, without crystal/native pose seeding (`pose_seed_enabled=false, seed_fraction=0`).
+   Use fresh output directories keyed by run ID and source identity, never engine basename.
+3. Require child exit zero, completed fresh artifacts, all ten emitted ranks and a valid
+   fresh `.rrg` grid. Missing or stale output is a failed gate. A printed FAIL must return
+   nonzero. Never compare a file overwritten by the second run with itself.
+4. Compare all ten scientific PDB payloads and elected CF fields at their emitted precision.
+   Preserve raw files/hashes. Across builds, normalize **only** the commit and dirty values
+   in the exact `REMARK FLEXAID.commit=... FLEXAID.dirty=... FLEXAID.seed=...` provenance line.
+   Keep seed, every other REMARK, coordinates, atom identities, scores, ranking and grid
+   order unchanged. Report this as provenance-normalized byte equality, not raw hash identity
+   or proof of equality below the instrument's serialized precision.
+5. Exact initial-population gene/score receipts (§2) complement the emitted-output comparison.
+   PASS means the declared observations agree. Invalid-pointer baseline execution is handled
+   by §0.3; it cannot establish a valid scientific reference. Changes to valid scoring,
+   ranking, clustering or thermodynamic models still require their own gated validation.
 
-Reference baseline engine md5 (main @ 7f1f10a0…): `7f1f10a0f10b682b33a76622a40f1a60`.
+`ops/gate_parity.sh` and `ops/engine_repro_gate.py` implement the fail-closed invocation
+and comparison interface. The obsolete hard-coded baseline MD5 is not a current engine pin.
 
 ---
 
 ## 2. Determinism check (multi-thread)
 
-For changes touching parallel regions (GA eval, cleft detection):
+For changes touching parallel regions (GA eval, cleft detection), repeat candidate runs
+at `OMP_NUM_THREADS=1` and `=4` twice each with `FLEXAIDDS_PARALLEL_REPRODUCE=1`.
+Default-flag parity runs are separate and cannot silently substitute for flag-ON runs.
 
-- **Cleft grid:** dock a fixed seed at `OMP_NUM_THREADS=1` and `=4`, twice each; assert the emitted
-  `.rrg` grid-cache file is byte-identical across thread counts AND run-to-run.
-- **GA population:** with the parallel-reproduce flag ON, assert the gen-0 order-independent CF
-  checksum (Σ cf.com, Σ cf.wal over the population) is identical run-to-run at 1 AND 4 threads, and
-  that all 10 elected poses are byte-identical across two 4-thread runs.
+- Use an OpenMP-enabled build; record actual compiler flags and actual worker/team
+  participation. Disable dynamic team sizing, reject thread-limit overrides and leave
+  `FLEXAID_DETERMINISTIC` unset so the tested path is not silently serialized.
+- **Cleft grid:** generate a fresh grid for each run; compare valid `.rrg` files in their
+  original record order across runs/thread counts. A shared cached grid is not evidence
+  of independently reproduced grid construction.
+- **Initial population:** enable the opt-in `FLEXAIDDS_GEN0_RECEIPT` observer at a unique
+  path. It snapshots stored values immediately after the initial population is evaluated
+  and sorted, before reproduction, without rescoring, RNG calls or population mutation.
+  Require successful engine completion as well as a complete receipt. Record actual seed,
+  population count, exact gene/ring identity and exact stored score bits. Check complete
+  order-independent gene/score record multisets; derive CF.com/CF.wal checksum summaries
+  from those records. Equality of two sums alone cannot exclude compensating differences.
+  Later generation traces or re-scored terminal populations are not this observation.
+- Compare the two four-thread elected outputs as in §1. Keep the one-thread repeats and
+  cross-thread comparisons explicit; never hide a failure by sorting grid or pose ranks.
+- A matching diagnostic-only observer may be applied to baseline and candidate with its
+  exact patch recorded. The observer is off by default and is tested for nonmutation and
+  I/O failure. Failed writes, duplicate output paths, missing rows or wrong population
+  counts fail the gate. The enabled observer does not make a run a publication campaign.
 
 ---
 
 ## 3. Astex-85 accuracy A/B (the science gate)
 
-Purpose: prove a determinism/perf change does not regress docking accuracy.
+Purpose: prove a change to valid scoring, search, cleft selection, ranking or thermodynamic
+models does not regress docking accuracy.
+
+**Applicability to correctness repairs:** ownership, receipt, reporting and diagnostic-observer
+repairs that preserve valid scientific operations use §§0.3, 1, 2, 4 and 6 for merge acceptance.
+They do not require a new 85×10 publication campaign merely because the repaired code is in a
+GA source file. Any unexplained valid-path scoring/output difference must be investigated;
+if resolution changes the valid scientific model or search behavior, this full accuracy A/B
+applies. This exception does not turn merge-validation runs into docking-success evidence.
 
 - **Protocol:** autonomous (blind) mode — `--mode autonomous` — which exercises SURFNET cleft
   detection (top.cpp "Always run SURFNET"). Seed 12345, `FLEXAIDDS_NO_SEC=1`, 2000 gen / pop 1000.
@@ -260,8 +338,9 @@ mirror (`docs/ICLOUD_BENCHMARK_STORAGE.md`).
 
 ## 4. ctest
 
-`cd build && /opt/homebrew/bin/ctest --output-on-failure` — expect **11/11**. A stale binary can
-cause a false PoseBustTests failure; rebuild before trusting a red.
+`cd build && /opt/homebrew/bin/ctest --output-on-failure`. All configured tests must pass;
+record the actual test count from this build instead of relying on a historical count. A
+stale binary can cause a false PoseBustTests failure; rebuild before trusting a red.
 
 ---
 
@@ -276,7 +355,7 @@ cause a false PoseBustTests failure; rebuild before trusting a red.
 ## 6. Commit review & audit (OPS/CI)
 
 Every commit by any agent is reviewed against: (a) §1 parity, (b) §2 determinism if it touches
-parallel code, (c) §3 accuracy if it touches scoring/cleft/GA, (d) §4 ctest, (e) code-conduct in
+parallel code, (c) §3 accuracy when its scientific applicability above is met, (d) §4 ctest, (e) code-conduct in
 `AGENTS.md`, (f) no leaked instrumentation / debug prints / commented-out dead code introduced.
 The review is run through the strongest reviewer model available in the runtime and its verdict is
 recorded. NOTE: model availability is runtime-dependent — if a specifically requested reviewer model

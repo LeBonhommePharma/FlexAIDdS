@@ -11,6 +11,7 @@
 #include "gaboom.h"
 #include <vector>
 #include <utility>
+#include <stdexcept>
 #include "tENCoM/tencm.h"
 
 namespace vibentropy {
@@ -23,6 +24,9 @@ void apply_sugar_puckers(atom*, const std::vector<std::vector<int>>&,
 }
 namespace tencm {
 void TorsionalENM::build_from_ligand(const atom*, int, int, float, float) {}
+std::vector<double> TorsionalENM::vibrational_eigenvalues(int*, int*) const {
+    throw std::logic_error("CF aggregator fixture must not execute tENCoM");
+}
 }
 
 // Controllable fail points for serial contamination tests (ic2cf restore).
@@ -71,3 +75,17 @@ bool buildcc(FA_Global* FA, atom* atoms, int nmov, int mov[]) {
 void dee_first(psFlexDEE_Node, psFlexDEE_Node) {}
 void dee_last(psFlexDEE_Node, psFlexDEE_Node) {}
 int  dee_pivot(psFlexDEE_Node, psFlexDEE_Node*, int, int, int, int, int) { return 0; }
+
+// ic2cf.cpp calls rot_gene_index on the flexible side-chain path
+// (94d2d0ba). This target links the real ic2cf.cpp, not rot_gene_index.cpp;
+// get_cf_evalue() never reaches the clamp, so a no-op stub is enough to
+// link. Identity on in-range values; clamp to [0, res->trot] otherwise.
+int rot_gene_index(double gene, const resid* res, const char* site) {
+    (void)site;
+    const int trot = (res != NULL) ? res->trot : 0;
+    int idx = (int)(gene + 0.5);
+    if (idx < 0) idx = 0;
+    if (idx > trot) idx = trot;
+    return idx;
+}
+long rot_gene_guard_hits(void) { return 0; }

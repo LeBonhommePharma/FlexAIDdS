@@ -77,18 +77,17 @@ int main(int argc, char** argv) {
         return 4;
     }
 
-    double max_eigenvalue = 0.0;
-    for (const auto& mode : model.modes()) {
-        if (std::isfinite(mode.eigenvalue))
-            max_eigenvalue = std::max(max_eigenvalue, mode.eigenvalue);
-    }
-    const double cutoff = std::max(1e-10, max_eigenvalue * 1e-8);
-    std::vector<double> eigenvalues;
-    eigenvalues.reserve(model.modes().size());
-    for (const auto& mode : model.modes()) {
-        if (std::isfinite(mode.eigenvalue) && mode.eigenvalue > cutoff)
-            eigenvalues.push_back(mode.eigenvalue);
-    }
+    // Was an inline copy of the relative rigid-mode cutoff. Now the single
+    // shared implementation (tencm.h::vibrational_eigenvalues), so this CLI and
+    // the objective path cannot disagree about what h_rep means -- they did,
+    // by 56%, on the same ligand: 1.896 here vs 2.950 there.
+    //
+    // REGRESSION ANCHOR: on BU72 (32 heavy atoms) this must still print
+    // H_vib_nats = 2.949923762 with n_positive_modes = 90, the value the old
+    // inline copy produced. Any drift means the shared method changed the rule.
+    int n_dropped = 0, n_expected = 0;
+    std::vector<double> eigenvalues =
+        model.vibrational_eigenvalues(&n_dropped, &n_expected);
     if (eigenvalues.empty()) {
         std::cerr << "ligand_tencom_pose: Eigen returned no positive modes\n";
         return 5;

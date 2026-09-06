@@ -8,6 +8,7 @@
 #include <latch>
 #include <thread>
 #include <vector>
+#include <barrier>
 #include "../LIB/AtomCopyExtent.h"
 #include "../LIB/GridDecomposer.h"
 #include "../LIB/SharedPosePool.h"

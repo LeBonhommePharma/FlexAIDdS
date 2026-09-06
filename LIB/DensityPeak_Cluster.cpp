@@ -2,6 +2,7 @@
 #include "fileio.h"
 #include "MinibatchSampler.h"
 #include "ClusterRepMode.h"
+#include "PoseProvenance.h"
 #include "TargetServer.h"
 #include <cmath>
 #include <limits>
@@ -669,7 +670,8 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		snprintf(tmp_end_strfile,MAX_PATH__,"%s%s",end_strfile,sufix);
 
 		// (*) write pdb file
-		write_pdb(FA,atoms,residue,tmp_end_strfile,remark);
+		std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(remark);
+		write_pdb(FA,atoms,residue,tmp_end_strfile,pose_remarks.data());
 	}
     
     for(i = 0, k = 0; i < num_chrom; ++i)

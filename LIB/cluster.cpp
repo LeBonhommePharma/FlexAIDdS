@@ -4,17 +4,195 @@
 #include "statmech.h"
 #include "SoftBetaFreeEnergy.h"
 #include "EnvFlags.h"
+#include "PoseProvenance.h"
 #include "ClusterRepMode.h"
 #include "TargetServer.h"
 #include "tencom_ledger.h"
+// Receptor side-chain conformational strain. Gate FLEXAIDDS_RECEPTOR_STRAIN,
+// DEFAULT OFF: unset, evaluate_live() short-circuits and no REMARK is added,
+// so the emitted PDB is byte-identical to HEAD.
+#include "receptor_strain.h"
+// Atom-type-pair contact-surface vector. Gate FLEXAIDDS_CONTACT_PROFILE,
+// DEFAULT OFF: unset, nothing is snapshotted and no .cprof.csv sidecar is
+// written, so the emitted artifact set is byte-identical to HEAD.
+#include "contact_profile.h"
+// Receptor conformation AS SCORED. Gate FLEXAIDDS_WRITE_FLEXED_RECEPTOR,
+// DEFAULT OFF: unset, write_flexed_receptor_companion() is never called, no
+// directory is created and no file is written, so the emitted artifact set is
+// byte-identical to HEAD.
+#include "flexed_receptor.h"
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <limits>
+#include <system_error>
 #include <vector>
 #include <string>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+
+// ── FLEXAIDDS_WRITE_FLEXED_RECEPTOR (DEFAULT OFF) ────────────────────────────
+// Write the receptor exactly as the engine scored it, next to the pose it was
+// scored with. Called only from the pose-emission loop below, and only when
+// flexaids::flexed_receptor::write_enabled(); with the gate unset this function
+// is never entered, creates no directory and writes no byte.
+//
+// WHY THIS IS THE AS-SCORED STATE, not a reconstruction.
+// The caller has just run ic2cf() for this chromosome, which applies the
+// chromosome's rotamer genes to residue[].rot. write_pdb.cpp:140 then reads
+// that same residue[k].rot to choose the side-chain atoms it writes for the
+// pose. This function reads residue[k].rot too, in the same place in the same
+// iteration, so the receptor written here and the geometry the CF was computed
+// on cannot disagree.
+//
+// WHAT IS EXCLUDED: the docked ligand, and only the docked ligand. FA->het_res
+// [1..FA->num_het] are the HET residues created by the ligand readers
+// (read_lig.cpp:137, SdfReader.cpp:481, Mol2Reader.cpp:261). Cofactors, metals
+// and waters that came in with the receptor are KEPT, because the engine scored
+// against them; dropping them would produce a receptor the pose was never
+// evaluated in, which is the very defect this file exists to remove.
+//
+// DELIBERATE DIFFERENCES FROM write_pdb():
+//   * FA->output_scored_only is NOT consulted. That flag is what suppressed the
+//     flexed coordinates in the first place; this companion must be complete
+//     whatever the pose file contains.
+//   * the residue insertion code (resid::ins) IS emitted in column 27. write_pdb
+//     leaves it blank, which merges residues that differ only by insertion code.
+//   * a residue whose `type` is neither 0 nor 1 is written as ATOM instead of
+//     being given an uninitialised record name.
+//   * no CONECT records: the ligand is not here, and protein connectivity is
+//     inferred by every downstream reader (PoseBust/Loaders.cpp and the
+//     upstream bust CLI both re-perceive the protein).
+//
+// Returns true only if the file was created and closed. On any failure the
+// caller reports it on stderr — a gate that is set but produces nothing is a
+// silent no-op, which is exactly the failure shape this project keeps hitting.
+static bool write_flexed_receptor_companion(const FA_Global* FA,
+                                            const atom* atoms,
+                                            const resid* residue,
+                                            const std::string& pose_pdb_path,
+                                            int pose_index,
+                                            double cf_apparent,
+                                            std::string* out_path,
+                                            std::string* out_err)
+{
+	if(out_path) out_path->clear();
+	if(out_err)  out_err->clear();
+	if(FA == NULL || atoms == NULL || residue == NULL){
+		if(out_err) *out_err = "null engine state";
+		return false;
+	}
+
+	// FA->het_res is a fixed-size array (flexaid.h: int het_res[2]). Bound the
+	// scan by its real extent as well as by num_het so a future num_het > 2
+	// cannot walk off the end here.
+	const int het_cap = static_cast<int>(sizeof(FA->het_res) / sizeof(FA->het_res[0]));
+	auto is_docked_ligand_res = [&](int k) -> bool {
+		for(int h = 1; h <= FA->num_het && h < het_cap; ++h)
+			if(FA->het_res[h] == k) return true;
+		return false;
+	};
+
+	// Pass 1: counts, so the header can carry them (a reader must be able to
+	// tell a truncated companion from a complete one without a second file).
+	long long n_atoms = 0;
+	int n_res = 0;
+	int n_res_off_rot0 = 0;
+	for(int k = 1; k <= FA->res_cnt; ++k){
+		if(is_docked_ligand_res(k)) continue;
+		const int rot = residue[k].rot;
+		if(rot != 0) ++n_res_off_rot0;
+		++n_res;
+		n_atoms += (residue[k].latm[rot] - residue[k].fatm[rot] + 1);
+	}
+
+	const std::string dir  = flexaids::flexed_receptor::companion_dir(pose_pdb_path);
+	const std::string path = flexaids::flexed_receptor::companion_path(pose_pdb_path);
+	{
+		std::error_code ec;
+		std::filesystem::create_directories(dir, ec);
+		if(ec){
+			if(out_err) *out_err = "mkdir " + dir + ": " + ec.message();
+			return false;
+		}
+	}
+
+	FILE* f = fopen(path.c_str(), "w");
+	if(f == NULL){
+		if(out_err) *out_err = "cannot open " + path + " for writing";
+		return false;
+	}
+
+	fprintf(f, "REMARK receptor conformation AS SCORED, generated by FlexAIDdS\n");
+	fprintf(f, "REMARK gate FLEXAIDDS_WRITE_FLEXED_RECEPTOR=1\n");
+	fprintf(f, "REMARK content receptor_as_scored (docked ligand EXCLUDED;"
+	           " cofactors/metals/waters KEPT)\n");
+	fprintf(f, "REMARK companion_of %s\n", pose_pdb_path.c_str());
+	fprintf(f, "REMARK pose_index %d\n", pose_index);
+	fprintf(f, "REMARK CF.app %.5f\n", cf_apparent);
+	fprintf(f, "REMARK n_residues %d\n", n_res);
+	fprintf(f, "REMARK n_atoms %lld\n", n_atoms);
+	// The one number that says whether this file differs from the input
+	// receptor at all. 0 means the search never moved a side chain, so a
+	// crystal-frame and a flexed-frame validity verdict must agree.
+	fprintf(f, "REMARK n_residues_off_input_rotamer %d\n", n_res_off_rot0);
+	fprintf(f, "REMARK NOTE this file records the receptor STATE only; it makes"
+	           " no claim that the state is physical. Read a flexed-frame"
+	           " validity verdict together with FLEXAIDDS_RECEPTOR_STRAIN.\n");
+
+	for(int k = 1; k <= FA->res_cnt; ++k){
+		if(is_docked_ligand_res(k)) continue;
+		const int rot = residue[k].rot;
+		for(int i = residue[k].fatm[rot]; i <= residue[k].latm[rot]; ++i){
+			const int ofres = atoms[i].ofres;
+			const char* field = (residue[ofres].type == 1) ? "HETATM" : "ATOM  ";
+
+			// Fixed-width PDB columns 13-16 (atom name) and 77-78 (element),
+			// copied from write_pdb.cpp so two-letter elements never shift.
+			char aname[5];
+			snprintf(aname, sizeof(aname), "%-4.4s", atoms[i].name);
+			char elem[3] = {' ', ' ', '\0'};
+			if(atoms[i].element[0] != '\0'){
+				const char* e = atoms[i].element;
+				if(e[1] == '\0'){ elem[0] = ' '; elem[1] = e[0]; }
+				else            { elem[0] = e[0]; elem[1] = e[1]; }
+			}else{
+				const char* ge = get_element(atoms[i].type);
+				if(ge[0] != '\0' && ge[1] != '\0'){ elem[0] = ge[0]; elem[1] = ge[1]; }
+				else if(ge[0] != '\0')            { elem[0] = ' ';   elem[1] = ge[0]; }
+			}
+
+			// Column 27 is the insertion code. residue[].ins can legitimately
+			// be '\0' for "none"; a NUL byte in a PDB file is not a blank, it
+			// is a corrupt record, so normalise anything non-printable to ' '.
+			char icode = residue[ofres].ins;
+			if(icode < ' ' || icode > '~') icode = ' ';
+
+			fprintf(f,
+				"%s%5d %-4s %3s %c%4d%c   %8.3f%8.3f%8.3f  1.00  0.00          %2s\n",
+				field,
+				atoms[i].number,
+				aname,
+				residue[ofres].name,
+				residue[ofres].chn,
+				residue[ofres].number,
+				icode,
+				atoms[i].coor[0],
+				atoms[i].coor[1],
+				atoms[i].coor[2],
+				elem
+				);
+		}
+	}
+
+	fprintf(f, "END\n");
+	fclose(f);
+
+	if(out_path) *out_path = path;
+	return true;
+}
 
 void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, target::TargetServer* ts, const std::string& ligand_name)
 {
@@ -458,6 +636,19 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		// A clash penalty is evidence about the emitted pose, never a reason to
 		// substitute a stale search score.
 		cf=ic2cf(FA,VC,atoms,residue,cleftgrid,GB->num_genes,FA->opt_par);
+
+		// ── FLEXAIDDS_CONTACT_PROFILE (default OFF) ──────────────────────────
+		// Freeze the atom-type-pair contact-surface vector of the geometry the
+		// ic2cf() call above just scored, together with the per-type-pair CF
+		// contributions the engine credited for the SAME evaluation. Taken
+		// immediately after the scoring call — not at write_pdb() time — so no
+		// later evaluation on this thread can substitute a different profile
+		// under the pose. The sidecar itself is written after write_pdb() below,
+		// from this frozen copy.
+		if(flexaids::contact_profile::enabled()){
+			flexaids::contact_profile::snapshot(FA->contributions, FA->ntypes);
+		}
+
 		const double emitted_cf = get_cf_evalue(&cf, FA);
 		const double emitted_app = get_apparent_cf_evalue(&cf);
 		const double score_delta = std::abs(emitted_cf - chrom[Clus_TOP[j]].evalue);
@@ -498,6 +689,28 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", emit_app_value);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+
+		// ── CF.strain — receptor side-chain eviction cost ───────────────────
+		// REPORTED, NOT SUMMED INTO CF.app. get_apparent_cf_evalue() (ic2cf.cpp)
+		// sums a fixed set of cfstr channels and strain is not one of them, so
+		//     CF.com + CF.sas + CF.wal + CF.hbond (+ gated terms) = CF.app
+		// still holds exactly and existing parsers are unaffected.
+		// Evaluated against the LIVE receptor state: the ic2cf() call above has
+		// already applied this chromosome's rotamer genes to residue[].rot, which
+		// is the same field write_pdb.cpp:40 uses to choose the side-chain atoms
+		// it is about to write, so the charge and the emitted geometry cannot
+		// disagree. Nothing is emitted when the gate is off.
+		if (flexaids::receptor_strain::enabled()) {
+			const flexaids::receptor_strain::StrainResult sr =
+				flexaids::receptor_strain::evaluate_live(FA, atoms, residue);
+			snprintf(tmpremark, MAX_REMARK,
+			         "REMARK CF.strain=%8.5f n_flex=%d n_moved=%d n_unresolved=%d "
+			         "T=%.2f basis=hap2_switch+rotlib_pmax units=kcal/mol "
+			         "excluded_from=CF.app\n",
+			         sr.total_kcal_mol, sr.n_flexible, sr.n_moved, sr.n_unresolved,
+			         flexaids::receptor_strain::temperature_K());
+			safe_remark_cat(remark, tmpremark, &remark_len);
+		}
 
 		// P2 provenance — emitted ONLY for non-default modes so the default
 		// (lowcf) PDB stays byte-identical to pre-medoid HEAD (acceptance gate #1).
@@ -632,7 +845,84 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 		//printf("filename=<%s>\n",tmp_end_strfile);
 		//PAUSE;
-		write_pdb(FA,atoms,residue,tmp_end_strfile,remark);
+		std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(remark);
+		write_pdb(FA,atoms,residue,tmp_end_strfile,pose_remarks.data());
+
+		// ── Write the receptor AS SCORED (FLEXAIDDS_WRITE_FLEXED_RECEPTOR) ──
+		// DEFAULT OFF. Nothing above this point is touched: the pose PDB has
+		// already been written and is byte-identical either way, and no REMARK,
+		// no CF channel and no ranking is involved.
+		//
+		// Written HERE, immediately after write_pdb() and inside the same
+		// iteration, because residue[].rot still holds the rotamer indices the
+		// ic2cf() call at the top of this iteration installed. Any later point
+		// in the loop would risk another evaluation having moved them.
+		//
+		// Goes into <dir>/flexed_receptor/<pose-stem>_receptor.pdb, NOT beside
+		// the pose: several scripts/ analyses enumerate poses with globs as
+		// loose as "*.pdb", so any sibling .pdb would be miscounted as a pose.
+		// See flexed_receptor.h.
+		if(flexaids::flexed_receptor::write_enabled()){
+			std::string fr_path;
+			std::string fr_err;
+			const bool fr_ok = write_flexed_receptor_companion(
+				FA, atoms, residue, std::string(tmp_end_strfile), j,
+				emit_app_value, &fr_path, &fr_err);
+			// Structural-presence proof, both ways. A set gate that produces no
+			// artifact is the silent-no-op failure this project keeps hitting.
+			if(fr_ok){
+				fprintf(stderr, "[FLEXREC] wrote %s\n", fr_path.c_str());
+			}else{
+				fprintf(stderr,
+				        "[FLEXREC] WARNING: no as-scored receptor written for %s"
+				        " (%s)\n",
+				        tmp_end_strfile,
+				        fr_err.empty() ? "unknown error" : fr_err.c_str());
+			}
+			fflush(stderr);
+		}
+
+		// ── Write contact-profile sidecar (.cprof.csv) ──────────────────────
+		// FLEXAIDDS_CONTACT_PROFILE, DEFAULT OFF. Same sidecar convention as
+		// the .mcf block below: <pose>.pdb -> <pose>.cprof.csv, so the profile
+		// joins to every existing results table on the pose filename, and the
+		// pose_index recorded inside is the same j that names the PDB and that
+		// REMARK binding_mode carries. Contents: total Voronoi contact surface
+		// per unordered atom-type pair (inter / intra split), plus the CF
+		// contribution the engine credited for that same pair — deliberately
+		// NOT filtered on the interaction matrix, so a pair with real buried
+		// surface and cf_pair == 0.0 is directly visible. Adds nothing to CF.
+		if(flexaids::contact_profile::enabled()){
+			std::string cp_path(tmp_end_strfile);
+			if(cp_path.size() > 4 &&
+			   cp_path.substr(cp_path.size() - 4) == ".pdb")
+				cp_path = cp_path.substr(0, cp_path.size() - 4) + ".cprof.csv";
+			else
+				cp_path += ".cprof.csv";
+			const bool cp_ok = flexaids::contact_profile::write_csv(
+				cp_path, "cluster_emitted_pose",
+				std::string(tmp_end_strfile), j,
+				"apparent", emit_app_value);
+			// Structural-presence proof. A gate that is set but never produces
+			// an artifact is a silent no-op — the exact failure shape this
+			// project has hit repeatedly. Say on stderr what happened, both
+			// ways. Gate-ON only, so it costs nothing by default.
+			if(cp_ok){
+				fprintf(stderr,
+				        "[CPROF] wrote %s (ntypes=%d, %lld contacts)\n",
+				        cp_path.c_str(),
+				        flexaids::contact_profile::last().ntypes,
+				        flexaids::contact_profile::last().ncontacts);
+			}else{
+				fprintf(stderr,
+				        "[CPROF] WARNING: no profile written for %s "
+				        "(ntypes=%d — was FLEXAIDDS_CONTACT_PROFILE set before "
+				        "the engine started, and did ic2cf reach vcfunction?)\n",
+				        cp_path.c_str(),
+				        flexaids::contact_profile::last().ntypes);
+			}
+			fflush(stderr);
+		}
 
 		// ── Write member-CF sidecar (.mcf) for Boltzmann Z+H cluster selection ──
 		// DatasetRunner reads these to compute Z_cluster = sum exp(-CF_i/kT)

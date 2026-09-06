@@ -1,4 +1,5 @@
 #include "gaboom.h"
+#include "GaPopulationReceipt.h"
 #include "Vcontacts.h"
 #include "fileio.h"
 #include "coarse_init.h"
@@ -13,6 +14,7 @@
 #include "niche_distance.h"
 #include "niche_hash.h"
 #include "new_search_arch.h"
+#include "AtomOptResBinding.h"
 
 #include <random>
 #include <functional>
@@ -527,8 +529,16 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	std::unordered_map<size_t, int> duplicates;
 
+	{
+	flexaids::GaPopulationObservation initial_population_observation;
 	populate_chromosomes(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
 			     GB->pop_init_method,target,GB->pop_init_file,at,0,print,dice,duplicates);
+	// Observe only the completed initial population, before any reproduction.
+	// Repopulations below never overwrite this optional generation-zero receipt.
+	flexaids::write_ga_population_receipt_if_requested(
+	    std::span<const chromosome>(*chrom, GB->num_chrom), GB->num_genes,
+	    static_cast<std::uint64_t>(tt));
+	}
 	//}
 
 	//print_pop((*chrom),(*gene_lim),GB->num_chrom,GB->num_genes);
@@ -742,10 +752,11 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				tencm::TorsionalENM lig_enm_free;
 				lig_enm_free.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
 				if (lig_enm_free.is_built()) {
-					std::vector<double> eigs;
-					eigs.reserve(lig_enm_free.modes().size());
-					for (const auto& nm : lig_enm_free.modes())
-						if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
+					// Cartesian ligand ANM: rigid-body modes removed by RELATIVE cutoff, not
+					// by eigenvalue sign. A `> 0.0` filter kept whichever of the six landed
+					// positive from round-off, and those set the lower log-frequency bin edge.
+					// See tencm.h::vibrational_eigenvalues for the measurement.
+					const std::vector<double> eigs = lig_enm_free.vibrational_eigenvalues();
 					if (!eigs.empty()) {
 						const std::vector<std::vector<double>> single = { eigs };
 						FA->H_rep_ligand_ref = static_cast<float>(
@@ -1328,10 +1339,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 						// Half-open [lig_start, lig_end); latm[0] is inclusive.
 						lig_enm.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
 						if (!lig_enm.is_built()) continue;
-						std::vector<double> eigs;
-						eigs.reserve(lig_enm.modes().size());
-						for (const auto& nm : lig_enm.modes())
-							eigs.push_back(nm.eigenvalue);
+						// This site had NO filter at all, so all six rigid-body modes entered the
+						// pooled spectrum. Same relative-cutoff rule as every other consumer.
+						std::vector<double> eigs = lig_enm.vibrational_eigenvalues();
 						rep_eigs.push_back(std::move(eigs));
 					}
 					if (!rep_eigs.empty()) {
@@ -1646,10 +1656,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				tencm::TorsionalENM lig_enm_bound;
 				lig_enm_bound.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
 				if (lig_enm_bound.is_built()) {
-					std::vector<double> eigs;
-					eigs.reserve(lig_enm_bound.modes().size());
-					for (const auto& nm : lig_enm_bound.modes())
-						if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
+					// Rigid-body modes removed (relative cutoff), matching the unbound
+					// reference so bound-vs-free compares like with like.
+					const std::vector<double> eigs = lig_enm_bound.vibrational_eigenvalues();
 					if (!eigs.empty()) {
 						const std::vector<std::vector<double>> single = { eigs };
 						FA->H_rep_bound_complex = static_cast<float>(
@@ -3278,9 +3287,13 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 #ifdef _OPENMP
 		const int eval_threads = deterministic_eval ? 1 : n_thr;
 #endif
+		const bool record_initial_workers = flexaids::ga_population_observation_active();
+		std::vector<flexaids::GaPopulationWorkerReceipt> initial_workers(
+		    record_initial_workers ? n_thr : 0);
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) num_threads(eval_threads) default(none) \
+	shared(record_initial_workers, initial_workers) \
 	shared(chrom, pop_size, GB, gene_lim, cleftgrid, target, \
 	       atoms, residue, FA, VC, eval_threads, \
 	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
@@ -3346,7 +3359,17 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			chrom[ii].app_evalue = get_apparent_cf_evalue(&chrom[ii].cf) / n_receptor_chains;
 			ccbm_inject_strain(FA, chrom[ii], gene_lim);  // CCBM strain
 			chrom[ii].status     = 'n';
+			if (record_initial_workers) {
+#ifdef _OPENMP
+				const int actual_team_size = omp_get_num_threads();
+#else
+				const int actual_team_size = 1;
+#endif
+				flexaids::record_ga_population_worker(initial_workers[tid], actual_team_size);
+			}
 		}
+		if (record_initial_workers)
+			flexaids::observe_ga_population_workers("calculate_fitness", pop_size, 0, initial_workers);
 	}
 	}  // !gpu_handled
 
@@ -4025,6 +4048,12 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		const int nopt  = FA->num_optres;
 		const int nctb  = FA->ntypes * FA->ntypes;
 		const int range = GB->num_chrom - popoffset;
+		const bool p_record_initial_workers = flexaids::ga_population_observation_active();
+		std::vector<flexaids::GaPopulationWorkerReceipt> p_initial_workers(
+		    p_record_initial_workers ? n_thr : 0);
+		const flexaids::AtomOptResBinding p_optres_binding(
+		    std::span<const atom>(atoms + 1, natm),
+		    std::span<const OptRes>(FA->optres, nopt));
 
 		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm + 1));
 		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres + 1));
@@ -4121,10 +4150,11 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
+	shared(p_record_initial_workers, p_initial_workers) \
 	shared(chrom, FA, GB, VC, gene_lim, atoms, residue, cleftgrid, target, \
 	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt, \
 	       n_receptor_chains, p_use_selective, p_dirty_atm, p_dirty_res_idx, \
-	       p_n_dirty_atm, p_n_dirty_res)
+	       p_n_dirty_atm, p_n_dirty_res, p_optres_binding)
 #endif
 		for(i=popoffset;i<GB->num_chrom;i++){
 #ifdef _OPENMP
@@ -4145,14 +4175,10 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				std::copy(atoms,   atoms + natm + 1,   p_atoms[tid].begin());
 				std::copy(residue, residue + nres + 1, p_res[tid].begin());
 			}
-			// Redirect per-thread atom optres pointers to per-thread optres array.
-			for (int ai = 1; ai <= natm; ++ai) {
-				atom& a = p_atoms[tid][ai];
-				if (a.optres) {
-					ptrdiff_t oidx = a.optres - FA->optres;
-					a.optres = &p_optres[tid][oidx];
-				}
-			}
+			// Non-dirty atoms already point into this workspace on its second
+			// chromosome. Rebind from immutable master indices, not those pointers.
+			p_optres_binding.bind(
+			    std::span<atom>(p_atoms[tid].data() + 1, natm), p_optres[tid]);
 			for (int o = 0; o < nopt; ++o) {
 				p_optres[tid][o].cf.com    = 0.0;
 				p_optres[tid][o].cf.wal    = 0.0;
@@ -4178,7 +4204,18 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			chrom[i].app_evalue = get_apparent_cf_evalue(&chrom[i].cf) / n_receptor_chains;
 			chrom[i].status     = 'n';
 			ccbm_inject_strain(FA, chrom[i], gene_lim);  // CCBM strain
+			if (p_record_initial_workers) {
+#ifdef _OPENMP
+				const int actual_team_size = omp_get_num_threads();
+#else
+				const int actual_team_size = 1;
+#endif
+				flexaids::record_ga_population_worker(p_initial_workers[tid], actual_team_size);
+			}
 		}
+		if (p_record_initial_workers)
+			flexaids::observe_ga_population_workers(
+			    "populate_chromosomes", GB->num_chrom, popoffset, p_initial_workers);
 	}
 
 	// sort and calculate fitness (use a local GAContext for initial population)

@@ -188,7 +188,7 @@ void fill_continuous_summaries(PoseBustReport& report) {
         const int na = old_to_new[static_cast<std::size_t>(b.a)];
         const int nb = old_to_new[static_cast<std::size_t>(b.b)];
         if (na < 0 || nb < 0) continue;
-        out.bonds.push_back(Bond{na, nb, b.order});
+        out.bonds.push_back(Bond{na, nb, b.order, b.aromatic});
     }
     out.build_adjacency();
     return out;
@@ -295,6 +295,46 @@ PoseBustReport evaluate(const Molecule& ligand_pred,
         // Identity vs crystal when reference provided (dock + redock)
         if (ligand_true != nullptr) {
             check_identity_formula(ligand_pred, ligand_true, report.checks);
+        }
+    }
+
+    // ── FABRICATED TOPOLOGY => ORDER-DEPENDENT CHECKS ARE NOT ASSESSED ───────
+    // Three loader paths invent connectivity when the input carries none:
+    // infer_bonds() (covalent-radius proximity, order ALWAYS 1) and the PDB
+    // CONECT path ("order unknown"). An aromatic ring then arrives as a
+    // saturated all-single cage, and the seven checks in kOrderDependentKeys
+    // would return a verdict about chemistry the file never contained -- a false
+    // pass or a false failure, with nothing recording that the orders were
+    // guessed.
+    //
+    // Marked `skipped` rather than failed: NOT ASSESSED is the same treatment
+    // the admission contract gives a target the validator cannot score, and
+    // skipped is already excluded from BOTH n_passed() and n_failed(), so a
+    // not-assessed check can neither inflate nor deflate a rate. Connectivity-
+    // and coordinate-only checks are untouched and still run.
+    //
+    // Gated HERE, once, after every check_* call, rather than at the seven
+    // computation sites: one place to review, and it cannot miss a site.
+    if (ligand_pred.topology_inferred) {
+        int n_marked = 0;
+        for (const char* key : kOrderDependentKeys) {
+            for (CheckItem& c : report.checks) {
+                if (c.key != key) continue;
+                c.skipped = true;
+                c.passed  = false;  // mirrors emit(): passed = passed && !skipped
+                c.detail  = (c.detail.empty() ? std::string{} : c.detail + "; ") +
+                            "skipped=true topology_inferred: bond orders were "
+                            "fabricated by the loader (proximity/CONECT), so this "
+                            "check is NOT ASSESSED rather than passed or failed";
+                ++n_marked;
+            }
+        }
+        if (report.warning.empty()) {
+            report.warning = "topology_inferred: " + std::to_string(n_marked) +
+                             " order-dependent check(s) NOT ASSESSED";
+        } else {
+            report.warning += "; topology_inferred: " + std::to_string(n_marked) +
+                              " order-dependent check(s) NOT ASSESSED";
         }
     }
 
@@ -689,11 +729,36 @@ ElectedPoseBustOutcome validate_elected_pose(
                         (fs::path(pb_dir) / (stem + "_bust_receipt.json")).string();
                     std::ofstream rcpt(receipt_path);
                     if (rcpt) {
+                        // A receipt that records pb_pass but not the INVOCATION
+                        // cannot explain a zero-row run. Measured cost of that
+                        // omission: 7 of 84 Astex targets wrote a 0-byte
+                        // bust_raw.csv and pb_pass=false, and the cause could
+                        // not be read off any receipt -- it took a manual
+                        // re-invocation to find that `-l <crystal>` aborts when
+                        // the reference ligand cannot be kekulized (RDKit
+                        // KekulizeException in the RMSD path), while the same
+                        // pose scores fine without `-l`. argv_joined, the exit
+                        // status and the check counts make that self-evident
+                        // from the receipt alone.
                         rcpt << "{\n"
                              << "  \"bust_path\": \"" << json_escape(br.bust_path)
                              << "\",\n"
                              << "  \"bust_sha256\": \""
                              << json_escape(br.bust_sha256) << "\",\n"
+                             << "  \"bust_version\": \""
+                             << json_escape(br.bust_version) << "\",\n"
+                             << "  \"argv_joined\": \""
+                             << json_escape(br.argv_joined) << "\",\n"
+                             << "  \"exit_status\": " << br.exit_status << ",\n"
+                             << "  \"n_checks\": " << br.n_checks << ",\n"
+                             << "  \"n_pass\": " << br.n_pass << ",\n"
+                             << "  \"n_fail\": " << br.n_fail << ",\n"
+                             << "  \"failed_keys\": \""
+                             << json_escape(br.failed_keys) << "\",\n"
+                             << "  \"error\": \"" << json_escape(br.error)
+                             << "\",\n"
+                             << "  \"raw_csv_sha256\": \""
+                             << json_escape(br.raw_csv_sha256) << "\",\n"
                              << "  \"pb_pass\": "
                              << (br.pb_pass ? "true" : "false") << ",\n"
                              << "  \"backend\": \"" << json_escape(br.backend)

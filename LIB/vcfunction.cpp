@@ -9,6 +9,11 @@
 #include "ca_rec_flat.h"
 #include "EnvFlags.h"
 #include "get_yval.h"
+// Atom-type-pair contact-surface vector. Gate FLEXAIDDS_CONTACT_PROFILE,
+// DEFAULT OFF: unset, begin()/add() are never called, the thread_local
+// accumulators stay empty (no allocation) and NOTHING is added to CF. This is
+// an instrument, not a term. See contact_profile.h.
+#include "contact_profile.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -42,6 +47,14 @@ static const float con_r0 = []() {
     return v;
 }();
 static const bool no_sas = (std::getenv("FLEXAIDDS_NO_SAS") != nullptr);
+
+// FLEXAIDDS_CONTACT_PROFILE (default OFF): keep the per-atom-type-pair contact
+// SURFACE profile that CF contracts away, so a pose can be described without
+// reference to the receptor frame. Hoisted here, like every other gate in this
+// file, so the magic-static guard is never touched inside the per-contact loop
+// — with the gate off the loop pays one predictable branch on a plain bool and
+// nothing else. Adds NOTHING to any CF channel; see contact_profile.h.
+static const bool contact_profile_on = flexaids::contact_profile::enabled();
 // FLEXAIDDS_GET_YVAL_LUT default OFF (METHODOLOGY.md §1). Same magic-static
 // hoist as the flags above — getenv is never in the per-contact loop.
 // LUT remains opt-in; the 3-arg get_yval uses this snapshot.
@@ -178,6 +191,352 @@ static const double wal_stiff = [](){
     return (v > 0.0) ? v : 0.0;
 }();
 
+// ── FLEXAIDDS_WAL_CAP_MODE — receptor-state-conditional per-contact ceiling ──
+//
+// WHY. FlexAID's contact function uses IMPLICIT solvation: absence of an atom
+// means that space is water. That is coherent for a RIGID receptor, where empty
+// space really is bulk solvent. It breaks for a FLEXIBLE receptor: when the GA
+// rotates a side chain away, the vacated space reads as "water", and water is
+// cheap to displace. The only term that could charge for burying into that
+// space is the wall — and WAL_CONTACT_CAP bounds it at 50 per contact, so
+// evict-then-bury has a FIXED maximum cost no matter how deep the burial goes.
+//
+// FLEXAIDDS_WAL_COERCIVE already lifts that ceiling, but it lifts it GLOBALLY:
+// rigid-receptor contacts, ligand-intramolecular contacts and cofactor contacts
+// all lose their ceiling too. This gate is the selective version — it lifts the
+// ceiling ONLY on contacts where at least one partner is an atom the GA is
+// actually allowed to move.
+//
+//   legacy  (default, and any unrecognised value)
+//           Every contact keeps WAL_CONTACT_CAP exactly as today.
+//           BIT-IDENTICAL to HEAD: the predicate below is never evaluated.
+//   flex    Contacts that involve a FLEXED receptor side-chain atom get their
+//           ceiling lifted; every other contact keeps the capped path
+//           byte-for-byte.
+//
+// See wal_contact_touches_flexed() below for the attribution rule, and
+// wal_cap_flex for the (optional) finite replacement ceiling.
+// Plain file-static constants rather than a global enum: this is a .cpp, and a
+// named global enum here would be an ODR hazard for any other TU.
+static constexpr int WAL_CAP_LEGACY = 0;
+static constexpr int WAL_CAP_FLEX   = 1;
+static const int wal_cap_mode = [](){
+    const char* s = std::getenv("FLEXAIDDS_WAL_CAP_MODE");
+    if (!s || s[0] == '\0')          return WAL_CAP_LEGACY;
+    if (std::strcmp(s, "legacy") == 0) return WAL_CAP_LEGACY;
+    if (std::strcmp(s, "flex")   == 0) return WAL_CAP_FLEX;
+    fprintf(stderr,
+            "[WAL_CAP] WARNING: unrecognised FLEXAIDDS_WAL_CAP_MODE='%s'; "
+            "falling back to 'legacy' (today's capped behaviour). "
+            "Accepted values: legacy | flex\n", s);
+    fflush(stderr);
+    return WAL_CAP_LEGACY;
+}();
+
+// FLEXAIDDS_WAL_CAP_FLEX: OPTIONAL finite replacement ceiling, in CF units, for
+// the flex-involving contacts selected by FLEXAIDDS_WAL_CAP_MODE=flex.
+//
+//   unset / <= 0 (default)
+//       Overlap-quadratic wall (FA->soft_wall_cutoff > 0, which is the LIVE
+//       production path — DatasetRunner emits soft_wall_cutoff 0.40 and
+//       config_parser.cpp:164 defaults to 0.40): NO ceiling on flex contacts.
+//       That is safe because the v43 wall grows only quadratically in the
+//       overlap, exactly the regime FLEXAIDDS_WAL_COERCIVE already exercises.
+//       Legacy hard r^-12 wall (FA->soft_wall_cutoff == 0): the ceiling is
+//       DELIBERATELY RETAINED. r^-12 is unbounded as d -> 0 (KWALL=1e6, so a
+//       0.5 A contact is O(1e9)) and silently uncapping it would not be a
+//       "lift", it would be a numerical detonation. Lifting that path requires
+//       an explicit finite value below.
+//   > 0 That value replaces WAL_CONTACT_CAP as the ceiling on flex contacts,
+//       on BOTH wall paths. Use this for a bounded sweep (e.g. 200, 500).
+//
+// A value BELOW WAL_CONTACT_CAP would TIGHTEN the ceiling rather than lift it,
+// i.e. do the opposite of what this gate is named for. Refuse it loudly instead
+// of silently inverting the experiment.
+static const double wal_cap_flex = [](){
+    const char* s = std::getenv("FLEXAIDDS_WAL_CAP_FLEX");
+    if (!s || s[0] == '\0') return 0.0;
+    const double v = strtod(s, nullptr);
+    if (v <= 0.0) return 0.0;
+    if (v < WAL_CONTACT_CAP) {
+        fprintf(stderr,
+                "[WAL_CAP] WARNING: FLEXAIDDS_WAL_CAP_FLEX=%g is below "
+                "WAL_CONTACT_CAP=%g. That would TIGHTEN the flex-contact "
+                "ceiling, not lift it. Ignoring (flex contacts stay uncapped "
+                "on the soft-core path).\n", v, WAL_CONTACT_CAP);
+        fflush(stderr);
+        return 0.0;
+    }
+    return v;
+}();
+
+// Per-contact attribution of a wall contact to a FLEXED receptor side chain,
+// derived WITHOUT touching any red-flag file (Vcontacts.cpp/.h, gaboom.cpp,
+// ic2cf.cpp, buildlist.cpp are neither read nor modified for this).
+//
+// The chain of custody, all in files that are readable:
+//   * build_rotamers.cpp:307-323 registers an OptRes for a protein side chain
+//     ONLY when that side chain actually has accepted rotamers
+//     (residue[kres].trot > 0) and sets .type = 0 there ("0: side-chain
+//     (protein)"). A side chain with no accepted rotamer never gets one and is
+//     therefore rigid.
+//   * Mol2Reader.cpp:430 / SdfReader.cpp:760 set the LIGAND's OptRes .type = 1.
+//   * update_optres.cpp assigns atoms[j].optres for every atom of an OptRes
+//     residue EXCEPT protein backbone atoms
+//     (`residue[ofres].type != 0 || !atoms[j].isbb`), so for a protein residue
+//     only the SIDE-CHAIN atoms — precisely the ones a rotamer change moves —
+//     carry the back-pointer.
+//
+// So `optres != NULL && optres->type == 0` is exactly "this atom is a movable
+// side-chain atom of a residue the GA is allowed to rotate". Everything else —
+// rigid receptor, backbone, cofactor, ion, ligand — is false.
+//
+// LIMIT, stated plainly: this is receptor-FLEXIBILITY attribution, not
+// receptor-MOTION attribution. It does not ask whether the side chain moved
+// away from its crystal rotamer on THIS pose; the crystal-rotamer answer lives
+// in residue[].rot, which is written by ic2cf.cpp (red-flag). Charging by
+// "is movable" rather than "did move" is the conservative choice anyway: the
+// crystal rotamer keeps the same, stricter wall as every rotated one, so the
+// gate cannot make the native side-chain placement look artificially good.
+static inline bool wal_contact_touches_flexed(const atom* atoms, int a0, int a1)
+{
+    const OptRes* o0 = atoms[a0].optres;
+    if (o0 != NULL && o0->type == 0) return true;
+    const OptRes* o1 = atoms[a1].optres;
+    if (o1 != NULL && o1->type == 0) return true;
+    return false;
+}
+
+
+// ── FLEXAIDDS_SOLVATION_REF — freeze the implicit-solvent reference ─────────
+//
+// WHY. FlexAID scores with IMPLICIT solvation: the absence of an atom means
+// that space is water. Every scored atom's residual solvent-accessible surface
+// S(i,w) — the sphere area left after every Voronoi contact area is subtracted
+// (`SAS -= area;` in the contact loop below) — is priced against the solvent
+// pseudo-type row of the energy matrix, eps(i,w).
+//
+// That is coherent for a RIGID receptor, where empty space really IS bulk
+// solvent. It breaks for a FLEXIBLE receptor. When the GA rotates a side chain
+// away, the vacated volume becomes "empty", and the model cannot tell genuine
+// bulk solvent from space that is empty ONLY because the search evicted a
+// protein atom from it. Both read as water. So the ligand-solvent term is
+// re-priced against a receptor envelope the search itself invented.
+//
+//   dynamic  (default, and any unrecognised value)
+//            The solvent reference is whatever the receptor looks like RIGHT
+//            NOW. Exactly today's behaviour, bit-identical.
+//   crystal  The solvent reference is frozen at the INPUT receptor conformation
+//            (rotamer index 0 — see the naming caveat below). Ligand surface
+//            that is solvent-exposed only because a movable side chain vacated
+//            the space in front of it is REMOVED from the solvent term.
+//
+// EXACT DEFINITION OF WHAT `crystal` COMPUTES — this is the whole point of the
+// gate, so it is spelled out rather than summarised.
+//
+//   Let i be a LIGAND atom (its OptRes type is 1) with solvent-expanded radius
+//   R_i = radius_i + Rw, centred at c_i, and let
+//       S_live(i) = 4*PI*R_i^2 - sum_j A_voronoi(i,j)
+//   be the residual computed by the loop below against the LIVE receptor.
+//
+//   For each flexible side chain r that is currently OFF its input conformer
+//   (residue[r].trot > 0 AND residue[r].rot > 0) let A_r^0 be its atom block in
+//   the INPUT conformation (atoms[residue[r].fatm[0] .. latm[0]]) and A_r^live
+//   the SAME atoms in the live rotamer block (atoms[residue[r].fatm[rot] + k]).
+//   build_rotamers.cpp:126 copies the whole residue verbatim into every rotamer
+//   block, so those two blocks are parallel, same length, same order, same
+//   radii — index k in one is the same physical atom as index k in the other.
+//
+//   Define the per-pair occlusion
+//       cap(R_i, R_j, d) = area of i's expanded sphere lying beyond the plane
+//                          through the intersection circle of the two expanded
+//                          spheres  =  2*PI*R_i*h,
+//                          h = R_i - (d^2 + R_i^2 - R_j^2)/(2d),  clamped to
+//                          [0, 2R_i], and 0 when d >= R_i + R_j.
+//   That cutting plane is the RADICAL plane of the pair, i.e. exactly the plane
+//   the additively-weighted Voronoi face of (i,j) lies in, so cap() and the
+//   A_voronoi() the loop subtracts are areas of the same surface cut by the same
+//   plane; cap() is the face BEFORE truncation by other neighbours and is
+//   therefore an upper bound on it (see BIAS below).
+//
+//   Then
+//       Vacated(i) = sum over moved side chains r of
+//                        max( 0,  sum_{a in A_r^0}    cap(R_i, R_a, |c_i - c_a|)
+//                               - sum_{a in A_r^live} cap(R_i, R_a, |c_i - c_a|) )
+//       S_solv(i)  = max( 0, S_live(i) - Vacated(i) )
+//   and S_solv(i) replaces S_live(i) IN THE SOLVENT TERM ONLY.
+//
+// WHAT HAPPENS TO A CONTACT WHERE THE CRYSTAL HAD AN ATOM AND THE FLEXED
+// RECEPTOR DOES NOT — the question this gate exists to answer:
+//   That surface is priced as NOTHING. It is removed from the solvent term and
+//   it is NOT converted into a phantom protein contact. We deliberately do not
+//   credit eps(i, type_of_the_absent_atom) * area, because that would invent an
+//   interaction with an atom that is not there (and would need a matching wall
+//   term for an overlap that does not exist). The claim `crystal` makes is the
+//   weaker, defensible one: "this is not bulk water", not "this is still
+//   protein". Charging for the eviction itself is a SEPARATE term
+//   (receptor_strain.h, FLEXAIDDS_RECEPTOR_STRAIN) and is not duplicated here.
+//
+// FOUR PROPERTIES THAT FALL OUT OF THE per-residue max(0, crystal - live) FORM:
+//   1. A side chain that did not move contributes EXACTLY 0.0 — the two sums are
+//      over identical coordinates and identical radii, term by term. No
+//      tolerance, no epsilon, no "did it move enough" threshold is needed.
+//   2. Backbone atoms and CB, which are copied unchanged into every rotamer
+//      block and do not move under a chi rotation, cancel exactly for the same
+//      reason. They cannot leak a spurious charge.
+//   3. A side chain that moved TOWARD the ligand yields a negative net and is
+//      clamped to 0: `crystal` NEVER ADDS solvent surface, it only withholds it.
+//      The correction is deliberately ONE-SIDED. Space that is empty in the
+//      input conformer but occupied now is already handled correctly by the live
+//      contact and wall terms; re-pricing it as water would be a second bug.
+//   4. Per-residue rather than global clamping, so a side chain that swung
+//      closer cannot pay for one that swung away.
+//
+// SCOPE: LIGAND ATOMS ONLY (optres->type == 1). The flexed side chain's OWN
+// atoms keep the live reference: a side chain that rotates out into bulk really
+// is more solvated, and withholding that would be a different claim than the one
+// this gate makes.
+//
+// NAMING CAVEAT, stated plainly: "crystal" is the INPUT receptor conformation,
+// i.e. rotamer index 0, which is the conformer as read from the receptor file.
+// It is the crystal conformer only if the receptor file is the crystal. With
+// `receptor_rotamer_prep` (a STATIC pre-relaxation that rewrites side chains
+// before docking) the frozen reference is the PREPPED conformation, not the
+// deposited one. dock_config.json records both keys so a reader can tell.
+//
+// BIAS, stated plainly: cap() is an upper bound on the Voronoi face area it is
+// compared against (the face is the cap truncated by every other neighbour's
+// plane), so Vacated(i) can over-estimate the withheld area for an atom with
+// many crowding neighbours. Two things bound the damage: the subtraction is
+// crystal-MINUS-live over the same atoms with the same estimator, so the bias
+// largely cancels, and S_solv is clamped at 0. The residual bias direction is
+// "withholds slightly too much solvent surface", never "invents surface".
+//
+// The exact Voronoi answer — re-running the tessellation against the input
+// conformer — needs Vcontacts.cpp, which is a red-flag file in this repository.
+// It was neither read nor modified for this gate. See the notes file.
+static constexpr int SOLV_REF_DYNAMIC = 0;
+static constexpr int SOLV_REF_CRYSTAL = 1;
+static const int solvation_ref_mode = [](){
+    const char* s = std::getenv("FLEXAIDDS_SOLVATION_REF");
+    if (!s || s[0] == '\0')             return SOLV_REF_DYNAMIC;
+    if (std::strcmp(s, "dynamic") == 0) return SOLV_REF_DYNAMIC;
+    if (std::strcmp(s, "crystal") == 0) return SOLV_REF_CRYSTAL;
+    fprintf(stderr,
+            "[SOLV_REF] WARNING: unrecognised FLEXAIDDS_SOLVATION_REF='%s'; "
+            "falling back to 'dynamic' (today's behaviour). "
+            "Accepted values: dynamic | crystal\n", s);
+    fflush(stderr);
+    return SOLV_REF_DYNAMIC;
+}();
+
+// One atom of a moved side chain, carried in BOTH conformations at once so the
+// crystal-minus-live difference is formed over the same physical atom.
+struct SolvRefAtom {
+    double cx, cy, cz;   // input-conformer (rotamer 0) centre
+    double lx, ly, lz;   // live (rotamer residue[].rot) centre
+    double Rc;           // input-conformer solvent-expanded radius, 0 => ignore
+    double Rl;           // live solvent-expanded radius, 0 => ignore
+};
+
+// Half-open range begin..end-1 into the flat SolvRefAtom vector, one per moved
+// side chain. The max(0,.) clamp is applied PER RANGE.
+struct SolvRefResidue {
+    int begin;
+    int end;
+};
+
+// Build the occluder table for one evaluation. residue[].rot is written by
+// ic2cf() before vcfunction() is entered (ic2cf.cpp:270 is the call site) and is
+// constant for the whole call, so this is loop-invariant and is built once.
+// Only called when the gate is on; in `dynamic` mode both vectors stay empty.
+static void solvref_collect(const FA_Global* FA, const atom* atoms, const resid* residue,
+                            std::vector<SolvRefAtom>& flat,
+                            std::vector<SolvRefResidue>& res)
+{
+    if (FA == NULL || atoms == NULL || residue == NULL) return;
+    if (FA->flex_res == NULL || FA->nflxsc <= 0) return;
+
+    for (int i = 0; i < FA->nflxsc; ++i) {
+        const int ires = FA->flex_res[i].inum;
+        if (ires <= 0 || ires > FA->res_cnt) continue;
+        const resid* R = &residue[ires];
+        if (R->trot <= 0) continue;                     // no accepted rotamer: rigid
+        if (R->fatm == NULL || R->latm == NULL) continue;
+        const int rot = R->rot;
+        if (rot <= 0 || rot > R->trot) continue;        // still ON the input conformer
+        const int f0 = R->fatm[0];
+        const int l0 = R->latm[0];
+        const int fr = R->fatm[rot];
+        if (f0 <= 0 || l0 < f0 || fr <= 0) continue;
+        const int n = l0 - f0 + 1;
+        if (l0 > FA->atm_cnt) continue;
+        if (fr + n - 1 > FA->atm_cnt) continue;         // malformed block: refuse to read it
+
+        const int begin = static_cast<int>(flat.size());
+        for (int k = 0; k < n; ++k) {
+            const atom* ac = &atoms[f0 + k];
+            const atom* al = &atoms[fr + k];
+            if (!(ac->radius > 0.0f) && !(al->radius > 0.0f)) continue;
+            SolvRefAtom s;
+            s.cx = static_cast<double>(ac->coor[0]);
+            s.cy = static_cast<double>(ac->coor[1]);
+            s.cz = static_cast<double>(ac->coor[2]);
+            s.lx = static_cast<double>(al->coor[0]);
+            s.ly = static_cast<double>(al->coor[1]);
+            s.lz = static_cast<double>(al->coor[2]);
+            s.Rc = (ac->radius > 0.0f) ? (static_cast<double>(ac->radius) + static_cast<double>(Rw)) : 0.0;
+            s.Rl = (al->radius > 0.0f) ? (static_cast<double>(al->radius) + static_cast<double>(Rw)) : 0.0;
+            flat.push_back(s);
+        }
+        if (static_cast<int>(flat.size()) > begin) {
+            SolvRefResidue rr;
+            rr.begin = begin;
+            rr.end   = static_cast<int>(flat.size());
+            res.push_back(rr);
+        }
+    }
+}
+
+// Area of the part of i's solvent-expanded sphere occluded by j's — the
+// spherical cap cut off by the radical plane of the pair. `d2` is the SQUARED
+// centre distance so the common "far apart, nothing occluded" case costs no
+// sqrt. Standard Lee-Richards pairwise identity; no fitted constant.
+static inline double solvref_cap_area(double Ri, double Rj, double d2)
+{
+    if (!(Ri > 0.0) || !(Rj > 0.0)) return 0.0;
+    const double sum = Ri + Rj;
+    if (d2 >= sum * sum) return 0.0;
+    const double d = std::sqrt(d2);
+    if (!(d > 0.0)) return (Rj >= Ri) ? (4.0 * PI * Ri * Ri) : 0.0;  // concentric
+    double h = Ri - (d * d + Ri * Ri - Rj * Rj) / (2.0 * d);
+    if (h <= 0.0) return 0.0;
+    if (h >= 2.0 * Ri) return 4.0 * PI * Ri * Ri;                    // i inside j
+    return 2.0 * PI * Ri * h;
+}
+
+// Vacated(i): see the long comment above for the definition and the clamps.
+static inline double solvref_vacated_area(double x, double y, double z, double Ri,
+                                          const std::vector<SolvRefAtom>& flat,
+                                          const std::vector<SolvRefResidue>& res)
+{
+    double vacated = 0.0;
+    for (std::size_t r = 0; r < res.size(); ++r) {
+        double occ_crystal = 0.0;
+        double occ_live    = 0.0;
+        for (int k = res[r].begin; k < res[r].end; ++k) {
+            const SolvRefAtom& s = flat[static_cast<std::size_t>(k)];
+            double dx = x - s.cx, dy = y - s.cy, dz = z - s.cz;
+            occ_crystal += solvref_cap_area(Ri, s.Rc, dx*dx + dy*dy + dz*dz);
+            dx = x - s.lx; dy = y - s.ly; dz = z - s.lz;
+            occ_live    += solvref_cap_area(Ri, s.Rl, dx*dx + dy*dy + dz*dz);
+        }
+        const double net = occ_crystal - occ_live;
+        if (net > 0.0) vacated += net;   // per-residue clamp: never ADD solvent
+    }
+    return vacated;
+}
+
 
 // FLEXAIDDS_CONTACTS_EPOCH: O(1) clear of FA->contacts (avoids a
 // MAX_ATOM_NUMBER-sized memset every eval; see below). Default off —
@@ -286,7 +645,16 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		memset(FA->contacts,0,MAX_ATOM_NUMBER*sizeof(int));
 	}
 	memset(FA->contributions,0,FA->ntypes*FA->ntypes*sizeof(float));
-	
+
+	// ── FLEXAIDDS_CONTACT_PROFILE (default OFF) ─────────────────────────────
+	// Start this evaluation's atom-type-pair contact-surface vector. Sized from
+	// FA->ntypes so the packed length is ntypes*(ntypes+1)/2 — 820 for the
+	// 40-type MC_st0r5.2_6 matrix. Reset here, next to the FA->contributions
+	// memset it is the surface-side twin of: contributions[] holds the CF the
+	// engine credited per type pair, this holds the AREA that produced it.
+	// Gate OFF -> never called -> the accumulator never allocates.
+	if(contact_profile_on){ flexaids::contact_profile::begin(FA->ntypes); }
+
 	// reset CF values
 	for(int j=0; j<FA->num_optres; ++j){
 		FA->optres[j].cf.rclash=0;
@@ -311,6 +679,18 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	// Only allocated/used when the flag is set so the default path is unchanged.
 	std::vector<long> vct_ncon;
 	if(FA->vct_normalize_contacts){ vct_ncon.assign(FA->num_optres, 0); }
+
+	// ── FLEXAIDDS_SOLVATION_REF=crystal: crystal-envelope occluder table ────────
+	// Built once per evaluation because residue[].rot is fixed for the whole
+	// call. In the default `dynamic` mode both vectors stay default-constructed
+	// and empty (no allocation), solvref_collect() is never called, and the
+	// per-atom hook further down is skipped by an empty-vector test — so the
+	// solvent term is computed from the same double it was before this patch.
+	std::vector<SolvRefAtom>    solvref_atoms;
+	std::vector<SolvRefResidue> solvref_res;
+	if(solvation_ref_mode == SOLV_REF_CRYSTAL){
+		solvref_collect(FA, atoms, residue, solvref_atoms, solvref_res);
+	}
 	
 	// allocate
 	//float  matrix[FA->ntypes*FA->ntypes];
@@ -621,7 +1001,30 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				                                 flat_idx, nflat, flat_k);
 				continue;
 			}
-			
+
+			// ── FLEXAIDDS_CONTACT_PROFILE (default OFF) ──────────────────────
+			// Fold this contact's Voronoi surface into the atom-type-pair
+			// profile. Placed HERE, after both `continue`s above, so the
+			// counted set is exactly the contact set vcfunction prices:
+			//   * intra-residue bond/angle partners have already been skipped
+			//     (they are not contacts), and
+			//   * the FA->contacts[] already-visited dedup has already fired,
+			//     which is what makes each UNORDERED pair counted exactly once.
+			// `intramolecular` was computed a few lines above from the same
+			// residue/type test the CF uses, so area_inter is precisely the
+			// different-molecule (ligand/receptor interface) surface.
+			// DELIBERATELY NOT filtered on energy_matrix->weight or on any
+			// matrix value: pairs whose epsilon is exactly 0.0 are invisible to
+			// CF and are the single most interesting thing this vector can
+			// show. Nothing here touches cfs, SAS or any CF channel.
+			if(contact_profile_on){
+				flexaids::contact_profile::add(
+					VC->Calc[i].atom->type,
+					VC->Calc[VC->ca_rec[currindex].atom].atom->type,
+					area,
+					intramolecular != 0);
+			}
+
 			// covalently bonded flag
 			bool covalent = false;
 			
@@ -729,11 +1132,61 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// Vcontacts pre-filter via soft_wall.h.  DEE/intramolecular checks
 			// below still use the raw r^-12 Ewall.
 			double Ewall_fitness;
+			// ── FLEXAIDDS_WAL_CAP_MODE=flex (default legacy) ─────────────────
+			// Lift the per-contact ceiling ONLY when this contact involves an
+			// atom the GA can actually move (a flexed receptor side chain), so
+			// that evict-then-bury stops costing a bounded 50. Rigid-receptor
+			// contacts, ligand-intramolecular contacts and cofactor contacts
+			// keep the capped path unchanged.
+			//
+			// The `wal_cap_mode == WAL_CAP_FLEX` test is FIRST and short-circuits,
+			// so in the default mode the predicate is never called and this whole
+			// block reduces to the two lines it replaced — bit-identical.
+			//
+			// atomzero is guaranteed to have a non-NULL optres (the outer loop
+			// `continue`s otherwise, ~line 417); atomcont may legitimately have a
+			// NULL one (rigid receptor atom) and the predicate handles that.
+			const bool wal_flex_contact =
+			    (wal_cap_mode == WAL_CAP_FLEX) &&
+			    wal_contact_touches_flexed(atoms, atomzero, atomcont);
 			if (FA->soft_wall_cutoff > 0.0f) {
+				// coercive := global WAL_COERCIVE, OR this one flex contact.
 				Ewall_fitness = soft_wall_fitness_energy(
-				    d, cr, FA->soft_wall_cutoff, wal_coercive, wal_stiff);
+				    d, cr, FA->soft_wall_cutoff,
+				    wal_coercive || wal_flex_contact, wal_stiff);
+				// Optional finite replacement ceiling for flex contacts only.
+				if (wal_flex_contact && wal_cap_flex > 0.0 &&
+				    Ewall_fitness > wal_cap_flex) {
+					Ewall_fitness = wal_cap_flex;
+				}
 			} else {
-				Ewall_fitness = (Ewall > WAL_CONTACT_CAP) ? WAL_CONTACT_CAP : Ewall;
+				// Legacy hard r^-12. Only an EXPLICIT finite FLEXAIDDS_WAL_CAP_FLEX
+				// raises the ceiling here; see the wal_cap_flex comment for why
+				// this path is never implicitly uncapped.
+				const double cap = (wal_flex_contact && wal_cap_flex > 0.0)
+				                       ? wal_cap_flex : WAL_CONTACT_CAP;
+				Ewall_fitness = (Ewall > cap) ? cap : Ewall;
+			}
+			// Structural-presence proof. A gate that is set but never reaches a
+			// qualifying contact (no flexible side chains selected, i.e.
+			// FLEXAIDDS_AUTOFLEX_MAX unset or 0, or output.scored_only-style
+			// ligand-only scoring) is a silent no-op — the exact failure shape
+			// this project has hit at least eight times. Emit proof on stderr the
+			// first few times the lift actually CHANGES a number. Gate-ON only:
+			// wal_flex_contact is false in legacy mode, so this costs nothing.
+			if (wal_flex_contact && Ewall_fitness > WAL_CONTACT_CAP) {
+				static int wal_cap_flex_hits = 0;
+				if (wal_cap_flex_hits < 5) {
+					wal_cap_flex_hits++;
+					fprintf(stderr,
+					        "[WAL_CAP] flex contact ceiling lifted: E=%.4f > "
+					        "WAL_CONTACT_CAP=%.1f (anum0=%d anum1=%d d=%.4f "
+					        "cr=%.4f soft_wall_cutoff=%.3f)\n",
+					        Ewall_fitness, WAL_CONTACT_CAP,
+					        atoms[atomzero].number, atoms[atomcont].number,
+					        d, cr, (double)FA->soft_wall_cutoff);
+					fflush(stderr);
+				}
 			}
 
 			cfs->wal += Ewall_fitness;
@@ -966,26 +1419,67 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		}
 
 		if(SAS < 0.0){ SAS = 0.0; }
-		cfs->totsas += SAS;
-		
+		cfs->totsas += SAS;   // TRUE live geometric residual — reporting only, unchanged by the gate
+
+		// ── FLEXAIDDS_SOLVATION_REF=crystal ────────────────────────────────
+		// Freeze the implicit-solvent reference at the INPUT receptor envelope
+		// for the LIGAND-SOLVENT term. SAS_solv is the surface this atom is
+		// allowed to price as bulk water; the difference (Vacated) is surface
+		// that is only "empty" because a movable side chain left it, and is
+		// priced as NOTHING — neither water nor protein. See the definition,
+		// the clamps and the bias statement at the top of this file.
+		//
+		// In `dynamic` mode SAS_solv is initialised from SAS and never touched,
+		// so every expression below is the same double it was before: the mode
+		// test short-circuits before the ligand test and before the table test.
+		double SAS_solv = SAS;
+		if(solvation_ref_mode == SOLV_REF_CRYSTAL && type == 1 && !solvref_res.empty()){
+			const double vac = solvref_vacated_area(
+			        (double)VC->Calc[i].atom->coor[0],
+			        (double)VC->Calc[i].atom->coor[1],
+			        (double)VC->Calc[i].atom->coor[2],
+			        radoA, solvref_atoms, solvref_res);
+			if(vac > 0.0){
+				SAS_solv = SAS - vac;
+				if(SAS_solv < 0.0){ SAS_solv = 0.0; }
+				// Structural-presence proof. A gate that is set but never
+				// reaches a qualifying atom is a silent no-op — the exact
+				// failure shape this project has hit at least eight times.
+				// Emit on stderr the first few times the reference freeze
+				// actually CHANGES a number. Gate-ON only: unreachable in
+				// `dynamic` mode, so it costs nothing by default.
+				static int solvref_hits = 0;
+				if(solvref_hits < 5){
+					solvref_hits++;
+					fprintf(stderr,
+					        "[SOLV_REF] crystal reference applied: ligand atom %d "
+					        "SAS %.4f -> %.4f (vacated %.4f A^2 across %d moved "
+					        "side chain(s), %d occluder atoms)\n",
+					        VC->Calc[i].atom->number, SAS, SAS_solv, vac,
+					        (int)solvref_res.size(), (int)solvref_atoms.size());
+					fflush(stderr);
+				}
+			}
+		}
+
 		double contribution = 0.0;
 		if(FA->solventterm){
-			contribution = (double)FA->solventterm * SAS;
-			//printf("SP: multiply ST=%.3f with SAS.area=%.3f\n", (double)FA->solventterm, SAS);
+			contribution = (double)FA->solventterm * SAS_solv;
+			//printf("SP: multiply ST=%.3f with SAS.area=%.3f\n", (double)FA->solventterm, SAS_solv);
 		} else {
 			struct energy_matrix* energy_matrix = &FA->energy_matrix[(VC->Calc[i].atom->type-1)*FA->ntypes +
 										 (FA->ntypes-1)];
 			//printf("type1: %d\ttype2: %d\n", energy_matrix->type1, energy_matrix->type2);
 			
-			double yval = get_yval(energy_matrix,SAS/surfA, get_yval_use_lut);
+			double yval = get_yval(energy_matrix,SAS_solv/surfA, get_yval_use_lut);
 			
 			if(energy_matrix->weight){
 				if(FA->normalize_area){
-					contribution = yval * SAS / surfA;
+					contribution = yval * SAS_solv / surfA;
 				}else{
-					contribution = yval * SAS;
+					contribution = yval * SAS_solv;
 				}
-				//printf("Weight: multiply yval=%.3f by SAS.area=%.3f\n", yval, SAS);
+				//printf("Weight: multiply yval=%.3f by SAS.area=%.3f\n", yval, SAS_solv);
 			}
 			else {
 				contribution = yval;

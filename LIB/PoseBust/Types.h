@@ -69,6 +69,15 @@ struct Bond {
     int a     = 0;  // 0-based
     int b     = 0;
     int order = 1;
+    // Aromaticity carried SEPARATELY from `order` so a ring can be written with
+    // its Kekule orders (1/2 — sanitizable by RDKit) without losing the aromatic
+    // marking that FlexAIDdS typing needs (C.ar/N.ar VCT types).
+    //
+    // Set from either encoding on load: legacy MDL order 4, or the
+    // FLEXAIDDS_AROMATIC_BONDS SD tag written alongside Kekule orders. write_sdf
+    // re-emits the tag, so a kekulized ligand survives a load/write round trip
+    // with both its sanitizability AND its aromaticity intact.
+    bool aromatic = false;
 };
 
 struct Molecule {
@@ -76,6 +85,32 @@ struct Molecule {
     std::vector<Atom>             atoms;
     std::vector<Bond>             bonds;
     std::vector<std::vector<int>> adj;
+
+    /// True when the bond block was FABRICATED rather than read.
+    ///
+    /// Three loader paths invent connectivity because their input carries none:
+    /// infer_bonds() (covalent-radius proximity, order ALWAYS 1) and the PDB
+    /// CONECT path (connectivity only, "order unknown"). An aromatic ring then
+    /// arrives as a saturated all-single cage -- the HUP/1GPK failure mode the
+    /// ligand extractor's own comment names.
+    ///
+    /// Six check sites read Bond::order (ChecksChemistry 161-164, 303, 649;
+    /// ChecksGeometry 128-138, 322, 682), covering bond lengths, bond angles,
+    /// aromatic-ring flatness, double-bond flatness and double-bond
+    /// stereochemistry. Run against invented orders they return a verdict about
+    /// chemistry the file never contained -- a false pass or a false failure,
+    /// with nothing recording that the orders were guessed.
+    ///
+    /// So those checks are marked `skipped` instead: NOT ASSESSED, never a
+    /// failure. That is the same rule the admission contract applies to a target
+    /// PoseBusters cannot score, and `skipped` is already excluded from both
+    /// n_passed() and n_failed(), so a not-assessed check can neither inflate
+    /// nor deflate a rate. Connectivity- and distance-only checks are unaffected
+    /// and still run.
+    ///
+    /// Cleared when real topology arrives: a parsed SDF bond block, or a
+    /// successful assign_topology_from_reference().
+    bool topology_inferred = false;
 
     void build_adjacency() {
         adj.assign(atoms.size(), {});
@@ -131,6 +166,50 @@ inline constexpr const char* kNativeQcDiagnosticKeys[] = {
     "protein-ligand_maximum_distance",
     "volume_overlap_with_protein",
 };
+/// Checks whose verdict is a function of Bond::order, and which therefore CANNOT
+/// be assessed when Molecule::topology_inferred is true (orders fabricated).
+///
+/// Each entry traced to the site that reads the order:
+///   bond_lengths                    ChecksGeometry:440  <- ideal length per order
+///   bond_angles                     ChecksGeometry:500  <- ideal_angle_at_center 128-138
+///   aromatic_ring_flatness          ring_has_mdl_aromatic_bond 316-327 (order == 4)
+///   double_bond_flatness            ChecksGeometry:682  (order < 2 -> skip)
+///   non-aromatic_ring_non-flatness  aromatic determination, same order test
+///   double_bond_stereochemistry     ChecksChemistry:649 (order < 2 || == 4)
+///   no_radicals                     ChecksChemistry:547 <- bond_order_sum 160-172
+///   inchi_convertible               ChecksChemistry:445 <- gated on sanity.ok,
+///                                   and an InChI derived from invented orders
+///                                   describes a molecule the file never held
+///
+/// DELIBERATELY ABSENT, because they read connectivity or coordinates only and
+/// stay assessable: all_atoms_connected, internal_steric_clash,
+/// minimum_distance_to_protein, protein-ligand_maximum_distance,
+/// volume_overlap_with_protein, molecular_formula, molecular_bonds, mol_*_loaded.
+///
+/// `sanitization` is ABSENT BY A DIFFERENT ROUTE and the reason is recorded here
+/// so the omission is not silent. It reads Bond::order at ChecksChemistry:303
+/// (bad_order), but a fabricated order is always 1 -- a VALID order -- so the
+/// test cannot fail on inferred topology; it would merely report the bond block
+/// as validated when none was read. That component is therefore neutralised at
+/// the source line instead of skipping the whole check, which keeps
+/// native_sanity's other components (non-finite coordinates, unknown elements,
+/// bad atom indices) assessable. Skipping the key outright would have
+/// suppressed real defects.
+///
+/// This list is verified to FIRE by mutation test, which is not the same as
+/// verified COMPLETE: a check added later that reads Bond::order must be added
+/// here too, or it will score fabricated chemistry silently.
+inline constexpr const char* kOrderDependentKeys[] = {
+    "bond_lengths",
+    "bond_angles",
+    "aromatic_ring_flatness",
+    "double_bond_flatness",
+    "non-aromatic_ring_non-flatness",
+    "double_bond_stereochemistry",
+    "no_radicals",
+    "inchi_convertible",
+};
+
 struct PoseBustReport {
     std::vector<CheckItem> checks;
     bool                   ran     = false;

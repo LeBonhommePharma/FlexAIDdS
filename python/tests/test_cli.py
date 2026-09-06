@@ -327,7 +327,28 @@ class TestMainTopFlag:
         monkeypatch.setattr(sys, "argv", ["flexaidds", str(d), "--top", "1"])
         main()
         out = capsys.readouterr().out
-        assert "Binding modes: 3" in out
+
+        # Header reports the TRUE total, not the truncated one. Colour
+        # accessors return "" off a TTY, so under capsys this is
+        # "binding modes=3" (26f8ee17 design-system kv form).
+        assert "binding modes=3" in out
+
+        # --top 1 must leave exactly one data row.
+        data_rows = [ln for ln in out.splitlines() if ln.strip()[:1].isdigit()]
+        assert len(data_rows) == 1, (
+            f"--top 1 should leave exactly 1 data row, got {len(data_rows)}: {data_rows}"
+        )
+
+    def test_top_none_shows_all_rows(self, tmp_path, monkeypatch, capsys):
+        d = self._make_dir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["flexaidds", str(d)])
+        main()
+        out = capsys.readouterr().out
+        assert "binding modes=3" in out
+        data_rows = [ln for ln in out.splitlines() if ln.strip()[:1].isdigit()]
+        assert len(data_rows) == 3, (
+            f"no --top should list all 3 modes, got {len(data_rows)}: {data_rows}"
+        )
 
     def test_top_default_is_none(self, tmp_path):
         parser = build_parser()

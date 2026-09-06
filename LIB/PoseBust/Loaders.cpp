@@ -221,6 +221,10 @@ void infer_bonds(Molecule& mol) {
             }
         }
     }
+    // Every order here is a FABRICATION: proximity gives connectivity, not bond
+    // order. Declare it so the six order-dependent checks report NOT ASSESSED
+    // rather than scoring an all-single cage as if it were the real molecule.
+    mol.topology_inferred = true;
     mol.build_adjacency();
 }
 
@@ -485,7 +489,36 @@ bool load_sdf(const std::string& path, Molecule& out, std::string* err) {
         if (order > 4) {
             order = 1;
         }
-        out.bonds.push_back(Bond{a1 - 1, a2 - 1, order});
+        // Legacy encoding: MDL order 4 IS the aromatic marker. The Kekule
+        // encoding (order 1/2 + SD tag) is applied after the block, below.
+        out.bonds.push_back(Bond{a1 - 1, a2 - 1, order, order == 4});
+    }
+
+    // ── FLEXAIDDS_AROMATIC_BONDS SD TAG ──────────────────────────────────────
+    // Continue past "M  END" to pick up the aromatic bond list written by the
+    // DatasetRunner ligand extractor under FLEXAIDDS_KEKULIZE_LIGAND_SDF. That
+    // file carries Kekule orders (1/2) so RDKit can sanitize it, which means
+    // order 4 is absent and aromaticity would otherwise be lost on load.
+    // Indices are 1-based over the bond block just parsed.
+    {
+        bool in_tag = false;
+        while (std::getline(in, line)) {
+            const std::string t = trim_copy(line);
+            if (t.rfind("$$$$", 0) == 0) break;
+            if (t.find("<FLEXAIDDS_AROMATIC_BONDS>") != std::string::npos) {
+                in_tag = true;
+                continue;
+            }
+            if (!in_tag) continue;
+            if (t.empty()) break;  // blank line terminates an SD field
+            std::istringstream iss(t);
+            int bi = 0;
+            while (iss >> bi) {
+                if (bi >= 1 && bi <= static_cast<int>(out.bonds.size())) {
+                    out.bonds[static_cast<std::size_t>(bi - 1)].aromatic = true;
+                }
+            }
+        }
     }
 
     out.build_adjacency();
@@ -520,14 +553,34 @@ bool write_sdf(const Molecule& mol, const std::string& path, std::string* err) {
         out << buf;
     }
 
-    for (const Bond& b : mol.bonds) {
-        char buf[64];
-        const int order = (b.order >= 1 && b.order <= 4) ? b.order : 1;
-        std::snprintf(buf, sizeof(buf), "%3d%3d%3d  0  0  0  0\n", b.a + 1, b.b + 1, order);
-        out << buf;
+    std::vector<int> aromatic_bond_indices;
+    {
+        int idx = 0;
+        for (const Bond& b : mol.bonds) {
+            ++idx;
+            char buf[64];
+            const int order = (b.order >= 1 && b.order <= 4) ? b.order : 1;
+            // Aromaticity is re-emitted through the SD tag rather than by
+            // forcing order 4: a ligand loaded with Kekule orders must be
+            // written back with Kekule orders, or the file stops being
+            // sanitizable and PoseBusters emits a 0-byte table again.
+            if (b.aromatic && order != 4) aromatic_bond_indices.push_back(idx);
+            std::snprintf(buf, sizeof(buf), "%3d%3d%3d  0  0  0  0\n", b.a + 1, b.b + 1, order);
+            out << buf;
+        }
     }
 
     out << "M  END\n";
+
+    if (!aromatic_bond_indices.empty()) {
+        out << "> <FLEXAIDDS_AROMATIC_BONDS>\n";
+        for (std::size_t i = 0; i < aromatic_bond_indices.size(); ++i) {
+            out << aromatic_bond_indices[i]
+                << (i + 1 < aromatic_bond_indices.size() ? " " : "\n");
+        }
+        out << "\n";
+    }
+
     out << "$$$$\n";
     if (!out) {
         set_err(err, "write_sdf: write failed for '" + path + "'");
@@ -692,6 +745,10 @@ bool load_pdb_flexaid_ligand(const std::string& path, Molecule& out, std::string
                     }
                 }
             }
+            // CONECT records carry connectivity but NOT bond order, as the
+            // comment above admits. Same fabrication as infer_bonds under a
+            // different name, so it takes the same declaration.
+            out.topology_inferred = true;
             out.build_adjacency();
             if (!out.atoms.empty()) return true;
         }
@@ -770,13 +827,23 @@ bool assign_topology_from_reference(Molecule& pred, const Molecule& reference,
             static_cast<std::size_t>(b.b) >= pred.atoms.size()) {
             continue;
         }
-        new_bonds.push_back(Bond{b.a, b.b, b.order});
+        // Carry b.aromatic. This is the path the PREDICTED POSE's topology
+        // travels (reference ligand -> pose), so dropping it here silently
+        // defeats the Kekule encoding: the written pose SDF would keep its
+        // order-1/2 bonds but lose the SD tag, and FlexAIDdS would re-type every
+        // aromatic carbon as aliphatic on a re-read. The aggregate initialiser
+        // compiles either way and defaults the field to false, with no warning.
+        new_bonds.push_back(Bond{b.a, b.b, b.order, b.aromatic});
     }
     if (new_bonds.empty()) {
         set_err(err, "assign_topology_from_reference: no transferable bonds");
         return false;
     }
     pred.bonds = std::move(new_bonds);
+    // Real topology has replaced whatever the pred loader invented -- orders and
+    // aromaticity now come from the reference's own bond block, so the
+    // order-dependent checks are assessable again.
+    pred.topology_inferred = reference.topology_inferred;
     pred.build_adjacency();
     return true;
 }

@@ -10,5 +10,8 @@
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm test --workspaces --if-present"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }

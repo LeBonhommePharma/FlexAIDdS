@@ -34,6 +34,10 @@
 #include "native_score.h"
 #include "ensemble_pipeline.h"
 #include "fileio.h"  // Terminate() for strict frame-chart gate
+// Atom-type-pair contact-surface vector. Gate FLEXAIDDS_CONTACT_PROFILE,
+// DEFAULT OFF: unset, nothing is snapshotted and no sidecar is written, so
+// the [NATIVE_CF] diagnostic is byte-identical to HEAD.
+#include "contact_profile.h"
 
 #include <algorithm>
 #include <cmath>
@@ -234,6 +238,18 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
     bool error = false;
     const double penalty = vcfunction(FA, VC, atoms, residue, intraclashes, &error);
 
+    // ── FLEXAIDDS_CONTACT_PROFILE (default OFF) ──────────────────────────────
+    // Freeze the NATIVE complex's atom-type-pair contact-surface vector right
+    // after the only vcfunction() call in this function, so nothing downstream
+    // can substitute a different profile. The sidecar is written at the end of
+    // the function, once cf_total is known. THIS PROFILE IS THE ORACLE: any
+    // comparison of a docked pose against it consumes the answer and is valid
+    // for benchmark analysis and diagnosis ONLY — never as a scoring or
+    // selection term. See scripts/contact_profile_tanimoto.py.
+    if (flexaids::contact_profile::enabled()) {
+        flexaids::contact_profile::snapshot(FA->contributions, FA->ntypes);
+    }
+
     cfstr cf{};
     if (error) {
         // Crystal pose caused an intra-clash — almost certainly a data-prep
@@ -357,6 +373,36 @@ void score_native_pose(FA_Global* FA, VC_Global* VC, atom* atoms,
         static_cast<double>(cf.metal_coord),
         static_cast<double>(cf.entropy),
         static_cast<double>(cf.pb_clash));
+
+    // ── Write the ORACLE contact-profile sidecar (default OFF) ──────────────
+    // Path is derived from FA->rrgfile, which top.cpp sets to end_strfile — the
+    // same output prefix cluster.cpp builds <prefix>_<j>.pdb from — so the
+    // native profile lands beside the pose profiles of the very same run and
+    // joins to them by directory. No new environment variable: the single gate
+    // FLEXAIDDS_CONTACT_PROFILE governs this too. Reached only when
+    // FLEXAIDDS_SCORE_NATIVE is also on, since that is what calls this function.
+    if (flexaids::contact_profile::enabled()) {
+        const std::string prefix = (FA->rrgfile[0] != '\0')
+                                 ? std::string(FA->rrgfile)
+                                 : std::string("flexaid");
+        const std::string cp_path = prefix + "_native.cprof.csv";
+        const bool cp_ok = flexaids::contact_profile::write_csv(
+            cp_path, "native_crystal_pose", cp_path, -1, "total", cf_total);
+        if (cp_ok) {
+            std::fprintf(stderr,
+                "[CPROF] wrote ORACLE native profile %s (ntypes=%d, %lld contacts)"
+                " -- oracle metric, benchmark analysis only, never a scoring term\n",
+                cp_path.c_str(),
+                flexaids::contact_profile::last().ntypes,
+                flexaids::contact_profile::last().ncontacts);
+        } else {
+            std::fprintf(stderr,
+                "[CPROF] WARNING: no native profile written to %s (ntypes=%d)\n",
+                cp_path.c_str(),
+                flexaids::contact_profile::last().ntypes);
+        }
+        std::fflush(stderr);
+    }
 }
 
 

@@ -263,9 +263,9 @@ def test_sidecar_loader_drops_non_ok_rows(tmp_path: Path):
     p = tmp_path / "s.csv"
     p.write_text(
         "pdb_id,rmsd_symmcorr,status,pose_sha256\n"
-        "1AAA,1.0,ok,x\n"
+        f"1AAA,1.0,ok,{hashlib.sha256(b'pose').hexdigest()}\n"
         "1BBB,,no_pose_artifact,y\n"
         "1CCC,9.9,spyrmsd_error:ValueError,z\n"
     )
     loaded = agg.load_symmcorr_sidecar(p)
-    assert set(loaded) == {"1AAA"}
+    assert {pid for pid, sha in loaded} == {"1AAA"}

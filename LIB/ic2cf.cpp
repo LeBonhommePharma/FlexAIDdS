@@ -37,11 +37,13 @@ static double compute_ligand_h_rep(const FA_Global* FA, const atom* atoms) {
 	lig_enm.build_from_ligand(atoms, lig_start, lig_end_incl + 1);
 	if (!lig_enm.is_built()) return 0.0;
 
-	std::vector<double> eigs;
-	eigs.reserve(lig_enm.modes().size());
-	for (const auto& nm : lig_enm.modes()) {
-		if (nm.eigenvalue > 0.0) eigs.push_back(nm.eigenvalue);
-	}
+	// Rigid-body modes REMOVED, not merely sign-filtered. The former
+	// `nm.eigenvalue > 0.0` kept whichever of the six landed positive from
+	// round-off, which set the lower log-frequency bin edge and moved H_pop by
+	// ~56% (BU72: 1.896 -> 2.950) with a survivor count unstable under 1e-6 A
+	// jitter. This value feeds tencom_weight * cf.h_rep, so it must be
+	// reproducible.
+	const std::vector<double> eigs = lig_enm.vibrational_eigenvalues();
 	if (eigs.empty()) return 0.0;
 
 	const std::vector<std::vector<double>> single = { eigs };

@@ -21,6 +21,12 @@
 #include "BenchmarkRunner.h"
 #include "ProtocolConfig.h"
 #include "SoftBetaFreeEnergy.h"
+#include "EnvFlags.h"       // flexaids::env_bool — one parser for FLEXAIDDS_* switches
+// Receptor-frame provenance for the validator. Gates
+// FLEXAIDDS_WRITE_FLEXED_RECEPTOR (engine writes the as-scored receptor) and
+// FLEXAIDDS_PB_RECEPTOR=crystal|flexed (which receptor PoseBusters is handed).
+// Header-only, no flexaid.h dependency, DEFAULT crystal = today's behaviour.
+#include "flexed_receptor.h"
 #include "shell_exec.h"
 #include "RunReceipt.h"
 #include "statmech.h"
@@ -953,22 +959,20 @@ static std::vector<double> compute_pose_eigenvalues(
             if (error) *error = "ligand tENCoM model did not build";
             return {};
         }
-        double max_lambda = 0.0;
-        for (const auto& mode : ligand_enm.modes()) {
-            if (std::isfinite(mode.eigenvalue))
-                max_lambda = std::max(max_lambda, mode.eigenvalue);
-        }
         // Cartesian ANM contains six rigid-body null modes plus any additional
         // disconnected-network nullspace. Remove numerical remnants relative to
         // the spectrum scale instead of treating tiny positive roundoff as motion.
-        const double rigid_cutoff = std::max(1e-10, max_lambda * 1e-8);
-        std::vector<double> eigs;
-        eigs.reserve(ligand_enm.modes().size());
-        for (const auto& mode : ligand_enm.modes()) {
-            if (std::isfinite(mode.eigenvalue) &&
-                mode.eigenvalue > rigid_cutoff)
-                eigs.push_back(mode.eigenvalue);
-        }
+        //
+        // This reasoning, and the max(1e-10, lam_max*1e-8) rule that implements
+        // it, used to live in an inline copy here and a second copy in
+        // ligand_tencom_pose.cpp -- while FOUR other consumers used a bare
+        // `> 0.0` that removes none of them. Consolidated into ONE
+        // implementation so the rule cannot drift again; n_dropped/n_expected
+        // additionally make the disconnected-network case LOUD rather than
+        // silently absorbed into the entropy.
+        int n_dropped = 0, n_expected = 0;
+        std::vector<double> eigs =
+            ligand_enm.vibrational_eigenvalues(&n_dropped, &n_expected);
         if (eigs.empty() && error) *error = "Eigen returned no positive modes";
         return eigs;
     } catch (const std::exception& exc) {
@@ -2615,6 +2619,54 @@ static int bond_order_from_cif_fields(const std::string& value_order,
     return 1;
 }
 
+// ── KEKULIZED BOND ORDERS (FLEXAIDDS_KEKULIZE_LIGAND_SDF) ────────────────────
+// bond_order_from_cif_fields() above returns MDL order 4 whenever the CCD's
+// pdbx_aromatic_flag is Y, DISCARDING the value_order the CCD also supplies --
+// and value_order for an aromatic ring is already a valid Kekule structure
+// (alternating SING/DOUB). MEASURED CONSEQUENCE: an SDF whose aromatic ring is
+// written as order 4 with no explicit hydrogens cannot be kekulized by RDKit
+// (KekulizeException on the ring atoms of an N-heteroaromatic, whose NH has no
+// explicit H to infer from), so MolFromMolFile returns None and PoseBusters
+// emits a 0-BYTE table. On the Astex-84 roster that silently removed 7 targets
+// from the denominator -- 1K3U 1N2V 1U1C 1U4D 1XOZ 1Y6R 2BSM -- reported as
+// pb_pass=false rather than NOT ASSESSED.
+//
+// WHY ORDER 4 CANNOT SIMPLY BE REPLACED. SdfReader.cpp sets is_aromatic ONLY
+// from `sb.type == 4`, and that drives three VCT atom types that feed CF:
+// C.ar (4), N.ar (10) and O.co2 (15). Writing kekulized orders alone would
+// silently re-type every aromatic carbon and change every score.
+//
+// THE FIX IS THEREFORE TWO-PART AND EXACT RATHER THAN HEURISTIC: write the
+// kekulized order in the bond block (so RDKit sanitizes) AND carry the aromatic
+// bond list in an SD data tag that SdfReader reads back to set is_aromatic
+// identically. Typing is preserved BY CONSTRUCTION, not by argument. Ring
+// perception is deliberately NOT used -- it would be a second heuristic.
+//
+// Scope: the CCD path only. bond_order_from_geometry() has no kekulized
+// alternative (distances cannot resolve a Kekule assignment), so ligands
+// reconstructed from geometry keep order 4 and are unaffected.
+static bool kekulize_ligand_sdf_enabled() {
+    const char* e = std::getenv("FLEXAIDDS_KEKULIZE_LIGAND_SDF");
+    return e && *e && std::string(e) != "0";
+}
+
+// The CCD value_order alone, ignoring the aromatic flag: 1/2/3, never 4.
+static int bond_order_kekule_from_cif(const std::string& value_order) {
+    const std::string order = normalize_token(value_order);
+    if (order == "SING" || order == "SINGLE" || order == "1") return 1;
+    if (order == "DOUB" || order == "DOUBLE" || order == "2") return 2;
+    if (order == "TRIP" || order == "TRIPLE" || order == "3") return 3;
+    return 0;  // 0 = no usable Kekule order; caller must keep the legacy value
+}
+
+static bool bond_is_aromatic_from_cif(const std::string& value_order,
+                                      const std::string& aromatic_flag) {
+    const std::string order = normalize_token(value_order);
+    const std::string aromatic = normalize_token(aromatic_flag);
+    return (aromatic == "Y" || aromatic == "YES" || order == "AROM" ||
+            order == "AROMATIC" || order == "AR");
+}
+
 // Geometry-based bond-order heuristic for inputs that carry no CCD bond table
 // (PDB receptors without a companion .cif) or for individual bonds missing from
 // the chem_comp_bond loop.  HETATM/CONECT connectivity is order-blind, so without
@@ -3597,6 +3649,10 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     };
 
     std::map<std::pair<size_t, size_t>, int> bonds;
+    // Bonds the CCD flagged aromatic. Populated only on the CCD path and only
+    // under FLEXAIDDS_KEKULIZE_LIGAND_SDF; emitted as an SD tag by the writer so
+    // SdfReader can restore is_aromatic without relying on MDL order 4.
+    std::set<std::pair<size_t, size_t>> aromatic_bonds;
 
     // Bonds whose order came straight from the CCD chem_comp_bond loop.  These
     // are authoritative and must never be overwritten by the geometry heuristic.
@@ -3661,10 +3717,21 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
                         auto a1_it = atom_lookup.find(normalize_token(bond.atom_id_1));
                         auto a2_it = atom_lookup.find(normalize_token(bond.atom_id_2));
                         if (a1_it == atom_lookup.end() || a2_it == atom_lookup.end()) continue;
-                        add_bond(a1_it->second, a2_it->second,
-                                 bond_order_from_cif_fields(bond.value_order, bond.aromatic_flag),
-                                 bonds);
+                        int ord = bond_order_from_cif_fields(bond.value_order,
+                                                             bond.aromatic_flag);
+                        const bool arom = bond_is_aromatic_from_cif(bond.value_order,
+                                                                    bond.aromatic_flag);
                         auto mm = std::minmax(a1_it->second, a2_it->second);
+                        if (kekulize_ligand_sdf_enabled() && arom) {
+                            // Prefer the CCD's own Kekule order; keep 4 only if
+                            // value_order carries nothing usable (e.g. DELO).
+                            const int kek = bond_order_kekule_from_cif(bond.value_order);
+                            if (kek > 0) {
+                                ord = kek;
+                                aromatic_bonds.insert({mm.first, mm.second});
+                            }
+                        }
+                        add_bond(a1_it->second, a2_it->second, ord, bonds);
                         cif_bonded.insert({mm.first, mm.second});
                     }
                 }
@@ -3870,11 +3937,17 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
             << " 0  0  0  0  0  0  0  0  0  0  0  0\n";
     }
 
-    // Bond block
+    // Bond block.  Under FLEXAIDDS_KEKULIZE_LIGAND_SDF the CCD-aromatic bonds
+    // carry their Kekule order here (1/2) instead of MDL 4, and their 1-based
+    // indices in THIS block are collected for the SD tag below.
+    std::vector<int> aromatic_bond_indices;
+    int emitted_bond = 0;
     for (const auto& [pair, order] : bonds) {
         int a = old_to_new[pair.first];
         int b = old_to_new[pair.second];
         if (a <= 0 || b <= 0) continue;
+        ++emitted_bond;
+        if (aromatic_bonds.count(pair)) aromatic_bond_indices.push_back(emitted_bond);
         ofs << std::setw(3) << a
             << std::setw(3) << b
             << std::setw(3) << order
@@ -3882,6 +3955,22 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
     }
 
     ofs << "M  END\n";
+
+    // ── AROMATIC BOND TAG ────────────────────────────────────────────────────
+    // SD data field, emitted only when there is something to record. RDKit
+    // ignores unknown SD tags, so the mol block stays sanitizable; SdfReader
+    // reads this back to set is_aromatic exactly as MDL order 4 used to, which
+    // keeps C.ar/N.ar typing -- and therefore CF -- unchanged by construction.
+    // Absent tag (every pre-existing cache) => SdfReader's legacy type-4 path.
+    if (!aromatic_bond_indices.empty()) {
+        ofs << "> <FLEXAIDDS_AROMATIC_BONDS>\n";
+        for (size_t i = 0; i < aromatic_bond_indices.size(); ++i) {
+            ofs << aromatic_bond_indices[i]
+                << (i + 1 < aromatic_bond_indices.size() ? " " : "\n");
+        }
+        ofs << "\n";
+    }
+
     ofs << "$$$$\n";
     ofs.close();
 
@@ -4134,7 +4223,56 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
 
     // Extract ligand.  Regenerate stale caches whenever the extractor version
     // changes or the source structure is newer than the cached SDF.
-    if (!ligand_sdf_is_current(ligand_path, ligand_source_path)) {
+    //
+    // ── CACHE IMMUTABILITY GUARD (FLEXAIDDS_CACHE_READONLY) ──────────────────
+    // extract_ligand() writes to `ligand_path`, which IS the cache path, so a
+    // failed freshness check silently OVERWRITES the cached ligand in the
+    // engine's own bond convention.  MEASURED CONSEQUENCE: an externally
+    // repaired cache (cache_ccd, rebuilt from the PDB Chemical Component
+    // Dictionary with KEKULIZED aromatic rings so RDKit/PoseBusters can
+    // sanitize it) was destroyed on first contact: measured 84/85 sanitizing
+    // and a kekulized bond block (1K3U: 15 single, 7 double, 0 aromatic) at
+    // 16:51Z, then 78/85 and order-4 aromatics (9/3/10) with every one of the
+    // 85 files rewritten at 16:53:37-38Z by a single invocation.
+    //
+    // WHICH of the two sufficient triggers fired is UNDETERMINED and cannot now
+    // be established: ligand_sdf_is_current() returns false if EITHER the
+    // FLEXAIDDS_LIGAND_EXTRACTOR_V5 stamp is absent from the first 4 lines OR a
+    // source .cif/.pdb is newer than the SDF, and no pre-damage copy of the
+    // repaired ligands survives anywhere on disk to test either one.  (Reading
+    // the stamp off the post-rewrite file proves nothing — it is the engine's
+    // own output.)  This guard is deliberately agnostic: it blocks the
+    // overwrite whichever gate fails.  The rewrite also resets the mtimes, so
+    // afterwards the freshness gate reads "current" and the destruction is
+    // invisible to a post-hoc check — content fingerprinting is the only
+    // reliable detector.
+    //
+    // With FLEXAIDDS_CACHE_READONLY=1 an existing, non-empty cached ligand is
+    // used AS-IS and never rewritten; the skip is announced so a stale cache
+    // can never be mistaken for a fresh one.  Default (unset) reproduces the
+    // previous behaviour exactly.
+    const char* ro_env = std::getenv("FLEXAIDDS_CACHE_READONLY");
+    const bool cache_readonly =
+        (ro_env && *ro_env && std::string(ro_env) != "0");
+    std::error_code lig_ec;
+    const bool cached_ligand_usable =
+        fs::exists(ligand_path, lig_ec) && !lig_ec &&
+        fs::file_size(ligand_path, lig_ec) > 0 && !lig_ec;
+
+    if (cache_readonly && cached_ligand_usable) {
+        if (!ligand_sdf_is_current(ligand_path, ligand_source_path)) {
+            std::cerr << "  [CACHE-RO] " << upper_id
+                      << ": freshness check FAILED but FLEXAIDDS_CACHE_READONLY=1"
+                      << " — using the cached ligand as-is, NOT re-extracting: "
+                      << ligand_path << "\n";
+        }
+        entry.ligand_path = ligand_path;
+    } else if (!ligand_sdf_is_current(ligand_path, ligand_source_path)) {
+        if (cache_readonly) {
+            std::cerr << "  [CACHE-RO] " << upper_id
+                      << ": no usable cached ligand, extracting despite"
+                      << " FLEXAIDDS_CACHE_READONLY=1 (cache was incomplete)\n";
+        }
         if (extract_ligand(ligand_source_path, ligand_path)) {
             entry.ligand_path = ligand_path;
         } else {
@@ -5392,18 +5530,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " BenchmarkMode:    " << mode_label << "\n";
     }
 
+    // Argv-only hash helpers — no shell (security harden from main).
+    auto md5_of = [](const std::string& path) -> std::string {
+        if (path.empty() || !fs::exists(path) || !is_safe_exec_path(path)) return "";
+        std::string t = run_argv_first_token({"md5", "-q", path});
+        if (t.empty()) t = run_argv_first_token({"md5sum", path});
+        return t;
+    };
+
     // ── RUN_RECEIPT.json + legacy provenance.json ─────────────────────────
     // Align with C0 iCloud launch scripts: matrix/binary hashes, GA knobs,
     // mode, seed flags, and a full ProtocolConfig JSON snapshot. Best-effort:
     // failure here must not block docking.
     {
-        // Argv-only hash helpers — no shell (security harden from main).
-        auto md5_of = [](const std::string& path) -> std::string {
-            if (path.empty() || !fs::exists(path) || !is_safe_exec_path(path)) return "";
-            std::string t = run_argv_first_token({"md5", "-q", path});
-            if (t.empty()) t = run_argv_first_token({"md5sum", path});
-            return t;
-        };
         auto sha256_of = [](const std::string& path) -> std::string {
             if (path.empty() || !fs::exists(path) || !is_safe_exec_path(path)) return "";
             std::string t = flexaids::posebust::sha256_file(path);
@@ -5774,6 +5913,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         float cached_csv_best_score = 0.0f;
         float cached_csv_predicted_dg = 0.0f;
         int cached_csv_num_poses = 0;
+        int cached_docking_exit_code = -1;
+        bool cached_docking_completed = false;
         double cached_csv_wall_time_s = 0.0;
         if (!ignore_cache && config.skip_completed && fs::exists(out_dir)) {
             int cached_poses = 0;
@@ -5855,7 +5996,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         cached_csv_best_score = parse_float_cell("best_score", 0.0f);
                         cached_csv_predicted_dg = parse_float_cell("predicted_dG", 0.0f);
                         cached_csv_num_poses = parse_int_cell("num_poses", 0);
+                        result.matrix_md5 = cell_for("matrix_md5");
                         cached_csv_wall_time_s = parse_double_cell("wall_time_s", 0.0);
+                        // A pose or stale success flag does not witness a child
+                        // exit. Legacy cache rows remain explicitly unwitnessed.
+                        cached_docking_exit_code = docking_exit_code_or_unknown(cell_for("docking_exit_code"));
+                        const auto completed = cell_for("docking_completed");
+                        cached_docking_completed = completed == "1" || completed == "true" || completed == "True";
                     }
                 }
             } catch (...) {
@@ -5874,8 +6021,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             }
         }
 
-        // ret is initialised to 0; for cached runs we never call exec_cmd so
-        // the success condition (ret == 0 && n_poses > 0 && !stuck) still works.
+        // Cached execution status is read separately from its receipt; the
+        // initial value of ret must not manufacture a successful child exit.
         int ret = 0;
 
         if (!skip) {
@@ -6092,9 +6239,256 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 if (const char* so = std::getenv("FLEXAIDDS_SCORED_ONLY")) {
                     scored_only = (so[0] == '1');
                 }
+                // ── RECEPTOR CONFORMATIONAL STRAIN (default OFF) ──────────────
+                // ENGINE CHANGE IMPLIES HARNESS CHANGE. The engine reads
+                // FLEXAIDDS_RECEPTOR_STRAIN (LIB/receptor_strain.h) and each
+                // FlexAIDdS subprocess INHERITS this process's environment (see
+                // the OMP_NUM_THREADS note further down), so the variable does
+                // reach the engine. What was missing in at least eight past
+                // features was the RECORD: the per-case dock_config.json is the
+                // artifact a reader greps months later to find out which arm a
+                // cell actually ran. Echo it there, and say so on stdout.
+                // Named *_on so it can never shadow the flexaids::receptor_strain
+                // namespace if a future include pulls receptor_strain.h in here.
+                const bool receptor_strain_on =
+                    flexaids::env_bool("FLEXAIDDS_RECEPTOR_STRAIN", false);
+                double receptor_strain_T = 298.15;
+                if (const char* rst = std::getenv("FLEXAIDDS_RECEPTOR_STRAIN_T")) {
+                    const double v = std::atof(rst);
+                    if (v > 1.0 && v < 1000.0) receptor_strain_T = v;
+                }
+                if (receptor_strain_on) {
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " FLEXAIDDS_RECEPTOR_STRAIN=1 T=" << receptor_strain_T
+                              << " K (default OFF; reported as REMARK CF.strain, NOT summed into CF.app)\n";
+                }
                 if (const char* afx = std::getenv("FLEXAIDDS_AUTOFLEX_MAX")) {
                     autoflex_max = std::atoi(afx);
                     if (autoflex_max < 0) autoflex_max = 0;
+                }
+                // ── WALL-CAP MODE (default "legacy") ───────────────────────────
+                // ENGINE CHANGE IMPLIES HARNESS CHANGE. The engine reads
+                // FLEXAIDDS_WAL_CAP_MODE / FLEXAIDDS_WAL_CAP_FLEX in
+                // LIB/vcfunction.cpp, and each FlexAIDdS subprocess inherits this
+                // process's environment, so the value does reach it. What was
+                // missing in past features was the RECORD: dock_config.json is the
+                // artifact a reader greps months later to find out which arm a cell
+                // actually ran. config_parser does not consume these keys (it
+                // ignores unknown ones, same as force_rigid / receptor_strain).
+                //
+                // Named wal_cap_* locals; they cannot collide with the engine's
+                // file-static readers, which live in vcfunction.cpp's TU.
+                std::string wal_cap_mode = "legacy";
+                if (const char* wcm = std::getenv("FLEXAIDDS_WAL_CAP_MODE")) {
+                    const std::string v(wcm);
+                    if (v == "legacy" || v == "flex") {
+                        wal_cap_mode = v;
+                    } else if (!v.empty()) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " WARNING: FLEXAIDDS_WAL_CAP_MODE='" << v
+                                  << "' is not one of legacy|flex; the engine will fall"
+                                     " back to legacy. Recording legacy here too.\n";
+                    }
+                }
+                double wal_cap_flex = 0.0;
+                if (const char* wcf = std::getenv("FLEXAIDDS_WAL_CAP_FLEX")) {
+                    wal_cap_flex = std::atof(wcf);
+                    if (wal_cap_flex < 0.0) wal_cap_flex = 0.0;
+                }
+                if (wal_cap_mode == "flex") {
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " FLEXAIDDS_WAL_CAP_MODE=flex wal_cap_flex=" << wal_cap_flex
+                              << " (0 = no ceiling on the soft-core wall for contacts that"
+                                 " involve a flexed receptor side chain; the legacy r^-12"
+                                 " wall stays capped at 50 unless a finite value is given)\n";
+                    // Precondition check. With no flexible side chains there is no
+                    // OptRes of type 0, so no contact can qualify and the gate is a
+                    // STRUCTURAL NO-OP while every log still looks clean. Say so.
+                    if (autoflex_max <= 0) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " WARNING: FLEXAIDDS_WAL_CAP_MODE=flex with autoflex_max="
+                                  << autoflex_max << " -> the receptor is RIGID, no contact can"
+                                     " be attributed to a flexed side chain, and this gate is a"
+                                     " structural no-op. Set FLEXAIDDS_AUTOFLEX_MAX>0 for the"
+                                     " flexible arm.\n";
+                    }
+                }
+                // ── IMPLICIT-SOLVENT REFERENCE (default "dynamic") ─────────────
+                // ENGINE CHANGE IMPLIES HARNESS CHANGE. The engine reads
+                // FLEXAIDDS_SOLVATION_REF in LIB/vcfunction.cpp, and every
+                // FlexAIDdS subprocess inherits this process's environment, so the
+                // value does reach it. What was missing in past features was the
+                // RECORD: dock_config.json is the artifact a reader greps months
+                // later to find out which arm a cell actually ran. config_parser
+                // does not consume this key (it ignores unknown ones, same as
+                // force_rigid / receptor_strain / wal_cap_mode).
+                std::string solvation_ref = "dynamic";
+                if (const char* sr = std::getenv("FLEXAIDDS_SOLVATION_REF")) {
+                    const std::string v(sr);
+                    if (v == "dynamic" || v == "crystal") {
+                        solvation_ref = v;
+                    } else if (!v.empty()) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " WARNING: FLEXAIDDS_SOLVATION_REF='" << v
+                                  << "' is not one of dynamic|crystal; the engine will"
+                                     " fall back to dynamic. Recording dynamic here too.\n";
+                    }
+                }
+                if (solvation_ref == "crystal") {
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " FLEXAIDDS_SOLVATION_REF=crystal (the ligand-solvent"
+                                 " term is priced against the INPUT receptor envelope;"
+                                 " surface vacated by a moved side chain is withheld"
+                                 " from the solvent term instead of re-priced as bulk"
+                                 " water)\n";
+                    if (config.receptor_rotamer_prep &&
+                        config.mode != BenchmarkMode::ORACLE_CEILING) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " NOTE: receptor_rotamer_prep is ON, so the frozen"
+                                     " solvent reference is the PRE-RELAXED receptor"
+                                     " conformation, not the deposited crystal one.\n";
+                    }
+                    // Precondition check. With no flexible side chains no residue is
+                    // ever off rotamer 0, the occluder table is empty, and the gate is
+                    // a STRUCTURAL NO-OP while every log still looks clean. Say so.
+                    if (autoflex_max <= 0) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " WARNING: FLEXAIDDS_SOLVATION_REF=crystal with"
+                                     " autoflex_max=" << autoflex_max << " -> the receptor"
+                                     " is RIGID, no side chain can vacate anything, and"
+                                     " this gate is a structural no-op. Set"
+                                     " FLEXAIDDS_AUTOFLEX_MAX>0 for the flexible arm.\n";
+                    }
+                }
+                // ── ATOM-TYPE-PAIR CONTACT-SURFACE VECTOR (default off) ───────
+                // ENGINE CHANGE IMPLIES HARNESS CHANGE. The engine reads
+                // FLEXAIDDS_CONTACT_PROFILE in LIB/vcfunction.cpp and every
+                // FlexAIDdS subprocess inherits this process's environment, so the
+                // value does reach it. What has been missing in past features is the
+                // RECORD: dock_config.json is the artifact a reader greps months
+                // later to find out whether a cell produced .cprof.csv sidecars.
+                // config_parser does not consume this key (it ignores unknown ones,
+                // same as force_rigid / receptor_strain / wal_cap_mode /
+                // solvation_ref).
+                bool contact_profile_on = false;
+                if (const char* cp = std::getenv("FLEXAIDDS_CONTACT_PROFILE")) {
+                    const std::string v(cp);
+                    contact_profile_on = (!v.empty() && v != "0");
+                }
+                if (contact_profile_on) {
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " FLEXAIDDS_CONTACT_PROFILE=1 -> every emitted pose"
+                                 " gets a <pose>.cprof.csv sidecar carrying the total"
+                                 " Voronoi contact surface per unordered atom-type"
+                                 " pair (inter/intra split) plus the CF contribution"
+                                 " credited for that pair. PURE INSTRUMENT: nothing is"
+                                 " added to any CF channel and no ranking can change.\n";
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " NOTE: pairs whose interaction-matrix entry is"
+                                 " exactly 0.0 ARE recorded (area_total > 0 with"
+                                 " cf_pair == 0.0 means surface the CF priced at"
+                                 " nothing). Analyse with"
+                                 " scripts/contact_profile_tanimoto.py.\n";
+                    // Precondition check for the ORACLE arm of the metric. The
+                    // native-complex profile is written by native_score.cpp, which
+                    // only runs under FLEXAIDDS_SCORE_NATIVE. Without it there is
+                    // no <prefix>_native.cprof.csv to compare against, and only
+                    // pose-vs-pose (oracle-free) comparisons are possible.
+                    const char* sn = std::getenv("FLEXAIDDS_SCORE_NATIVE");
+                    const bool score_native_on = (sn != nullptr && sn[0] != '\0' &&
+                                                  std::string(sn) != "0");
+                    if (!score_native_on) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " NOTE: FLEXAIDDS_SCORE_NATIVE is not set, so no"
+                                     " <prefix>_native.cprof.csv will be written and"
+                                     " only pose-vs-pose (oracle-free) Tanimoto is"
+                                     " available. Set it for the oracle arm.\n";
+                    }
+                }
+                // ── RECEPTOR FRAME OF THE VALIDITY VERDICT (default: crystal) ─
+                // TWO gates, both DEFAULT OFF / default-preserving:
+                //
+                //  FLEXAIDDS_WRITE_FLEXED_RECEPTOR=1 (ENGINE, cluster.cpp) makes
+                //    every emitted pose gain a companion
+                //    <dir>/flexed_receptor/<pose-stem>_receptor.pdb holding the
+                //    receptor AS SCORED — every residue at its live rotamer, the
+                //    docked ligand removed, cofactors/waters kept. It writes a new
+                //    file and touches nothing else: the pose PDB, its REMARKs, the
+                //    .mcf, the .rrd and every CF channel are byte-identical.
+                //    FLEXAIDDS_SCORED_ONLY (below) is deliberately NOT consulted by
+                //    that writer — SCORED_ONLY=1 is precisely what suppressed these
+                //    coordinates for the whole campaign to date.
+                //
+                //  FLEXAIDDS_PB_RECEPTOR=crystal|flexed (HARNESS, this file) selects
+                //    which receptor validate_elected_pose() is handed. DEFAULT
+                //    "crystal" = entry.receptor_path, i.e. exactly today's call, so
+                //    every existing validity outcome is reproduced bit for bit.
+                //
+                // WHY: PoseBusters currently judges every arm against the CRYSTAL
+                // receptor. In the flexible arm the engine moved side chains, so an
+                // "overlap with protein" failure is unattributable — genuine clash,
+                // or an artifact of measuring an induced-fit pose against an unflexed
+                // reference. These two gates make the frame selectable AND recorded.
+                //
+                // Both are read again at the point of use; the values echoed here are
+                // the RECORD, which is what has been missing from past features.
+                const bool write_flexed_receptor =
+                    flexaids::flexed_receptor::write_enabled();
+                const std::string pb_receptor_cfg =
+                    flexaids::flexed_receptor::pb_receptor_mode();
+                if (!flexaids::flexed_receptor::pb_receptor_recognised()) {
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " WARNING: FLEXAIDDS_PB_RECEPTOR='"
+                              << flexaids::flexed_receptor::pb_receptor_raw()
+                              << "' is not one of crystal|flexed; falling back to"
+                                 " crystal and recording crystal here too.\n";
+                }
+                if (write_flexed_receptor) {
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " FLEXAIDDS_WRITE_FLEXED_RECEPTOR=1 -> each emitted"
+                                 " pose gains <dir>/flexed_receptor/<stem>_receptor.pdb,"
+                                 " the receptor as the engine scored it. Pure output:"
+                                 " no CF channel and no ranking can change.\n";
+                    if (autoflex_max <= 0) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " NOTE: autoflex_max=" << autoflex_max
+                                  << " -> the receptor is RIGID, so every companion"
+                                     " will equal the input receptor conformation"
+                                     " (REMARK n_residues_off_input_rotamer 0). That is"
+                                     " a useful NULL control, not an error.\n";
+                    }
+                }
+                if (pb_receptor_cfg == "flexed") {
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " FLEXAIDDS_PB_RECEPTOR=flexed -> PoseBusters judges"
+                                 " the pose against the receptor it was SCORED in, not"
+                                 " the crystal receptor. This CHANGES validity numbers"
+                                 " by design; it is not comparable to a crystal-frame"
+                                 " arm and must be reported as its own arm.\n";
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " CAVEAT: a flexed-frame overlap check says nothing"
+                                 " about whether the receptor STATE is physical. If the"
+                                 " search evicted a side chain, the overlap disappears"
+                                 " because the protein moved. Pair this arm with"
+                                 " FLEXAIDDS_RECEPTOR_STRAIN.\n";
+                    if (!write_flexed_receptor) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " WARNING: FLEXAIDDS_PB_RECEPTOR=flexed with"
+                                     " FLEXAIDDS_WRITE_FLEXED_RECEPTOR unset -> no"
+                                     " as-scored receptor will exist, every case will"
+                                     " fall back to the crystal receptor, and"
+                                     " validator_provenance.json will read"
+                                     " pb_receptor_used="
+                                     "\"crystal_fallback_no_flexed_receptor\". Set BOTH.\n";
+                    }
+                    if (autoflex_max <= 0) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " NOTE: autoflex_max=" << autoflex_max
+                                  << " -> the receptor is RIGID, so the flexed frame and"
+                                     " the crystal frame are the same conformation and"
+                                     " this arm is a structural no-op. Set"
+                                     " FLEXAIDDS_AUTOFLEX_MAX>0 for the flexible arm.\n";
+                    }
                 }
                 std::ofstream jf(config_path);
                 jf << "{\n"
@@ -6129,6 +6523,33 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // without softening genuine clashes (o > 0.40 Å → quadratic).
                    // Set to 0.0 to recover v42 hard-wall (legacy) behaviour.
                    << "    \"soft_wall_cutoff\": 0.40,\n"
+                   // Per-contact wall ceiling policy (see the env block above).
+                   // "legacy": every contact keeps the WAL_CONTACT_CAP = 50
+                   //   per-contact ceiling, so evict-a-side-chain-then-bury costs
+                   //   a bounded 50 no matter how deep the burial.
+                   // "flex":   that ceiling is lifted ONLY for contacts involving a
+                   //   flexed receptor side-chain atom (OptRes type 0); rigid,
+                   //   backbone, cofactor and ligand-intramolecular contacts are
+                   //   byte-for-byte unchanged.
+                   // wal_cap_flex 0 = uncapped on the soft-core wall (bounded
+                   //   quadratic growth); > 0 = that finite ceiling instead.
+                   // Meaningless unless autoflex_max > 0 -- with a rigid receptor
+                   // no contact can qualify.
+                   << "    \"wal_cap_mode\": \"" << wal_cap_mode << "\",\n"
+                   << "    \"wal_cap_flex\": " << wal_cap_flex << ",\n"
+                   // Implicit-solvent reference for the ligand-solvent term.
+                   // "dynamic": the reference is the receptor as it is RIGHT NOW,
+                   //   so volume a flexed side chain vacated is re-priced as bulk
+                   //   water (today's behaviour, and the defect this key names).
+                   // "crystal": the reference is frozen at the INPUT receptor
+                   //   envelope (rotamer index 0). Ligand surface that is exposed
+                   //   only because a movable side chain left is withheld from the
+                   //   solvent term and priced as neither water nor protein.
+                   // Read together with receptor_rotamer_prep above: when that is
+                   //   true the frozen reference is the PRE-RELAXED conformer.
+                   // Meaningless unless autoflex_max > 0 -- with a rigid receptor
+                   //   no residue is ever off rotamer 0.
+                   << "    \"solvation_ref\": \"" << solvation_ref << "\",\n"
                    // Match PoseBusters' relative-vdW intermolecular clash cutoff
                    // during search so invalid overlaps cannot win on VCT score.
                    << "    \"intermolecular_clash_ratio\": 0.75,\n"
@@ -6159,6 +6580,16 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"autoflex_max\": " << autoflex_max << ",\n"
                    << "    \"autoflex_metal_shrink\": "
                    << (autoflex_metal_shrink ? "true" : "false") << ",\n"
+                   // Receptor conformational strain, E_strain(r) = E(r) - E(r_ref).
+                   // Provenance echo of the FLEXAIDDS_RECEPTOR_STRAIN env gate the
+                   // engine reads; config_parser does not consume these keys (it
+                   // ignores unknown ones, same as force_rigid above). Present so a
+                   // dock_config.json is sufficient on its own to tell whether a
+                   // cell charged for side-chain eviction, and at what temperature.
+                   << "    \"receptor_strain\": "
+                   << (receptor_strain_on ? "true" : "false") << ",\n"
+                   << "    \"receptor_strain_temperature_K\": "
+                   << receptor_strain_T << ",\n"
                    << "    \"rotamer_observations\": true\n"
                    << "  },\n"
                    << "  \"optimization\": {\n"
@@ -6178,7 +6609,39 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // NOTE flexaid.h:576 calls it "ligand coordinates only"; that
                    // comment predates reachable side-chain flexibility. Trust the code.
                    // Default false so every existing arm stays byte-identical.
-                   << "    \"scored_only\": " << (scored_only ? "true" : "false") << "\n"
+                   << "    \"scored_only\": " << (scored_only ? "true" : "false") << ",\n"
+                   // DIAGNOSTIC SIDECAR, not a scoring switch. true => each
+                   // emitted <pose>.pdb is accompanied by <pose>.cprof.csv: the
+                   // total Voronoi contact surface per unordered atom-type pair
+                   // (columns area_total / area_inter / area_intra) together with
+                   // the CF contribution the engine credited for that same pair
+                   // (cf_pair). Accumulation is NOT filtered on the interaction
+                   // matrix, so pairs with epsilon exactly 0.0 appear with
+                   // area_total > 0 and cf_pair == 0.0 — real buried surface the
+                   // contact function priced at nothing. Provenance echo of the
+                   // FLEXAIDDS_CONTACT_PROFILE env gate the engine reads;
+                   // config_parser does not consume this key.
+                   << "    \"contact_profile\": "
+                   << (contact_profile_on ? "true" : "false") << ",\n"
+                   // RECEPTOR AS SCORED. true => each emitted <pose>.pdb gains
+                   // <dir>/flexed_receptor/<pose-stem>_receptor.pdb: every residue
+                   // at its live rotamer index, the docked ligand removed,
+                   // cofactors/metals/waters kept. Independent of scored_only
+                   // above, on purpose: scored_only=1 is what suppressed these
+                   // coordinates for the whole campaign. Provenance echo of the
+                   // FLEXAIDDS_WRITE_FLEXED_RECEPTOR env gate the ENGINE reads;
+                   // config_parser does not consume this key.
+                   << "    \"write_flexed_receptor\": "
+                   << (write_flexed_receptor ? "true" : "false") << ",\n"
+                   // WHICH RECEPTOR THE VALIDATOR JUDGES THE POSE AGAINST.
+                   // "crystal" (DEFAULT) = entry.receptor_path, exactly today's
+                   // call, so existing validity outcomes are unchanged.
+                   // "flexed" = the as-scored companion above. Read by the HARNESS
+                   // (this file), not by the engine, and echoed here because a
+                   // validity verdict whose receptor is unrecorded is not
+                   // interpretable. The per-case ground truth of what was actually
+                   // used is validator_provenance.json -> pb_receptor_used.
+                   << "    \"pb_receptor\": \"" << pb_receptor_cfg << "\"\n"
                    << "  },\n"
                    // The MC_st0r5.2_6 interaction matrix is loaded weighted (single
                    // value per type-pair), so the complementarity term must be
@@ -6259,6 +6722,45 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "    \"grid_step\": " << grid_step << ",\n"
                    << "    \"n_seeds\": 25,\n"
                    << "    \"n_orientations\": 64\n"
+                   << "  },\n"
+                   // ── PROTEIN / SOLVENT PREPARATION ──────────────────────────
+                   // This block was NEVER EMITTED, so config_parser.cpp:362-369 fell
+                   // back to its own defaults on every cell this project has ever run.
+                   // MEASURED consequence: remove_water=true AND keep_structural_waters=true
+                   // AND structural_water_bfactor_max=20.0, which modify_pdb.cpp:158-166
+                   // implements as B-FACTOR-THRESHOLDED CONSERVED-WATER RETENTION -- not
+                   // full stripping. Verified with FLEXAIDDS_WRITE_FLEXED_RECEPTOR=1 on
+                   // 1JD0: the receptor as scored holds 4325 atoms including 156 HOH, all
+                   // with bf<=20 and none above it (504 waters in, 156 retained). Across
+                   // the 84-target set, 2822 of 28608 waters (9.9%) reach the search and
+                   // 19 targets retain none at all.
+                   //
+                   // Every value below equals the parser fallback it replaces, so the
+                   // emitted config reproduces every prior run bit for bit. The env gates
+                   // exist so the shipped policy can be ABLATED -- it never has been.
+                   //   FLEXAIDDS_REMOVE_WATER=0            -> keep ALL waters (CSARdock
+                   //                                          reports this HURTS; negative control)
+                   //   FLEXAIDDS_KEEP_STRUCTURAL_WATERS=0  -> strip ALL waters (never run)
+                   //   FLEXAIDDS_STRUCTURAL_WATER_BFACTOR_MAX=<f>  -> move the cutoff
+                   << "  \"protein\": {\n"
+                   << "    \"is_protein\": true,\n"
+                   << "    \"exclude_het\": false,\n"
+                   << "    \"keep_ions\": true,\n"
+                   << "    \"remove_water\": "
+                   << ((std::getenv("FLEXAIDDS_REMOVE_WATER") &&
+                        std::getenv("FLEXAIDDS_REMOVE_WATER")[0] == '0')
+                           ? "false" : "true")
+                   << ",\n"
+                   << "    \"keep_structural_waters\": "
+                   << ((std::getenv("FLEXAIDDS_KEEP_STRUCTURAL_WATERS") &&
+                        std::getenv("FLEXAIDDS_KEEP_STRUCTURAL_WATERS")[0] == '0')
+                           ? "false" : "true")
+                   << ",\n"
+                   << "    \"structural_water_bfactor_max\": "
+                   << (std::getenv("FLEXAIDDS_STRUCTURAL_WATER_BFACTOR_MAX")
+                           ? std::atof(std::getenv("FLEXAIDDS_STRUCTURAL_WATER_BFACTOR_MAX"))
+                           : 20.0)
+                   << "\n"
                    << "  },\n"
                    << "  \"thermodynamics\": {\n"
                    << "    \"temperature\": " << config.temperature << ",\n"
@@ -6362,6 +6864,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Paths are shell_quote'd: dock still uses /bin/sh -c for env
             // prefixes + stdout/stderr redirection (fork_exec_argv cannot).
             std::string data_dir_arg;
+            std::string selected_matrix_path;
             {
                 // FLEXAIDDS_DATA_DIR remains the explicit matrix-swap hook for
                 // controlled A/B tests. Normal runs prefer data staged beside
@@ -6376,6 +6879,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             "FLEXAIDDS_DATA_DIR/path is unsafe for shell (NUL/newline/control)");
                     }
                     data_dir_arg = " --data-dir " + shell_quote(canon) + " ";
+                    selected_matrix_path = canon + "/MC_st0r5.2_6.dat";
                 } else {
                     std::string bin_dir = flexaidds_bin;
                     auto slash = bin_dir.rfind('/');
@@ -6385,12 +6889,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     if (fs::exists(staged_candidate + "/MC_st0r5.2_6.dat")) {
                         data_dir_arg = " --data-dir " +
                                        shell_quote(fs::canonical(staged_candidate).string()) + " ";
+                        selected_matrix_path = staged_candidate + "/MC_st0r5.2_6.dat";
                     } else if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
                         data_dir_arg = " --data-dir " +
                                        shell_quote(fs::canonical(wrk_candidate).string()) + " ";
+                        selected_matrix_path = wrk_candidate + "/MC_st0r5.2_6.dat";
                     }
                 }
             }
+            result.matrix_md5 = md5_of(selected_matrix_path);
             // ── Per-worker OMP thread budget ──────────────────────────
             // Each FlexAIDdS subprocess inherits the parent environment, so
             // OMP_NUM_THREADS must be set explicitly in the command string.
@@ -7087,7 +7594,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
         // Runtime completion is tracked separately from benchmark success.
         // The latter is only true once we have a valid pose RMSD under 2 Å.
-        const bool docking_completed = (ret == 0 && n_poses > 0 && !result.stuck);
+        result.docking_exit_code = skip ? cached_docking_exit_code : ret;
+        const bool docking_completed = (result.docking_exit_code == 0 && n_poses > 0 &&
+                                        !result.stuck && (!skip || cached_docking_completed));
+        result.docking_completed = docking_completed;
+        if (!docking_completed && result.rmsd_fail_reason == "none")
+            result.rmsd_fail_reason = "docking_incomplete";
 
         // If the dock produced no output, surface stderr for clues.
         //
@@ -7105,7 +7617,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::string err_line;
                 int err_lines = 0;
                 std::cerr << "  [WARN] " << entry.pdb_id
-                          << " produced no output poses (exit " << ret
+                          << " produced no output poses (exit " << result.docking_exit_code
                           << "). stderr:\n";
                 while (std::getline(stderr_file, err_line) && err_lines < 5) {
                     std::cerr << "    " << err_line << "\n";
@@ -7584,6 +8096,32 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         result.success_rmsd = false;
         result.success = false;
 
+        // ── Receptor-frame provenance for the validator ────────────────────
+        // A validity verdict whose receptor is unrecorded is not interpretable,
+        // so these are declared here (function scope) and written into
+        // validator_provenance.json below whatever path the run takes — including
+        // the paths where no flexed receptor exists at all.
+        //   flexed_receptor_src  : the engine's as-scored receptor for the elected
+        //                          pose, if FLEXAIDDS_WRITE_FLEXED_RECEPTOR wrote one
+        //   flexed_receptor_path : the immutable copy kept next to elected_pose.pdb
+        // Empty strings mean "the engine did not write one", which is the DEFAULT.
+        std::string flexed_receptor_src;
+        std::string flexed_receptor_path;
+        std::string flexed_receptor_sha256;
+        // Which receptor frame the validator was actually handed. Requested is
+        // the gate value; used is what happened, which can differ when "flexed"
+        // was asked for and the engine wrote no companion (a rigid arm, or the
+        // engine gate left off). Never silently equal.
+        std::string pb_receptor_requested =
+            flexaids::flexed_receptor::pb_receptor_mode();
+        std::string pb_receptor_used = "crystal";
+        std::string pb_receptor_path;
+        std::string pb_receptor_sha256;
+        std::string pb_receptor_note;
+        if (!flexaids::flexed_receptor::pb_receptor_recognised()) {
+            pb_receptor_note = "unrecognised FLEXAIDDS_PB_RECEPTOR value; using crystal";
+        }
+
         // ── Persist elected pose + SHA256 (audit P0) ───────────────────────
         // Downstream validators must cite this hash, not root <pdb>_0.pdb.
         if (docking_completed && !elected_pose_pdb.empty() && fs::exists(elected_pose_pdb)) {
@@ -7644,6 +8182,36 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 std::cerr << "  [ELECTED-POSE] copy failed: " << copy_err << "\n";
                 result.pose_sha256 = flexaids::posebust::sha256_file(elected_pose_pdb);
                 result.elected_pose_path = elected_pose_pdb;
+            }
+
+            // ── Persist the receptor AS SCORED beside the elected pose ──────
+            // Present only when the engine ran with FLEXAIDDS_WRITE_FLEXED_RECEPTOR
+            // =1; otherwise every variable below stays empty and nothing changes.
+            // The path is derived from elected_pose_source (the ENGINE-side pose
+            // path), not from elected_pose_path (the harness copy), because the
+            // companion was written next to the former. Both halves compute it
+            // with the same flexaids::flexed_receptor::companion_path(), so the
+            // engine and the harness cannot drift apart without a compile error.
+            {
+                const std::string cand =
+                    flexaids::flexed_receptor::companion_path(result.elected_pose_source);
+                if (!cand.empty() && fs::exists(cand)) {
+                    flexed_receptor_src = cand;
+                    const std::string dst = out_dir + "/elected_receptor.pdb";
+                    std::string rc_err;
+                    if (flexaids::posebust::copy_file_atomic(cand, dst, &rc_err)) {
+                        flexed_receptor_path = dst;
+                    } else {
+                        std::cerr << "  [FLEXREC] copy failed: " << rc_err
+                                  << " (falling back to the engine-side path)\n";
+                        flexed_receptor_path = cand;
+                    }
+                    flexed_receptor_sha256 =
+                        flexaids::posebust::sha256_file(flexed_receptor_path);
+                    std::cerr << "  [FLEXREC] as-scored receptor src=" << cand
+                              << " dst=" << flexed_receptor_path
+                              << " sha256=" << flexed_receptor_sha256 << "\n";
+                }
             }
 
             // Recompute authoritative RMSD from the immutable elected artifact.
@@ -7810,6 +8378,12 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             if (!docking_completed) {
                 result.pb_backend = "skipped_docking_incomplete";
                 result.pb_failed_keys = "docking_incomplete";
+                // No validator ran, so no receptor frame was consumed. Do not
+                // leave the provenance reading "crystal" — that would claim a
+                // measurement that never happened.
+                pb_receptor_used = "none_docking_incomplete";
+                pb_receptor_path.clear();
+                pb_receptor_sha256.clear();
             } else {
                 const std::string crystal =
                     !rmsd_reference_path.empty() ? rmsd_reference_path
@@ -7825,8 +8399,43 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 pb_opt.force_native_when_off = true;
                 pb_opt.native_fallback_if_bust_missing = true;
 
+                // ── FLEXAIDDS_PB_RECEPTOR: which receptor frame is judged ────
+                // DEFAULT "crystal" reproduces today's validity outcomes
+                // EXACTLY: entry.receptor_path is passed unchanged, so no
+                // published number can move without the gate being set.
+                //
+                // "flexed" hands the validator the receptor the engine actually
+                // scored this pose against. That is the only frame in which a
+                // volume_overlap_with_protein failure is attributable in the
+                // flexible arm — against the crystal receptor an induced-fit
+                // pose overlaps a side chain that was not there during scoring.
+                //
+                // Fail-VISIBLE, not fail-silent: asking for "flexed" when no
+                // as-scored receptor exists falls back to crystal and SAYS SO,
+                // both on stderr and in validator_provenance.json. Silently
+                // scoring in the other frame would make an arm uninterpretable.
+                pb_receptor_path = entry.receptor_path;
+                pb_receptor_used = "crystal";
+                if (pb_receptor_requested == "flexed") {
+                    if (!flexed_receptor_path.empty() &&
+                        fs::exists(flexed_receptor_path)) {
+                        pb_receptor_path = flexed_receptor_path;
+                        pb_receptor_used = "flexed";
+                    } else {
+                        pb_receptor_used = "crystal_fallback_no_flexed_receptor";
+                        if (pb_receptor_note.empty()) {
+                            pb_receptor_note =
+                                "FLEXAIDDS_PB_RECEPTOR=flexed but no as-scored "
+                                "receptor was written; is FLEXAIDDS_WRITE_FLEXED_"
+                                "RECEPTOR=1 set and FLEXAIDDS_AUTOFLEX_MAX>0?";
+                        }
+                    }
+                }
+                pb_receptor_sha256 =
+                    flexaids::posebust::sha256_file(pb_receptor_path);
+
                 auto pb = flexaids::posebust::validate_elected_pose(
-                    result.elected_pose_path, entry.receptor_path, crystal,
+                    result.elected_pose_path, pb_receptor_path, crystal,
                     pb_opt);
                 pb.finalize_success_pb(result.success_rmsd);
 
@@ -7863,6 +8472,19 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                           << result.pb_n_checks
                           << " failed=[" << result.pb_failed_keys << "]"
                           << " pose_sha256=" << result.pose_sha256 << "\n";
+                // The verdict above is meaningless without its frame. Print it
+                // on the same pass so a stderr log alone is sufficient.
+                std::cerr << "  [PB-RECEPTOR] requested=" << pb_receptor_requested
+                          << " used=" << pb_receptor_used
+                          << " path=" << pb_receptor_path
+                          << " sha256=" << pb_receptor_sha256;
+                if (!pb_receptor_note.empty())
+                    std::cerr << " note=\"" << pb_receptor_note << "\"";
+                if (pb_receptor_used == "flexed")
+                    std::cerr << " CAVEAT=\"flexed-frame overlap does NOT check"
+                                 " receptor internal geometry; read with"
+                                 " FLEXAIDDS_RECEPTOR_STRAIN\"";
+                std::cerr << "\n";
             }
 
             // tENCoM/Eigen is mandatory for benchmark claims and is computed
@@ -7960,6 +8582,33 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << result.posebusters_pose_sha256 << "\",\n"
                    << "  \"posebusters_input_sha256\": \""
                    << result.posebusters_input_sha256 << "\",\n"
+                   // RECEPTOR FRAME OF THE VALIDITY VERDICT. A pass/fail on
+                   // volume_overlap_with_protein or minimum_distance_to_protein
+                   // is a statement about a pose AND a receptor; without the
+                   // receptor it is not interpretable, and in the flexible arm
+                   // the two candidate receptors give different answers by
+                   // construction. requested = the FLEXAIDDS_PB_RECEPTOR gate;
+                   // used = what was actually handed to PoseBusters, which
+                   // differs when "flexed" was asked for and the engine wrote
+                   // no as-scored receptor. flexed_receptor_* are present iff
+                   // the engine ran with FLEXAIDDS_WRITE_FLEXED_RECEPTOR=1.
+                   << "  \"pb_receptor_requested\": \"" << pb_receptor_requested
+                   << "\",\n"
+                   << "  \"pb_receptor_used\": \"" << pb_receptor_used << "\",\n"
+                   << "  \"pb_receptor_path\": \"" << pb_receptor_path << "\",\n"
+                   << "  \"pb_receptor_sha256\": \"" << pb_receptor_sha256
+                   << "\",\n"
+                   << "  \"pb_receptor_note\": \"" << pb_receptor_note << "\",\n"
+                   << "  \"crystal_receptor_path\": \"" << entry.receptor_path
+                   << "\",\n"
+                   << "  \"flexed_receptor_written\": "
+                   << (flexed_receptor_src.empty() ? "false" : "true") << ",\n"
+                   << "  \"flexed_receptor_source_path\": \""
+                   << flexed_receptor_src << "\",\n"
+                   << "  \"flexed_receptor_path\": \"" << flexed_receptor_path
+                   << "\",\n"
+                   << "  \"flexed_receptor_sha256\": \"" << flexed_receptor_sha256
+                   << "\",\n"
                    << "  \"tencom_pose_sha256\": \""
                    << result.tencom_pose_sha256 << "\",\n"
                    << "  \"eigen_model\": \"" << result.eigen_model << "\",\n"
@@ -8051,7 +8700,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
                            "cf_best_cluster,"
                            "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z,"
-                           "rmsd_fail_reason\n";
+                           "rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -8136,7 +8785,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.thermo_CF_r2s << ","
                         << "\"" << result.thermo_binding_regime << "\","
                         << result.ensemble_log_Z << ","
-                        << result.rmsd_fail_reason << "\n";
+                        << result.rmsd_fail_reason << "," << result.docking_exit_code
+                        << "," << (result.docking_completed ? 1 : 0) << "," << result.matrix_md5 << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -8312,22 +8962,13 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             static_cast<double>(claim_ready_count) / report.total_systems;
     }
 
-    // Mean RMSD
-    if (!rmsds.empty()) {
-        report.mean_rmsd = std::accumulate(rmsds.begin(), rmsds.end(), 0.0) / rmsds.size();
-    }
-
-    // Median RMSD
-    if (!rmsds.empty()) {
-        auto sorted = rmsds;
-        std::sort(sorted.begin(), sorted.end());
-        size_t mid = sorted.size() / 2;
-        if (sorted.size() % 2 == 0) {
-            report.median_rmsd = (sorted[mid - 1] + sorted[mid]) / 2.0;
-        } else {
-            report.median_rmsd = sorted[mid];
-        }
-    }
+    const auto rmsd_summary = summarize_rmsds(rmsds);
+    report.valid_rmsd_count = static_cast<int>(rmsd_summary.count);
+    report.mean_rmsd = rmsd_summary.mean;
+    report.median_rmsd = rmsd_summary.median;
+    report.completed_systems = static_cast<int>(std::count_if(
+        report.results.begin(), report.results.end(),
+        [](const DockingResult& r) { return r.docking_completed; }));
 
     // Correlation metrics
     if (pred_affinities.size() >= 3) {
@@ -8391,8 +9032,15 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         ofs << "| Success rate (legacy == RMSD-only) | "
             << (report.success_rate * 100.0) << "% |\n";
         ofs << std::setprecision(2);
-        ofs << "| Mean elected ordered RMSD (Å) | " << report.mean_rmsd << " |\n";
-        ofs << "| Median elected ordered RMSD (Å) | " << report.median_rmsd << " |\n";
+        ofs << "| Runtime-completed systems | " << report.completed_systems << " |\n";
+        ofs << "| Valid elected ordered RMSDs | " << report.valid_rmsd_count << " |\n";
+        ofs << "| Mean elected ordered RMSD (Å) | ";
+        if (report.valid_rmsd_count > 0 && std::isfinite(report.mean_rmsd)) ofs << report.mean_rmsd;
+        else ofs << "NA";
+        ofs << " |\n| Median elected ordered RMSD (Å) | ";
+        if (report.valid_rmsd_count > 0 && std::isfinite(report.median_rmsd)) ofs << report.median_rmsd;
+        else ofs << "NA";
+        ofs << " |\n";
         ofs << "| Affinity pairs | " << report.affinity_pairs << " |\n";
         ofs << "\n**Notes:** Headline claim success is **claim_ready** only "
                "(ordered RMSD ≤2 Å + official PoseBusters + tENCoM/Eigen + hash "
@@ -8539,7 +9187,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         }
         // Appended at END (not mid-header): column names are position-stable
         // for live campaigns; new diagnostics go last.
-        ofs << ",rmsd_fail_reason\n";
+        ofs << ",rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5,pb_ran,pb_n_checks,pb_n_pass,pb_n_fail\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -8607,7 +9255,10 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                     << "," << r.thermo_CF_r2s
                     << ",\"" << r.thermo_binding_regime << "\"";
             }
-            ofs << "," << r.rmsd_fail_reason << "\n";
+            ofs << "," << r.rmsd_fail_reason << "," << r.docking_exit_code
+                << "," << (r.docking_completed ? 1 : 0) << "," << r.matrix_md5
+                << "," << (r.pb_ran ? 1 : 0) << "," << r.pb_n_checks
+                << "," << r.pb_n_pass << "," << r.pb_n_fail << "\n";
         }
 
         ofs.close();
@@ -8621,7 +9272,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         std::ofstream ofs(summary_csv);
 
         // Headline: claim_ready. RMSD-only and pool ceiling stay diagnostic.
-        // suspect_zero_success is appended at END (position-stable header):
+        // Runtime and valid-count fields are appended; existing positions stay stable:
         // 1 when the zero-success plausibility gate fired (bug 2026-08-22).
         ofs << "dataset,total_systems,"
                "claim_ready_count,claim_ready_rate,"
@@ -8629,7 +9280,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "successful_rmsd,success_rate_rmsd,"
                "successful,success_rate,"
                "mean_rmsd,median_rmsd,pearson_r,spearman_rho,kendall_tau,"
-               "suspect_zero_success\n";
+               "suspect_zero_success,valid_rmsd_count,completed_systems\n";
         ofs << std::fixed << std::setprecision(4)
             << report.dataset_name << ","
             << report.total_systems << ","
@@ -8640,13 +9291,15 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             << report.successful_rmsd << ","
             << report.success_rate_rmsd << ","
             << report.successful << ","
-            << report.success_rate << ","
-            << report.mean_rmsd << ","
-            << report.median_rmsd << ","
-            << report.pearson_r << ","
+            << report.success_rate << ",";
+        if (report.valid_rmsd_count > 0 && std::isfinite(report.mean_rmsd)) ofs << report.mean_rmsd;
+        ofs << ",";
+        if (report.valid_rmsd_count > 0 && std::isfinite(report.median_rmsd)) ofs << report.median_rmsd;
+        ofs << "," << report.pearson_r << ","
             << report.spearman_rho << ","
             << report.kendall_tau << ","
-            << (report.suspect_zero_success ? 1 : 0) << "\n";
+            << (report.suspect_zero_success ? 1 : 0) << ","
+            << report.valid_rmsd_count << "," << report.completed_systems << "\n";
 
         ofs.close();
         std::cout << "  Summary CSV: " << summary_csv << "\n";

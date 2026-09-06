@@ -78,6 +78,7 @@ void TorsionalENM::build(const atom*  atoms,
     cutoff_ = cutoff;
     k0_     = k0;
     built_  = false;
+    basis_  = Basis::Torsional;   // dihedral DOFs: no rigid-body null space
 
     extract_ca(atoms, residue, res_cnt);
 
@@ -101,6 +102,7 @@ void TorsionalENM::build_from_ca(const std::vector<std::array<float,3>>& ca_coor
     cutoff_ = cutoff;
     k0_     = k0;
     built_  = false;
+    basis_  = Basis::Torsional;   // dihedral DOFs: no rigid-body null space
 
     ca_ = ca_coords;
     ca_atom_idx_.clear();
@@ -223,7 +225,69 @@ void TorsionalENM::build_from_ligand(const atom* atoms,
         modes_.push_back(std::move(nm));
     }
 
+    // 3N Cartesian DOFs: the spectrum carries SIX rigid-body modes. Declared so
+    // vibrational_eigenvalues() removes them instead of every consumer having
+    // to know (and two of six previously did not).
+    basis_ = Basis::Cartesian;
     built_ = true;
+}
+
+// ─── vibrational_eigenvalues ────────────────────────────────────────────────
+//
+// See the header for the measurement that motivates this. Summary: a `> 0.0`
+// filter leaves roughly half the rigid-body modes in place, they set the lower
+// log-frequency bin edge, and H(omega) moves by ~56%.
+std::vector<double> TorsionalENM::vibrational_eigenvalues(int* n_dropped,
+                                                          int* n_expected) const
+{
+    const int expected = (basis_ == Basis::Cartesian) ? 6 : 0;
+    if (n_expected) *n_expected = expected;
+    if (n_dropped)  *n_dropped  = 0;
+
+    std::vector<double> out;
+    out.reserve(modes_.size());
+    if (modes_.empty()) return out;
+
+    // Cutoff relative to the stiffest mode, so it is scale-free in k0 and in
+    // the units of the spring law. Matches ligand_tencom_pose.cpp:85 and
+    // DatasetRunner.cpp:974 -- one rule for every consumer.
+    double lam_max = 0.0;
+    for (const auto& nm : modes_)
+        if (std::isfinite(nm.eigenvalue))
+            lam_max = std::max(lam_max, nm.eigenvalue);
+
+    // Torsional models have no rigid-body subspace, so only reject
+    // non-finite/non-positive values; do not discard genuinely soft modes.
+    const double cutoff = (basis_ == Basis::Cartesian)
+                          ? std::max(1e-10, lam_max * 1e-8)
+                          : 0.0;
+
+    int dropped = 0;
+    for (const auto& nm : modes_) {
+        // A negative eigenvalue fails this comparison and never reaches log().
+        if (std::isfinite(nm.eigenvalue) && nm.eigenvalue > cutoff)
+            out.push_back(nm.eigenvalue);
+        else
+            ++dropped;
+    }
+    if (n_dropped) *n_dropped = dropped;
+
+    // Loud on a violated assumption rather than silently biased. On the
+    // Cartesian path a fragmented contact graph yields >6 near-zero modes
+    // (each connected component contributes its own), which would otherwise
+    // vanish into the entropy with no trace.
+    if (basis_ == Basis::Cartesian && dropped != expected) {
+        static thread_local int warned = 0;
+        if (warned < 8) {
+            ++warned;
+            std::cerr << "[TENCOM-RIGID] dropped " << dropped
+                      << " sub-cutoff modes, expected " << expected
+                      << " (Cartesian, " << modes_.size() << " modes, lam_max="
+                      << lam_max << "): ligand contact graph is probably"
+                         " fragmented at the build cutoff.\n";
+        }
+    }
+    return out;
 }
 
 // ─── extract_ca ──────────────────────────────────────────────────────────────

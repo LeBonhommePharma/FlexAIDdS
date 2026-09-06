@@ -1465,6 +1465,24 @@ if(BUILD_TESTING)
     # flexaids_configure_msvc_test is provided by cmake/FlexAIDOptions.cmake
     # (single definition, available for all test targets below).
 
+    flexaids_add_unit_test(test_atom_pointer_lifetimes
+        SOURCES tests/test_atom_pointer_lifetimes.cpp
+        TEST_NAME AtomPointerLifetimeTests
+    )
+
+    flexaids_add_unit_test(test_ga_population_receipt
+        SOURCES tests/test_ga_population_receipt.cpp
+        TEST_NAME GaPopulationReceiptTests
+    )
+    if(TARGET OpenMP::OpenMP_CXX)
+        target_link_libraries(test_ga_population_receipt PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+
+    flexaids_add_unit_test(test_pose_provenance
+        SOURCES tests/test_pose_provenance.cpp LIB/write_pdb.cpp LIB/fileio.cpp
+        TEST_NAME PoseProvenanceTests
+    )
+
     # test_statmech — StatMechEngine unit tests
     flexaids_add_unit_test(test_statmech
         SOURCES
@@ -3017,6 +3035,7 @@ flexaids_add_unit_test(test_protocol_config
             tests/test_hungarian_rmsd_bounds.cpp
             tests/hungarian_rmsd_stubs.cpp
             LIB/calc_rmsd.cpp
+            LIB/rot_gene_index.cpp
             LIB/geometry.cpp
             LIB/rot_gene_index.cpp   # calc_rmsd.cpp calls it since 94d2d0ba
         TEST_NAME HungarianRmsdBoundsTests

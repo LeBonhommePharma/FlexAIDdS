@@ -1,22 +1,56 @@
-#!/bin/bash
-# METHODOLOGY.md §1 — parity gate. Usage: gate_parity.sh <engineA> <engineB> [target]
-set -u
-REPO="/Users/lp.more/Projects/FlexAIDdS"; cd "$REPO"
-A="$1"; B="$2"; T="${3:-1G9V}"
-CACHE=/tmp/ab_bench_cache/astex_diverse
-[ -d "$CACHE/$T" ] || CACHE="$REPO/benchmarks/astex_diverse/astex_diverse"
-rec="$CACHE/$T/${T}_apo.pdb"; lig="$CACHE/$T/${T}_ligand.sdf"
-export FLEXAID_SEED=12345 FLEXAIDDS_NO_SEC=1 FLEXAIDDS_RESTARTS=1 FLEXAIDDS_DATA_DIR="$REPO/build"
-cfg=/tmp/parity.json
-for eng in "$A" "$B"; do
-  tag=$(basename "$eng"); out=/tmp/gate_parity/$tag/$T; mkdir -p "$out"
-  OMP_NUM_THREADS=1 "$eng" "$rec" "$lig" -c "$cfg" -o "$out/d" > "$out/run.log" 2>&1
+#!/usr/bin/env bash
+# Isolated two-engine parity per METHODOLOGY.md section 1.
+# All scientific inputs and both source/build identities are explicit.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: gate_parity.sh ENGINE_A ENGINE_B \
+  --baseline-source DIR --baseline-build DIR \
+  --candidate-source DIR --candidate-build DIR \
+  --receptor FILE --ligand FILE --config FILE --data-dir DIR --out NEW_DIR
+
+No input or matrix fallback is inferred from a mutable checkout. NEW_DIR must
+not exist. Engines with the same basename receive distinct P0/P1 output trees.
+EOF
+}
+if [[ ${1:-} == --help ]]; then usage; exit 0; fi
+if [[ $# -lt 2 ]]; then usage >&2; exit 2; fi
+engine_a=$1; engine_b=$2; shift 2
+baseline_source= baseline_build= candidate_source= candidate_build=
+receptor= ligand= config= data_dir= output=
+while [[ $# -gt 0 ]]; do
+  if [[ $# -lt 2 ]]; then usage >&2; exit 2; fi
+  case "$1" in
+    --baseline-source) baseline_source=$2 ;;
+    --baseline-build) baseline_build=$2 ;;
+    --candidate-source) candidate_source=$2 ;;
+    --candidate-build) candidate_build=$2 ;;
+    --receptor) receptor=$2 ;;
+    --ligand) ligand=$2 ;;
+    --config) config=$2 ;;
+    --data-dir) data_dir=$2 ;;
+    --out) output=$2 ;;
+    *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift 2
 done
-# compare 10 elected poses byte-identical
-ta=$(basename "$A"); tb=$(basename "$B"); ok=1
-for i in $(seq 0 9); do
-  fa=/tmp/gate_parity/$ta/$T/d_${i}.pdb; fb=/tmp/gate_parity/$tb/$T/d_${i}.pdb
-  [ -f "$fa" ] && [ -f "$fb" ] || { echo "MISSING pose $i"; ok=0; break; }
-  cmp -s "$fa" "$fb" || { echo "POSE $i DIFFERS"; ok=0; }
+for value in "$baseline_source" "$baseline_build" "$candidate_source" "$candidate_build" \
+             "$receptor" "$ligand" "$config" "$data_dir" "$output"; do
+  if [[ -z "$value" ]]; then usage >&2; exit 2; fi
 done
-[ "$ok" = 1 ] && echo "PARITY PASS ($T, 10/10 poses byte-identical)" || echo "PARITY FAIL ($T)"
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+python_bin=${PYTHON:-python3}
+if [[ -e "$output" ]]; then printf 'Output already exists: %s\n' "$output" >&2; exit 2; fi
+mkdir -p -- "$(dirname -- "$output")"
+mkdir -- "$output"
+"$python_bin" "$script_dir/engine_repro_gate.py" run-one --label P0 \
+  --engine "$engine_a" --source-dir "$baseline_source" --build-dir "$baseline_build" \
+  --receptor "$receptor" --ligand "$ligand" --config "$config" --data-dir "$data_dir" \
+  --out "$output/P0" --omp-threads 1 --parallel-reproduce off --require-gen0
+"$python_bin" "$script_dir/engine_repro_gate.py" run-one --label P1 \
+  --engine "$engine_b" --source-dir "$candidate_source" --build-dir "$candidate_build" \
+  --receptor "$receptor" --ligand "$ligand" --config "$config" --data-dir "$data_dir" \
+  --out "$output/P1" --omp-threads 1 --parallel-reproduce off --require-gen0
+"$python_bin" "$script_dir/engine_repro_gate.py" compare --kind parity \
+  --runs "$output/P0" "$output/P1" --json "$output/parity.json"

@@ -1,27 +1,15 @@
 #include "BindingMode.h"
 #include "EnvFlags.h"
+// Receptor side-chain conformational strain, E_strain(r) = E(r) - E(r_ref).
+// Gate FLEXAIDDS_RECEPTOR_STRAIN, DEFAULT OFF: with it unset every entry
+// point is a no-op and Pose::receptor_strain stays the 0.0 it has always
+// been, so emission and ranking are bit-identical to HEAD.
+#include "receptor_strain.h"
 #include "fast_optics.hpp"
 #include "SoftBetaFreeEnergy.h"
 #include "RngSeed.h"
+#include "PoseProvenance.h"
 #include "tencom_ledger.h"
-
-// Build provenance, normally injected by CMakeLists.txt via
-// add_compile_definitions().  Defaulted here so a build outside CMake (or one
-// where git was unavailable and the rev-parse produced nothing) still compiles
-// and still emits an honest, obviously-unknown value rather than failing.
-#ifndef FLEXAIDS_GIT_COMMIT
-#define FLEXAIDS_GIT_COMMIT "unknown"
-#endif
-// 0 = clean, 1 = dirty, 2 = unknown.  This default was 0, which made the
-// comment above ("still emits an honest, obviously-unknown value") true of
-// FLEXAIDS_GIT_COMMIT and false of this macro: a build that reached the
-// fallback stamped `FLEXAID.dirty=0` into every pose it wrote -- a positive
-// assertion that the tree was clean, produced by the very code path that
-// exists because nothing was known about the tree.  `unknown` and `clean` are
-// not the same claim, and 0 is not available to say the first one.
-#ifndef FLEXAIDS_GIT_DIRTY
-#define FLEXAIDS_GIT_DIRTY 2
-#endif
 
 #include <algorithm>
 #include <cfloat>
@@ -352,6 +340,58 @@ BindingMode::BindingMode(BindingPopulation* pop)
 void BindingMode::add_Pose(Pose& pose)
 {
 	this->Poses.push_back(pose);
+
+	// ── RECEPTOR CONFORMATIONAL STRAIN (FLEXAIDDS_RECEPTOR_STRAIN, default OFF)
+	// Pose::receptor_strain was declared for E_strain(r) = E_conformer(r) -
+	// E_conformer(r_ref) (BindingMode.h:51) and has been identically 0.0 since
+	// it was added. This is where it becomes real.
+	//
+	// Filled in at pose INSERTION, not at emission, because rebuild_engine()
+	// feeds the ensemble with pose.total_energy() = CF + receptor_strain (see
+	// the comment above rebuild_engine): a strain written only at emission time
+	// would never reach the partition function and the binding-mode free
+	// energies would keep ranking as if evicting a side chain were free.
+	//
+	// The STORED copy is mutated, never the caller's Pose: FOPTICS.cpp:332
+	// passes an element of its own pose vector by non-const reference, and this
+	// function has no business writing back into it.
+	//
+	// evaluate_genes() reads the chromosome's own gene vector and touches no
+	// global state, so it is safe alongside whatever else is driving
+	// residue[].rot. Cost when the gate is off: one cached bool test.
+	if (flexaids::receptor_strain::enabled() &&
+	    this->Population != nullptr &&
+	    this->Population->FA != nullptr &&
+	    this->Population->GB != nullptr)
+	{
+		Pose& stored = this->Poses.back();
+		const int n_genes = this->Population->GB->num_genes;
+		if (stored.chrom != nullptr && stored.chrom->genes != nullptr && n_genes > 0) {
+			std::vector<double> genes(static_cast<std::size_t>(n_genes), 0.0);
+			for (int k = 0; k < n_genes; ++k)
+				genes[static_cast<std::size_t>(k)] = stored.chrom->genes[k].to_ic;
+
+			const flexaids::receptor_strain::StrainResult sr =
+				flexaids::receptor_strain::evaluate_genes(
+					this->Population->FA,
+					this->Population->atoms,
+					this->Population->residue,
+					genes.data(), n_genes);
+
+			// Status becomes Available ONLY when a side-chain gene actually
+			// exists and the term was evaluated. A rigid-receptor run keeps
+			// NotComputed, so a structural 0.0 can never be read back later as
+			// a computed zero strain.
+			if (sr.computed && sr.n_flexible > 0) {
+				stored.receptor_strain = sr.total_kcal_mol;
+				stored.energy_components.receptor_strain = sr.total_kcal_mol;
+				stored.energy_components.receptor_strain_status =
+					statmech::ComponentStatus::Available;
+				stored.energy_components.total = stored.total_energy();
+			}
+		}
+	}
+
 	this->thermo_cache_valid_ = false;
 	this->vib_cache_valid_ = false;
 }
@@ -793,14 +833,7 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	// therefore in the only region truncation cannot reach first -- which is
 	// where the line identifying the whole file belongs.  Moving it down would
 	// make the provenance the first thing lost on a REMARK-heavy target.
-	snprintf(tmpremark, MAX_REMARK,
-		"REMARK FLEXAID.commit=%s FLEXAID.dirty=%d FLEXAID.seed=%llu\n",
-		FLEXAIDS_GIT_COMMIT,
-		FLEXAIDS_GIT_DIRTY,
-		flexaids_rng::has_master_seed()
-			? static_cast<unsigned long long>(flexaids_rng::master_seed())
-			: 0ULL);
-	safe_remark_cat(remark, tmpremark, &remark_len);
+	safe_remark_cat(remark, flexaids::pose_provenance::remark().c_str(), &remark_len);
 
 	if (pb_promotion) {
 		snprintf(tmpremark, MAX_REMARK,
@@ -821,6 +854,35 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	safe_remark_cat(remark, tmpremark, &remark_len);
 	snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", Rep->chrom->app_evalue);
 	safe_remark_cat(remark, tmpremark, &remark_len);
+	// ── CF.strain — receptor side-chain eviction cost, REPORTED, NOT SUMMED ──
+	// This line is deliberately NOT part of the CF.app identity. CF.app is
+	// assembled by get_apparent_cf_evalue() (ic2cf.cpp), which sums a fixed set
+	// of cfstr channels; CF.strain is not one of them and nothing here changes
+	// that. The existing identity
+	//     CF.com + CF.sas + CF.wal + CF.hbond (+ gated terms) = CF.app
+	// therefore still holds exactly, and any parser summing the old terms is
+	// unaffected. Where the strain DOES act is the thermodynamic ensemble:
+	// Pose::total_energy() = CF + receptor_strain, which rebuild_engine() feeds
+	// to the StatMechEngine. Emitted only when the gate is on.
+	if (flexaids::receptor_strain::enabled() && this->Population != nullptr) {
+		const flexaids::receptor_strain::StrainResult sr =
+			flexaids::receptor_strain::evaluate_live(
+				this->Population->FA,
+				this->Population->atoms,
+				this->Population->residue);
+		snprintf(tmpremark, MAX_REMARK,
+			"REMARK CF.strain=%8.5f n_flex=%d n_moved=%d n_unresolved=%d T=%.2f "
+			"basis=hap2_switch+rotlib_pmax units=kcal/mol excluded_from=CF.app\n",
+			sr.total_kcal_mol, sr.n_flexible, sr.n_moved, sr.n_unresolved,
+			flexaids::receptor_strain::temperature_K());
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK,
+			"REMARK CF.strain_rep=%8.5f status=%s\n",
+			Rep->receptor_strain,
+			(Rep->energy_components.receptor_strain_status ==
+			 statmech::ComponentStatus::Available) ? "computed" : "not_computed");
+		safe_remark_cat(remark, tmpremark, &remark_len);
+	}
 	// Before per-residue CF blocks: those can fill the 5k REMARK cap and
 	// silently drop a trailing ledger line (safe_remark_cat is fail-closed).
 	if (this->Population && this->Population->FA) {
@@ -1102,13 +1164,16 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 
 		snprintf(sufix, sizeof(sufix), "_%d_MODEL_%d.pdb", minPoints, num_result);
 		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
+		// Only the first MODEL writes this expanded header. Preserve the
+		// complete pre-existing scientific buffer when adding provenance.
+		std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(remark);
 		if (Pose == this->Poses.begin() && Pose + 1 == this->Poses.end())
 		{
-			write_MODEL_pdb(true, true, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
+			write_MODEL_pdb(true, true, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, pose_remarks.data());
 		}
 		else if (Pose == this->Poses.begin())
 		{
-			write_MODEL_pdb(true, false, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
+			write_MODEL_pdb(true, false, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, pose_remarks.data());
 		}
 		else if (Pose + 1 == this->Poses.end())
 		{

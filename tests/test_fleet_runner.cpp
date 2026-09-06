@@ -34,6 +34,8 @@ dataset::DockingResult successful_result() {
     dataset::DockingResult result;
     result.pdb_id = "1GPK";
     result.num_poses = 20;
+    result.docking_completed = true;
+    result.docking_exit_code = 0;
     result.elected_pose_path = "1GPK/elected_pose.pdb";
     result.elected_pose_source = "r2/1GPK_0.pdb";
     result.rmsd_hungarian = 1.25f;
@@ -64,6 +66,8 @@ TEST(FleetRunner, SeparatesExecutionFromScientificSuccess) {
     dataset::DockingResult miss;
     miss.pdb_id = "1HNN";
     miss.num_poses = 20;
+    miss.docking_completed = true;
+    miss.docking_exit_code = 0;
     miss.elected_pose_path = "1HNN/elected_pose.pdb";
     miss.rmsd_hungarian = 8.0f;
     miss.pb_ran = true;
@@ -121,4 +125,45 @@ TEST(FleetRunner, RefusesToOverwritePublishedResult) {
                          std::istreambuf_iterator<char>());
     EXPECT_EQ(contents, "{\"attempt\":1}\n");
     fs::remove_all(root);
+}
+
+TEST(FleetRunner, RetainedPoseDoesNotHideChildFailure) {
+    dataset::BenchmarkReport report;
+    report.total_systems = 1;
+    auto result = successful_result();
+    result.docking_exit_code = 6;
+    result.docking_completed = false;
+    result.claim_ready = false;
+    result.matrix_md5 = std::string(32, 'a');
+    report.results = {result};
+    dataset::DockingConfig config;
+    const auto json = fleet::FleetRunner::serialize_chunk_result(metadata(), report, config, 0.5);
+    EXPECT_NE(json.find("\"execution_completed\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"execution_failed\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"docking_exit_code\": 6"), std::string::npos);
+    EXPECT_NE(json.find("\"matrix_md5\": \"" + std::string(32, 'a') + "\""), std::string::npos);
+}
+
+TEST(FleetRunner, CompletedDockWithoutReferenceIsStillRuntimeCompleted) {
+    dataset::BenchmarkReport report;
+    report.total_systems = 1;
+    dataset::DockingResult result;
+    result.pdb_id = "1GPK";
+    result.num_poses = 20;
+    result.docking_completed = true;
+    result.docking_exit_code = 0;
+    // DatasetRunner cannot elect/measure against an unavailable RMSD reference,
+    // but that does not undo the witnessed child exit and its produced poses.
+    result.rmsd_fail_reason = "input_missing";
+    EXPECT_TRUE(result.elected_pose_path.empty());
+    EXPECT_FALSE(result.claim_ready);
+    report.results = {result};
+    EXPECT_EQ(dataset::benchmark_runtime_exit_code(report), 0);
+    dataset::DockingConfig config;
+    const auto json = fleet::FleetRunner::serialize_chunk_result(metadata(), report, config, 0.5);
+    EXPECT_NE(json.find("\"execution_completed\": 1"), std::string::npos);
+    EXPECT_NE(json.find("\"execution_failed\": 0"), std::string::npos);
+    EXPECT_NE(json.find("\"execution_completed\": true"), std::string::npos);
+    EXPECT_NE(json.find("\"validators_complete\": false"), std::string::npos);
+    EXPECT_NE(json.find("\"claim_ready\": false"), std::string::npos);
 }
