@@ -27,7 +27,8 @@ numbers into other files — reference `METHODOLOGY.md §N`.
 - **Deterministic seed:** `FLEXAID_SEED=12345`. This is the ONLY determinism seed. Do **not** use
   `FLEXAIDDS_SEED_BASE` for determinism (it offsets per-restart seeds).
 - **Benchmark GA budget:** **2000 generations, population 1000** (the FlexAID/FlexAIDdS norm =
-  2,000,000 evals/restart). Do not change for accuracy runs.
+  a nominal population-generation product of 2,000,000 per restart). Do not change for accuracy runs.
+  This product is not an observed evaluation count; throughput requires a witnessed evaluator-boundary counter.
 - **Restarts:** `FLEXAIDDS_RESTARTS=<n>`. Published Astex protocol = 10 restarts; a fast A/B may
   use 1–3 but MUST state it.
 - **Security channel off for benchmarks:** `FLEXAIDDS_NO_SEC=1`.
@@ -189,6 +190,43 @@ receipt, so a completed run cannot be told apart from one at different weights.
 
 ---
 
+## 0.3 Admission identity, missingness, and repair evidence
+
+The CSV aggregator validates receipt fields; it does not independently witness engine or
+validator execution. Its report must identify that evidence level and must not describe
+string equality as verification of raw artifacts. STRICT requires complete, consistent
+protocol, matrix, finite serial RMSD, PoseBusters, score-pose consistency, tENCoM/Eigen,
+and syntactically valid pose-linked hash fields. A stored `claim_ready` or success flag
+cannot override contradictory or missing measurements. This hardening does not change
+the RMSD instrument or pose election described in §0.0.
+
+The frozen manifest is mandatory for a primary rate: validate its schema, unique codes,
+declared count, and sorted-code digest. Never silently substitute admitted row count.
+Each target contributes at most once. Existing one-row-per-target producer output is
+explicitly a **single-observation** analysis. Repeated seeds require an explicit expected
+seed list; a target passes only on a strict majority of that list, with absent/failed
+seeds counting as failures. Reject duplicate observation identities and implicit mixing
+of arms or endpoints; any explicit arm selection must be recorded. Do not infer a union
+or majority across unrelated experiments. A diagnostic mode may expose legacy data but
+must not emit a primary STRICT rate without this contract.
+
+Reject duplicate CSV headers, inconsistent widths, ambiguous source layouts, and sidecar
+joins lacking matching pose identity. Report S1/S2 diagnostics over their declared eligible
+population independently of filtering on STRICT success. Empty measurement populations
+have unavailable statistics and an explicit valid count, never an invented zero RMSD.
+Process completion and scientific success are separate: a wrapper must retain runtime
+failure state and signal incomplete docking without calling a completed inaccurate pose
+a process failure.
+
+Memory-ownership repairs are checked against allocation and workspace invariants. Correct
+paths must retain their outputs; paths that use invalid pointers are not a scientifically
+valid parity baseline. Document those intentional invalid-path corrections and test the
+production ownership transitions, including repeated and parallel workspace use. Do not
+hide an invalid-pointer repair behind an option that leaves undefined behavior as default.
+Changes to valid scoring, ranking, clustering, or thermodynamic models still require the
+feature flags and science gates below. No claim of historical crash attribution follows
+from a source fix alone.
+
 ## 1. Reproducibility / parity gate (run before ANY merge)
 
 Purpose: prove a change is bit-identical to the baseline under default flags.
@@ -260,8 +298,9 @@ mirror (`docs/ICLOUD_BENCHMARK_STORAGE.md`).
 
 ## 4. ctest
 
-`cd build && /opt/homebrew/bin/ctest --output-on-failure` — expect **11/11**. A stale binary can
-cause a false PoseBustTests failure; rebuild before trusting a red.
+`cd build && /opt/homebrew/bin/ctest --output-on-failure`. All configured tests must pass;
+record the actual test count from this build instead of relying on a historical count. A
+stale binary can cause a false PoseBustTests failure; rebuild before trusting a red.
 
 ---
 
