@@ -229,34 +229,74 @@ from a source fix alone.
 
 ## 1. Reproducibility / parity gate (run before ANY merge)
 
-Purpose: prove a change is bit-identical to the baseline under default flags.
+Purpose: compare the baseline and candidate's emitted scientific results under default
+flags, with exact input and executable provenance. Publication acceptance is separate.
 
-1. Build the candidate engine and the baseline engine (main) separately; record both md5s.
-2. Dock 1G9V, `FLEXAID_SEED=12345`, `OMP_NUM_THREADS=1`, config `/tmp/parity.json`
-   (2000 gen / pop 1000, no crystal-pose seed: `pose_seed_enabled=false, seed_fraction=0`).
-3. Assert: elected CF equal AND all 10 elected poses byte-identical between candidate and main.
-4. PASS = default-flag behavior unchanged. Any intended behavior change must be opt-in behind an
-   env flag that defaults OFF, and parity must hold with the flag OFF.
+1. Build main and candidate in separate pinned checkouts using the same compiler/options.
+   Preserve source commits and any diagnostic-only patch, compiler commands, binary MD5
+   and SHA-256, runtime-data hashes, input hashes and exact argv/environment.
+2. Dock 1G9V, `FLEXAID_SEED=12345`, `OMP_NUM_THREADS=1`, population 1000 and generations
+   2000, without crystal/native pose seeding (`pose_seed_enabled=false, seed_fraction=0`).
+   Use fresh output directories keyed by run ID and source identity, never engine basename.
+3. Require child exit zero, completed fresh artifacts, all ten emitted ranks and a valid
+   fresh `.rrg` grid. Missing or stale output is a failed gate. A printed FAIL must return
+   nonzero. Never compare a file overwritten by the second run with itself.
+4. Compare all ten scientific PDB payloads and elected CF fields at their emitted precision.
+   Preserve raw files/hashes. Across builds, normalize **only** the commit and dirty values
+   in the exact `REMARK FLEXAID.commit=... FLEXAID.dirty=... FLEXAID.seed=...` provenance line.
+   Keep seed, every other REMARK, coordinates, atom identities, scores, ranking and grid
+   order unchanged. Report this as provenance-normalized byte equality, not raw hash identity
+   or proof of equality below the instrument's serialized precision.
+5. Exact initial-population gene/score receipts (§2) complement the emitted-output comparison.
+   PASS means the declared observations agree. Invalid-pointer baseline execution is handled
+   by §0.3; it cannot establish a valid scientific reference. Changes to valid scoring,
+   ranking, clustering or thermodynamic models still require their own gated validation.
 
-Reference baseline engine md5 (main @ 7f1f10a0…): `7f1f10a0f10b682b33a76622a40f1a60`.
+`ops/gate_parity.sh` and `ops/engine_repro_gate.py` implement the fail-closed invocation
+and comparison interface. The obsolete hard-coded baseline MD5 is not a current engine pin.
 
 ---
 
 ## 2. Determinism check (multi-thread)
 
-For changes touching parallel regions (GA eval, cleft detection):
+For changes touching parallel regions (GA eval, cleft detection), repeat candidate runs
+at `OMP_NUM_THREADS=1` and `=4` twice each with `FLEXAIDDS_PARALLEL_REPRODUCE=1`.
+Default-flag parity runs are separate and cannot silently substitute for flag-ON runs.
 
-- **Cleft grid:** dock a fixed seed at `OMP_NUM_THREADS=1` and `=4`, twice each; assert the emitted
-  `.rrg` grid-cache file is byte-identical across thread counts AND run-to-run.
-- **GA population:** with the parallel-reproduce flag ON, assert the gen-0 order-independent CF
-  checksum (Σ cf.com, Σ cf.wal over the population) is identical run-to-run at 1 AND 4 threads, and
-  that all 10 elected poses are byte-identical across two 4-thread runs.
+- Use an OpenMP-enabled build; record actual compiler flags and actual worker/team
+  participation. Disable dynamic team sizing, reject thread-limit overrides and leave
+  `FLEXAID_DETERMINISTIC` unset so the tested path is not silently serialized.
+- **Cleft grid:** generate a fresh grid for each run; compare valid `.rrg` files in their
+  original record order across runs/thread counts. A shared cached grid is not evidence
+  of independently reproduced grid construction.
+- **Initial population:** enable the opt-in `FLEXAIDDS_GEN0_RECEIPT` observer at a unique
+  path. It snapshots stored values immediately after the initial population is evaluated
+  and sorted, before reproduction, without rescoring, RNG calls or population mutation.
+  Require successful engine completion as well as a complete receipt. Record actual seed,
+  population count, exact gene/ring identity and exact stored score bits. Check complete
+  order-independent gene/score record multisets; derive CF.com/CF.wal checksum summaries
+  from those records. Equality of two sums alone cannot exclude compensating differences.
+  Later generation traces or re-scored terminal populations are not this observation.
+- Compare the two four-thread elected outputs as in §1. Keep the one-thread repeats and
+  cross-thread comparisons explicit; never hide a failure by sorting grid or pose ranks.
+- A matching diagnostic-only observer may be applied to baseline and candidate with its
+  exact patch recorded. The observer is off by default and is tested for nonmutation and
+  I/O failure. Failed writes, duplicate output paths, missing rows or wrong population
+  counts fail the gate. The enabled observer does not make a run a publication campaign.
 
 ---
 
 ## 3. Astex-85 accuracy A/B (the science gate)
 
-Purpose: prove a determinism/perf change does not regress docking accuracy.
+Purpose: prove a change to valid scoring, search, cleft selection, ranking or thermodynamic
+models does not regress docking accuracy.
+
+**Applicability to correctness repairs:** ownership, receipt, reporting and diagnostic-observer
+repairs that preserve valid scientific operations use §§0.3, 1, 2, 4 and 6 for merge acceptance.
+They do not require a new 85×10 publication campaign merely because the repaired code is in a
+GA source file. Any unexplained valid-path scoring/output difference must be investigated;
+if resolution changes the valid scientific model or search behavior, this full accuracy A/B
+applies. This exception does not turn merge-validation runs into docking-success evidence.
 
 - **Protocol:** autonomous (blind) mode — `--mode autonomous` — which exercises SURFNET cleft
   detection (top.cpp "Always run SURFNET"). Seed 12345, `FLEXAIDDS_NO_SEC=1`, 2000 gen / pop 1000.
@@ -315,7 +355,7 @@ stale binary can cause a false PoseBustTests failure; rebuild before trusting a 
 ## 6. Commit review & audit (OPS/CI)
 
 Every commit by any agent is reviewed against: (a) §1 parity, (b) §2 determinism if it touches
-parallel code, (c) §3 accuracy if it touches scoring/cleft/GA, (d) §4 ctest, (e) code-conduct in
+parallel code, (c) §3 accuracy when its scientific applicability above is met, (d) §4 ctest, (e) code-conduct in
 `AGENTS.md`, (f) no leaked instrumentation / debug prints / commented-out dead code introduced.
 The review is run through the strongest reviewer model available in the runtime and its verdict is
 recorded. NOTE: model availability is runtime-dependent — if a specifically requested reviewer model
