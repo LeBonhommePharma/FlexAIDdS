@@ -1449,6 +1449,14 @@ if(BUILD_TESTING)
         TEST_NAME AtomPointerLifetimeTests
     )
 
+    flexaids_add_unit_test(test_ga_population_receipt
+        SOURCES tests/test_ga_population_receipt.cpp
+        TEST_NAME GaPopulationReceiptTests
+    )
+    if(TARGET OpenMP::OpenMP_CXX)
+        target_link_libraries(test_ga_population_receipt PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+
     # test_statmech — StatMechEngine unit tests
     flexaids_add_unit_test(test_statmech
         SOURCES

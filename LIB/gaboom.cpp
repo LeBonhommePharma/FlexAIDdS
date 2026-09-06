@@ -1,4 +1,5 @@
 #include "gaboom.h"
+#include "GaPopulationReceipt.h"
 #include "Vcontacts.h"
 #include "fileio.h"
 #include "coarse_init.h"
@@ -528,8 +529,16 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	std::unordered_map<size_t, int> duplicates;
 
+	{
+	flexaids::GaPopulationObservation initial_population_observation;
 	populate_chromosomes(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
 			     GB->pop_init_method,target,GB->pop_init_file,at,0,print,dice,duplicates);
+	// Observe only the completed initial population, before any reproduction.
+	// Repopulations below never overwrite this optional generation-zero receipt.
+	flexaids::write_ga_population_receipt_if_requested(
+	    std::span<const chromosome>(*chrom, GB->num_chrom), GB->num_genes,
+	    static_cast<std::uint64_t>(tt));
+	}
 	//}
 
 	//print_pop((*chrom),(*gene_lim),GB->num_chrom,GB->num_genes);
@@ -3278,9 +3287,13 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 #ifdef _OPENMP
 		const int eval_threads = deterministic_eval ? 1 : n_thr;
 #endif
+		const bool record_initial_workers = flexaids::ga_population_observation_active();
+		std::vector<flexaids::GaPopulationWorkerReceipt> initial_workers(
+		    record_initial_workers ? n_thr : 0);
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) num_threads(eval_threads) default(none) \
+	shared(record_initial_workers, initial_workers) \
 	shared(chrom, pop_size, GB, gene_lim, cleftgrid, target, \
 	       atoms, residue, FA, VC, eval_threads, \
 	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
@@ -3346,7 +3359,17 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			chrom[ii].app_evalue = get_apparent_cf_evalue(&chrom[ii].cf) / n_receptor_chains;
 			ccbm_inject_strain(FA, chrom[ii], gene_lim);  // CCBM strain
 			chrom[ii].status     = 'n';
+			if (record_initial_workers) {
+#ifdef _OPENMP
+				const int actual_team_size = omp_get_num_threads();
+#else
+				const int actual_team_size = 1;
+#endif
+				flexaids::record_ga_population_worker(initial_workers[tid], actual_team_size);
+			}
 		}
+		if (record_initial_workers)
+			flexaids::observe_ga_population_workers("calculate_fitness", pop_size, 0, initial_workers);
 	}
 	}  // !gpu_handled
 
@@ -4025,6 +4048,9 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		const int nopt  = FA->num_optres;
 		const int nctb  = FA->ntypes * FA->ntypes;
 		const int range = GB->num_chrom - popoffset;
+		const bool p_record_initial_workers = flexaids::ga_population_observation_active();
+		std::vector<flexaids::GaPopulationWorkerReceipt> p_initial_workers(
+		    p_record_initial_workers ? n_thr : 0);
 		const flexaids::AtomOptResBinding p_optres_binding(
 		    std::span<const atom>(atoms + 1, natm),
 		    std::span<const OptRes>(FA->optres, nopt));
@@ -4124,6 +4150,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
+	shared(p_record_initial_workers, p_initial_workers) \
 	shared(chrom, FA, GB, VC, gene_lim, atoms, residue, cleftgrid, target, \
 	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt, \
 	       n_receptor_chains, p_use_selective, p_dirty_atm, p_dirty_res_idx, \
@@ -4177,7 +4204,18 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			chrom[i].app_evalue = get_apparent_cf_evalue(&chrom[i].cf) / n_receptor_chains;
 			chrom[i].status     = 'n';
 			ccbm_inject_strain(FA, chrom[i], gene_lim);  // CCBM strain
+			if (p_record_initial_workers) {
+#ifdef _OPENMP
+				const int actual_team_size = omp_get_num_threads();
+#else
+				const int actual_team_size = 1;
+#endif
+				flexaids::record_ga_population_worker(p_initial_workers[tid], actual_team_size);
+			}
 		}
+		if (p_record_initial_workers)
+			flexaids::observe_ga_population_workers(
+			    "populate_chromosomes", GB->num_chrom, popoffset, p_initial_workers);
 	}
 
 	// sort and calculate fitness (use a local GAContext for initial population)
