@@ -55,8 +55,16 @@ the emitted `dock_config.json` confirms flexibility actually engaged — because
 ### The stability gate — `run_overnight_chain_v2.sh`
 
 The first chain required `load1 < 4.0` before launching. Measured minimum on this machine
-across 18 polls was **7.26**, with nothing writing to disk — so the gate was below the
-box's floor and would have burned its whole deadline launching nothing. Replaced with a
+across 18 polls was **7.26** — so the gate sat below the box's own floor and would have
+burned its whole deadline launching nothing.
+
+> A first diagnosis of that load claimed nothing was writing to disk. **That was wrong**
+> and is retracted here: the scan covered `~`, `/tmp` and `/private/tmp` but not
+> `/var/folders`, where macOS puts per-user temp — a concurrent toolchain was writing
+> there throughout. The gate-floor lesson is unaffected either way, since it turns on the
+> threshold being unreachable, not on what was consuming the box.
+
+Replaced with a
 gate on **stability** (coefficient of variation over a rolling window) rather than
 silence, which is what actually matters for a timing measurement: a steady baseline still
 leaves a real manipulation, and every receipt records `load1` so the contrast is
