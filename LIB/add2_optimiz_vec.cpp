@@ -25,16 +25,41 @@ void add2_optimiz_vec(FA_Global* FA,atom* atoms,resid* residue,int val[], char c
   
 	buildic(FA,atoms,residue,at);
 
-	// ── PRODUCTION GUARD 1 of 2: RESERVE BEFORE ANY POINTER IS TAKEN ─────────
-	// Every branch below stores RAW POINTERS into the reallocatable arrays:
-	//     atoms[...].par              = &FA->map_par[FA->npar];
-	//     FA->map_par_sidechain_first = &FA->map_par[FA->npar];
-	//     FA->map_par_sidechain_last  = &FA->map_par[FA->npar];
-	// realloc_par() RELOCATES map_par, so a realloc anywhere in this call
-	// invalidates every pointer taken earlier in it -- including pointers from
-	// the LIGAND branches when the first side-chain gene triggers the growth.
-	// The dangling atoms[].par is dereferenced in populate_chromosomes(), hence
-	// a fault that needed a large GA population and looked target-specific.
+// PRODUCTION GUARD 1 of 2: RESERVE BEFORE ANY POINTER IS TAKEN
+//
+// Every branch below stores raw pointers into the reallocatable arrays:
+//     atoms[...].par              = &FA->map_par[FA->npar];
+//     FA->map_par_sidechain_first = &FA->map_par[FA->npar];
+//     FA->map_par_sidechain_last  = &FA->map_par[FA->npar];
+// realloc_par() relocates map_par, so a realloc anywhere in this call leaves
+// every pointer taken earlier in it out of range -- including the ligand
+// branches, when the first side-chain gene triggers the growth. Reserving up
+// front makes the arrays immovable for the rest of the call; it is a no-op when
+// capacity already suffices, so correct paths are unchanged.
+//
+// Defence in depth only. The reservation that MATTERS is the global one in
+// top.cpp / read_input.cpp before the FIRST add2_optimiz_vec call.
+//
+// MECHANISM CORRECTED 2026-09-05 (external code audit). What is measured and what
+// is not:
+//   MEASURED  add2_optimiz_vec() stores raw pointers into FA->map_par and
+//             realloc_par() relocates it, so a growth mid-setup leaves earlier
+//             captures outside the live array. validate_map_par_pointers()
+//             reports this as [PAR-PTR]; 11 of 18 on 1R55, also 4 of 15 and
+//             3 of 16, across 21 logs on disk.
+//   MEASURED  exit 139 on 1R55 / 1R58 / 1HQ2 with as few as one flexible side
+//             chain at population >= 400; population 100 and the rigid arm clean.
+//   REFUTED   that the out-of-range map_par pointer is what faults. GREPPED AT
+//             HEAD: atoms[].par is assigned 8 times and DEREFERENCED ZERO times
+//             in LIB; map_par_sidechain_first/last likewise, their only
+//             non-assignment read being inside validate_map_par_pointers itself.
+//             All three are WRITE-ONLY, so a stale one cannot fault.
+//   ACTUAL    the crash was ASan-localised to atoms[].optres, dereferenced at
+//             vcfunction.cpp:796-798 and GISTEvaluator.cpp:206, against an array
+//             relocated by build_rotamers.cpp:308 (see vcfunction.cpp:748).
+//             reserve_optres() is the guard for that array.
+// So this reservation buys uniform map_par lifetime and a clean detector, not
+// crash safety. Full discussion at top.cpp:2661.
 	// MEASURED: exit 139 with as few as ONE flexible side chain at population
 	// >= 400 (1R55/1R58/1HQ2); population 100 and the rigid arm clean.
 	// Reserving up front makes the arrays immovable for the rest of the call.
@@ -235,29 +260,49 @@ void add2_optimiz_vec(FA_Global* FA,atom* atoms,resid* residue,int val[], char c
 }
 
 
-// ── Capacity reservation, added to fix a dangling-pointer SIGSEGV ───────────
-// add2_optimiz_vec() stores RAW POINTERS into FA->map_par:
-//     atoms[...].par                = &FA->map_par[FA->npar];   (line ~47)
-//     FA->map_par_sidechain_first   = &FA->map_par[FA->npar];   (line ~56)
-//     FA->map_par_sidechain_last    = &FA->map_par[FA->npar];   (line ~59)
-// realloc_par() then RELOCATES map_par. Any pointer taken before a mid-loop
-// realloc dangles, and the flexible-side-chain loop takes one per residue, so
-// with >=2 flexible residues a realloc can fire between two pointer captures.
-// The dangling atoms[].par is dereferenced during populate_chromosomes(), which
-// is why the fault needed a large GA population (the freed block has been reused
-// by then) and why it was target-specific (whether a MIN_PAR boundary lands
-// inside the side-chain loop depends on the ligand's gene count).
-// MEASURED before this fix: 1R55/1R58/1HQ2 exit 139 at 5 flexible residues and
-// population >= 400; population 100 and the rigid arm clean.
+// Capacity reservation. Added during the SIGSEGV investigation; it was not the
+// fix (see MECHANISM CORRECTED below).
+//
+// add2_optimiz_vec() stores raw pointers into FA->map_par (atoms[].par,
+// map_par_sidechain_first, map_par_sidechain_last) and realloc_par() relocates
+// the array, so a mid-loop realloc leaves earlier captures out of range; the
+// flexible-side-chain loop takes one per residue, so with >=2 flexible residues a
+// realloc can fire between two captures. reserve_par() grows to a capacity known
+// up front so no realloc occurs while pointers are being taken, and is a no-op
+// when capacity already suffices, so it cannot change a correct path.
+//
+// MECHANISM CORRECTED 2026-09-05 (external code audit). What is measured and what
+// is not:
+//   MEASURED  add2_optimiz_vec() stores raw pointers into FA->map_par and
+//             realloc_par() relocates it, so a growth mid-setup leaves earlier
+//             captures outside the live array. validate_map_par_pointers()
+//             reports this as [PAR-PTR]; 11 of 18 on 1R55, also 4 of 15 and
+//             3 of 16, across 21 logs on disk.
+//   MEASURED  exit 139 on 1R55 / 1R58 / 1HQ2 with as few as one flexible side
+//             chain at population >= 400; population 100 and the rigid arm clean.
+//   REFUTED   that the out-of-range map_par pointer is what faults. GREPPED AT
+//             HEAD: atoms[].par is assigned 8 times and DEREFERENCED ZERO times
+//             in LIB; map_par_sidechain_first/last likewise, their only
+//             non-assignment read being inside validate_map_par_pointers itself.
+//             All three are WRITE-ONLY, so a stale one cannot fault.
+//   ACTUAL    the crash was ASan-localised to atoms[].optres, dereferenced at
+//             vcfunction.cpp:796-798 and GISTEvaluator.cpp:206, against an array
+//             relocated by build_rotamers.cpp:308 (see vcfunction.cpp:748).
+//             reserve_optres() is the guard for that array.
+// So this reservation buys uniform map_par lifetime and a clean detector, not
+// crash safety. Full discussion at top.cpp:2661.
 //
 // reserve_par() grows the arrays to a capacity known up front, so no realloc can
 // occur while pointers are being taken. It is a no-op when capacity suffices, so
 // it cannot change behaviour on any path that was already correct.
 // ── PRODUCTION GUARD 2 of 2: VALIDATE, do not assume ────────────────────────
 // Asserts every non-null atoms[].par points INSIDE the live map_par array.
-// A violation means a relocation happened while pointers were live: the exact
-// condition that produced the SIGSEGV. Fail loudly here rather than corrupt
-// silently and crash later somewhere unrelated.
+// A violation means a relocation happened while pointers were live. That is a
+// real invariant break and worth reporting -- but it is NOT the crash cause:
+// atoms[].par is write-only (dereferenced 0x in LIB), so a stale one cannot
+// fault. The SIGSEGV was atoms[].optres (vcfunction.cpp:796-798). See the
+// MECHANISM CORRECTED block above. Report loudly anyway: an invariant that
+// breaks silently is how the optres defect stayed hidden.
 // FLEXAIDDS_PAR_PTR_WARN=1 downgrades to a warning for bisecting.
 int validate_map_par_pointers(FA_Global* FA, atom* atoms, int atm_cnt,
                               const char* where)

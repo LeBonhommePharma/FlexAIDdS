@@ -163,6 +163,46 @@ int setup_direct_input(FA_Global* FA, GB_Global* GB, VC_Global* VC,
         // Add the ligand het residue (opt[0]=residue number, opt[1]=0 for ligand)
         opt[0] = FA->resligand->number;
         opt[1] = 0;
+
+        // ── CONSISTENCY FIX, third call site. top.cpp:2669 and read_input.cpp:653
+        // call reserve_par(FA, MAX_PAR) before their first add2_optimiz_vec(); this
+        // path -- the same ""/"SC"/"NM" sequence -- did not. Added for parity.
+        //
+        // READ THE NEXT PARAGRAPH BEFORE COPYING THE JUSTIFICATION FROM top.cpp.
+        // That comment says the dangling pointer is atoms[].par, "dereferenced in
+        // populate_chromosomes()". MEASURED AT HEAD, and this is why the text here
+        // differs: atoms[].par is ASSIGNED 8 times (add2_optimiz_vec.cpp:71/136/
+        // 164/176/187/215) and NULL-initialised 5 times, and is DEREFERENCED
+        // ZERO times anywhere in LIB. A stale atoms[].par therefore cannot fault --
+        // nothing ever reads it. The exit-139 crash on 1R55/1R58 was localised by
+        // ASan to atoms[].optres, a DIFFERENT array with a DIFFERENT realloc site:
+        // dereferenced at vcfunction.cpp:796-798 (->rnum, ->type, ->cf) and
+        // GISTEvaluator.cpp:206, relocated by build_rotamers.cpp:308, as
+        // vcfunction.cpp:748 itself records. The map_par narrative in top.cpp is
+        // not the crash mechanism.
+        //
+        // SO WHAT THIS LINE ACTUALLY BUYS: uniform map_par lifetime across all
+        // three setup paths, removing a live difference between them. It is cheap
+        // (MAX_PAR * sizeof(optmap) once, flexaid.h:83, against a largest observed
+        // gene count of 17 on Astex-85) and it cannot regress behaviour, since
+        // reserving before any pointer exists is what the other two sites already
+        // do. It is NOT a crash fix, and it should not be described as one.
+        //
+        // STILL OPEN on this path, and NOT addressed here:
+        //   (a) reserve_optres. update_optres() is called below at the end of this
+        //       function, and FA->optres is the array that actually carries a
+        //       dereferenced pointer. Whether this path needs the optres
+        //       reservation is UNVERIFIED.
+        //   (b) FA->resligand, dereferenced on the line above, is a raw pointer
+        //       into the reallocatable residue array (assigned Mol2Reader.cpp:265,
+        //       SdfReader.cpp:538, read_lig.cpp:141 as &(*residue)[FA->res_cnt])
+        //       and is never re-pinned. Same class, unaudited.
+        //
+        // Provenance: the missing reservation was found by external code audit.
+        // reserve_par / reserve_optres / atoms_with_optres appear in ZERO of this
+        // tree's test files, so no test could have caught it. The companion
+        // reservation regression test is tests/test_par_reservation.cpp.
+        reserve_par(FA, MAX_PAR);
         add2_optimiz_vec(FA, *atoms, *residue, opt, chain, "");
 
         // Side-chain and normal-mode finalization

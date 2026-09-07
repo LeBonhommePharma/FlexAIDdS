@@ -3048,6 +3048,28 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME HungarianRmsdBoundsTests
     )
 
+    # test_par_reservation — the map_par RESERVATION INVARIANT (reserve_par).
+    # add2_optimiz_vec() captures raw pointers into FA->map_par and realloc_par()
+    # relocates it; reserve_par(FA, MAX_PAR) before the first call makes the array
+    # immovable for the setup. top.cpp:2669 and read_input.cpp:653 do this;
+    # direct_input.cpp did not until now. No test referenced reserve_par,
+    # reserve_optres or atoms_with_optres before this one.
+    #
+    # NOT a crash regression test: atoms[].par is dereferenced ZERO times in LIB,
+    # so a stale one cannot fault. The exit-139 crash was atoms[].optres
+    # (vcfunction.cpp:796-798), whose lifetime remains UNCOVERED.
+    #
+    # Link set read from source, not guessed: add2_optimiz_vec.cpp calls Terminate
+    # (5 sites) and buildic (line 26); tests/stubs.cpp already provides both at
+    # :14 and :55.
+    flexaids_add_unit_test(test_par_reservation
+        SOURCES
+            tests/test_par_reservation.cpp
+            LIB/add2_optimiz_vec.cpp
+            tests/stubs.cpp
+        TEST_NAME ParReservationTests
+    )
+
     # test_shell_exec — path-safe shell quoting / argv exec helpers
     flexaids_add_unit_test(test_shell_exec
         SOURCES tests/test_shell_exec.cpp

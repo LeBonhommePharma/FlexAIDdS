@@ -636,16 +636,26 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		chain=a[0];
 		if(chain == '-'){chain = ' ';}
 		//printf("Add2 optimiz vector...\n");
-		// ── ROOT FIX for the dangling map_par pointer (SIGSEGV in populate_chromosomes)
-		// add2_optimiz_vec() stores RAW POINTERS into FA->map_par (atoms[].par at
-		// add2_optimiz_vec.cpp lines 64/128/156/168/179/207, plus
-		// map_par_sidechain_first/last), and realloc_par() RELOCATES that array.
-		// This function is called up to four times per run (extras "" x3, then "SC",
-		// "NM"), so a realloc on ANY later call invalidates every pointer the earlier
-		// calls took. MEASURED: reserving inside the "SC" call grew MIN_PAR 6 -> 86
-		// there and left 11 of 18 ligand pointers dangling; the dangling atoms[].par
-		// is dereferenced in populate_chromosomes(), which is why the fault needed a
-		// large GA population (freed block reused) and looked target-specific.
+		// MECHANISM CORRECTED 2026-09-05 (external code audit). What is measured and what
+		// is not:
+		//   MEASURED  add2_optimiz_vec() stores raw pointers into FA->map_par and
+		//             realloc_par() relocates it, so a growth mid-setup leaves earlier
+		//             captures outside the live array. validate_map_par_pointers()
+		//             reports this as [PAR-PTR]; 11 of 18 on 1R55, also 4 of 15 and
+		//             3 of 16, across 21 logs on disk.
+		//   MEASURED  exit 139 on 1R55 / 1R58 / 1HQ2 with as few as one flexible side
+		//             chain at population >= 400; population 100 and the rigid arm clean.
+		//   REFUTED   that the out-of-range map_par pointer is what faults. GREPPED AT
+		//             HEAD: atoms[].par is assigned 8 times and DEREFERENCED ZERO times
+		//             in LIB; map_par_sidechain_first/last likewise, their only
+		//             non-assignment read being inside validate_map_par_pointers itself.
+		//             All three are WRITE-ONLY, so a stale one cannot fault.
+		//   ACTUAL    the crash was ASan-localised to atoms[].optres, dereferenced at
+		//             vcfunction.cpp:796-798 and GISTEvaluator.cpp:206, against an array
+		//             relocated by build_rotamers.cpp:308 (see vcfunction.cpp:748).
+		//             reserve_optres() is the guard for that array.
+		// So this reservation buys uniform map_par lifetime and a clean detector, not
+		// crash safety. Full discussion at top.cpp:2661.
 		// Reserving here -- BEFORE the first call, so before any pointer exists --
 		// makes the array immovable for the whole setup. MAX_PAR is the engine's own
 		// declared ceiling on genes (flexaid.h:83); the largest count observed on
