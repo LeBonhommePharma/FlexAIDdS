@@ -1,0 +1,417 @@
+{
+ "rebuild": [
+  {
+   "target": "1K3U",
+   "status": "rebuilt",
+   "before": false,
+   "after": true,
+   "ligand_code": "IAD",
+   "n_sdf": 21,
+   "n_ccd": 21,
+   "n_bonds": 22,
+   "n_ccd_aromatic": 10,
+   "smiles": "O=C(O)C[C@H](NC(=O)Cc1c[nH]c2ccccc12)C(=O)O"
+  },
+  {
+   "target": "1N2V",
+   "status": "rebuilt",
+   "before": false,
+   "after": true,
+   "ligand_code": "BDI",
+   "n_sdf": 15,
+   "n_ccd": 15,
+   "n_bonds": 16,
+   "n_ccd_aromatic": 10,
+   "smiles": "CCCCc1nc2c(=O)[nH][nH]c(=O)c2[nH]1"
+  },
+  {
+   "target": "1TW6",
+   "status": "SKIP_count_mismatch",
+   "before": false,
+   "after": null,
+   "ligand_code": "ALA",
+   "n_sdf": 27,
+   "n_ccd": 6
+  },
+  {
+   "target": "1U1C",
+   "status": "rebuilt",
+   "before": false,
+   "after": true,
+   "ligand_code": "BAU",
+   "n_sdf": 20,
+   "n_ccd": 20,
+   "n_bonds": 21,
+   "n_ccd_aromatic": 12,
+   "smiles": "O=c1[nH]c(=O)n(COCCO)cc1Cc1ccccc1"
+  },
+  {
+   "target": "1U4D",
+   "status": "rebuilt",
+   "before": false,
+   "after": true,
+   "ligand_code": "DBQ",
+   "n_sdf": 18,
+   "n_ccd": 18,
+   "n_bonds": 20,
+   "n_ccd_aromatic": 5,
+   "smiles": "NC1=NC(=C2CCNC(=O)c3[nH]ccc32)C(=O)N1"
+  },
+  {
+   "target": "1XOZ",
+   "status": "rebuilt",
+   "before": false,
+   "after": true,
+   "ligand_code": "CIA",
+   "n_sdf": 29,
+   "n_ccd": 29,
+   "n_bonds": 34,
+   "n_ccd_aromatic": 16,
+   "smiles": "CN1CC(=O)N2[C@H](c3ccc4c(c3)OCO4)c3[nH]c4ccccc4c3C[C@@H]2C1=O"
+  },
+  {
+   "target": "1Y6R",
+   "status": "rebuilt",
+   "before": false,
+   "after": true,
+   "ligand_code": "MTM",
+   "n_sdf": 20,
+   "n_ccd": 20,
+   "n_bonds": 22,
+   "n_ccd_aromatic": 5,
+   "smiles": "CSC[C@H]1N[C@@H](c2c[nH]c3c2N=CNC3N)[C@H](O)[C@@H]1O"
+  },
+  {
+   "target": "2BSM",
+   "status": "rebuilt",
+   "before": false,
+   "after": true,
+   "ligand_code": "BSM",
+   "n_sdf": 27,
+   "n_ccd": 27,
+   "n_bonds": 29,
+   "n_ccd_aromatic": 19,
+   "smiles": "CCNC(=O)c1n[nH]c(-c2cc(Cl)c(O)cc2O)c1-c1ccc(OC)cc1"
+  }
+ ],
+ "denominator_retest": [
+  {
+   "target": "1K3U",
+   "rows_old_ref": 0,
+   "rows_new_ref": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "sanitization",
+    "inchi_convertible",
+    "molecular_formula",
+    "tetrahedral_chirality"
+   ]
+  },
+  {
+   "target": "1N2V",
+   "rows_old_ref": 0,
+   "rows_new_ref": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "sanitization",
+    "inchi_convertible",
+    "molecular_formula",
+    "tetrahedral_chirality",
+    "minimum_distance_to_waters"
+   ]
+  },
+  {
+   "target": "1TW6",
+   "rows_old_ref": 1,
+   "rows_new_ref": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "sanitization",
+    "inchi_convertible",
+    "molecular_formula",
+    "molecular_bonds",
+    "double_bond_stereochemistry",
+    "tetrahedral_chirality",
+    "bond_lengths",
+    "bond_angles",
+    "internal_steric_clash",
+    "aromatic_ring_flatness",
+    "non-aromatic_ring_non-flatness",
+    "double_bond_flatness",
+    "internal_energy",
+    "minimum_distance_to_waters"
+   ]
+  },
+  {
+   "target": "1U1C",
+   "rows_old_ref": 0,
+   "rows_new_ref": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "sanitization",
+    "inchi_convertible",
+    "molecular_formula",
+    "tetrahedral_chirality",
+    "non-aromatic_ring_non-flatness",
+    "minimum_distance_to_waters"
+   ]
+  },
+  {
+   "target": "1U4D",
+   "rows_old_ref": 0,
+   "rows_new_ref": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "sanitization",
+    "inchi_convertible",
+    "molecular_formula",
+    "tetrahedral_chirality",
+    "minimum_distance_to_waters"
+   ]
+  },
+  {
+   "target": "1XOZ",
+   "rows_old_ref": 0,
+   "rows_new_ref": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "sanitization",
+    "inchi_convertible",
+    "molecular_formula",
+    "tetrahedral_chirality"
+   ]
+  },
+  {
+   "target": "1Y6R",
+   "rows_old_ref": 0,
+   "rows_new_ref": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "sanitization",
+    "inchi_convertible",
+    "molecular_formula",
+    "tetrahedral_chirality"
+   ]
+  },
+  {
+   "target": "2BSM",
+   "rows_old_ref": 0,
+   "rows_new_ref": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "sanitization",
+    "inchi_convertible",
+    "molecular_formula",
+    "tetrahedral_chirality",
+    "minimum_distance_to_waters"
+   ]
+  }
+ ],
+ "pose_graft_retest": [
+  {
+   "target": "1K3U",
+   "code": "IAD",
+   "n_pose": 21,
+   "n_ccd": 21,
+   "graft_ok": true,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "1N2V",
+   "code": "BDI",
+   "n_pose": 15,
+   "n_ccd": 15,
+   "graft_ok": true,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "minimum_distance_to_waters"
+   ]
+  },
+  {
+   "target": "1U1C",
+   "code": "BAU",
+   "n_pose": 20,
+   "n_ccd": 20,
+   "graft_ok": true,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "minimum_distance_to_waters"
+   ]
+  },
+  {
+   "target": "1U4D",
+   "code": "DBQ",
+   "n_pose": 18,
+   "n_ccd": 18,
+   "graft_ok": true,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "minimum_distance_to_waters"
+   ]
+  },
+  {
+   "target": "1XOZ",
+   "code": "CIA",
+   "n_pose": 29,
+   "n_ccd": 29,
+   "graft_ok": true,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "1Y6R",
+   "code": "MTM",
+   "n_pose": 20,
+   "n_ccd": 20,
+   "graft_ok": true,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "2BSM",
+   "code": "BSM",
+   "n_pose": 27,
+   "n_ccd": 27,
+   "graft_ok": true,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": false,
+   "failed": [
+    "minimum_distance_to_waters"
+   ]
+  }
+ ],
+ "engine_matched_retest": [
+  {
+   "target": "1K3U",
+   "hoh_kept": 123,
+   "hoh_dropped": 589,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "1N2V",
+   "hoh_kept": 33,
+   "hoh_dropped": 249,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "1U1C",
+   "hoh_kept": 4,
+   "hoh_dropped": 557,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "1U4D",
+   "hoh_kept": 1,
+   "hoh_dropped": 156,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "1XOZ",
+   "hoh_kept": 36,
+   "hoh_dropped": 316,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "1Y6R",
+   "hoh_kept": 19,
+   "hoh_dropped": 145,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  },
+  {
+   "target": "2BSM",
+   "hoh_kept": 0,
+   "hoh_dropped": 247,
+   "rows": 1,
+   "n_checks": 27,
+   "all_true": true,
+   "failed": []
+  }
+ ],
+ "ladder": [
+  {
+   "condition": "baseline: engine pose + cache_v2 reference",
+   "scorable": 0,
+   "passing": 0,
+   "note": "0-byte bust_raw.csv; targets NOT ASSESSED"
+  },
+  {
+   "condition": "CCD reference only",
+   "scorable": 8,
+   "passing": 0,
+   "note": "row emitted; pose still fails sanitization/inchi/formula"
+  },
+  {
+   "condition": "CCD reference + CCD-grafted pose, ALL waters",
+   "scorable": 7,
+   "passing": 3,
+   "note": "remaining failures are minimum_distance_to_waters only"
+  },
+  {
+   "condition": "CCD reference + CCD-grafted pose + ENGINE-MATCHED receptor",
+   "scorable": 7,
+   "passing": 7,
+   "note": "bf<=20 water retention, per modify_pdb.cpp:158-166"
+  }
+ ],
+ "denominator": {
+  "old_denominator": 77,
+  "old_passes": 53,
+  "old_rate_pct": 68.8,
+  "recovered": 7,
+  "recovered_passing": 7,
+  "new_denominator": 84,
+  "new_passes": 60,
+  "new_rate_pct": 71.4,
+  "still_excluded": [
+   "1TW6"
+  ],
+  "excluded_reason": "CCD heavy-atom count 6 vs SDF 27 (tetrapeptide titled ALA)"
+ },
+ "caveats": [
+  "RESCORE-SIDE ONLY: pose coordinates untouched; no docking result changed.",
+  "The engine still WRITES an unkekulizable bond block; the graft replaces it at scoring time.",
+  "The index join requires CCD heavy-atom count == SDF atom count; enforced per target.",
+  "Measured on A_rigid seed 12345 of the NO_SEC batch only; other arms/seeds not re-tested.",
+  "The upstream fix is the pose writer emitting reference bond orders, not geometry-perceived ones."
+ ]
+}
