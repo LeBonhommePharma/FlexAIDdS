@@ -9,6 +9,7 @@
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 #include "RngSeed.h"
+#include "EnvFlags.h"   // env_bool: consistent 1/true/yes/on flag semantics
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
 #include "niche_distance.h"
@@ -3101,6 +3102,38 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		const int n_dirty_atm = static_cast<int>(dirty_atm.size());
 		const int n_dirty_res = static_cast<int>(dirty_res_idx.size());
 
+		// -- ONE-SHOT DIRTY-SET DUMP (log-only, DEFAULT OFF, cold path) --------
+		// Gated by FLEXAIDDS_DIRTY_SET_DUMP. Settles by MEASUREMENT a question
+		// that cannot be settled by reading this function: does the selective
+		// per-chromosome reset below cover the atoms the Voronoi hull failsafe
+		// perturbs?
+		//
+		// dirty_atm is built above from mov[] and map_par[].atm -- "atom indices
+		// modified by ic2cf". But Vcontacts.cpp's non-convergence failsafe
+		// perturbs whichever atom's hull failed, which is NOT the same set.
+		// Measured on 1P2Y (gen=1000, omp=1, seed 12345): 11 ligand atoms (PDB
+		// numbers 90001-90011) AND receptor atoms 743 and 2293. If a perturbed
+		// atom is not in dirty_atm, a leaked displacement is never restored and
+		// survives in tl_atoms[tid] for the rest of the run, per thread.
+		//
+		// BOTH KEYS ARE EMITTED DELIBERATELY: dirty_atm holds atoms[] INDICES,
+		// while the failsafe diagnostic logs atom->number (PDB numbering, which
+		// is why ligand atoms read as 90001+). Different namespaces -- joining
+		// one against the other would compare the wrong things and return a
+		// clean-looking false answer.
+		if (flexaids::env_bool("FLEXAIDDS_DIRTY_SET_DUMP", false)) {
+			static bool dumped = false;   // one-shot: this block runs per generation
+			if (!dumped) {
+				dumped = true;
+				fprintf(stderr, "[DIRTY-SET] use_selective=%d n_dirty_atm=%d "
+				        "n_dirty_res=%d natm=%d\n",
+				        use_selective ? 1 : 0, n_dirty_atm, n_dirty_res, natm);
+				for (int d = 0; d < n_dirty_atm; ++d)
+					fprintf(stderr, "[DIRTY-SET] member idx=%d number=%d\n",
+					        dirty_atm[d], atoms[dirty_atm[d]].number);
+			}
+		}
+
 		// ── P3: resident per-thread workspace (lean receptor copy) ───────────
 		// The receptor is READ-ONLY during scoring, so rather than re-cloning
 		// the full atom/residue arrays and every Voronoi scratch buffer on each
@@ -3271,11 +3304,39 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		// When set, the parallel CF-eval loop runs on a single thread so its
 		// reduction order is serial-equivalent and bit-reproducible run-to-run
 		// (each chromosome writes only its own chrom[ii].cf, so 1-thread ==
-		// deterministic order). Unset (default) uses the fast multi-thread path,
-		// where the ~0.2% chromosome-level numeric drift documented in
-		// OPTIMIZATION_KNOWN_ISSUES.md is accepted (see FLEXAID_FAST_DOCKING_PLAN
-		// §P3/§4.3). Enabled by the compile-time macro -DFLEXAID_DETERMINISTIC
-		// OR by the env var FLEXAID_DETERMINISTIC=<non-empty, not "0">.
+		// deterministic order). Enabled by the compile-time macro
+		// -DFLEXAID_DETERMINISTIC or by env FLEXAID_DETERMINISTIC=<non-empty,
+		// not "0">. See FLEXAID_FAST_DOCKING_PLAN P3/4.3.
+		//
+		// CORRECTED 2026-09-07. This comment previously described the default
+		// multi-thread path as accepting "the ~0.2% chromosome-level numeric
+		// drift documented in OPTIMIZATION_KNOWN_ISSUES.md". THAT CITATION WAS
+		// MISATTRIBUTED: the 0.2% figure in that document belongs to the
+		// FLEXAIDDS_PARALLEL_REPRODUCE (Opt1) section and is explicitly called
+		// flag-ON specific there; the same document measures flag-OFF at 4
+		// threads as REPRODUCIBLE. So the number never described this path.
+		//
+		// WHAT IS ACTUALLY MEASURED about the default (flag-unset) path, on the
+		// FLEXIBLE-sidechain arm, 1P2Y, gen=1000, FLEXAID_SEED=12345, with
+		// FLEXAIDDS_PARALLEL_REPRODUCE unset:
+		//   omp=3  per-restart pose-set jaccard 0.976 / 0.000 / 0.138
+		//          -> NOT reproducible; best CF ranged -254.86 to -230.86
+		//             across four runs of identical inputs
+		//   omp=1  jaccard 1.000 / 1.000 / 1.000 -> reproducible
+		// That is a different GA trajectory, not a rounding difference. Cause:
+		// the Voronoi non-convergence failsafe (Vcontacts.cpp) draws its
+		// coordinate perturbation from a THREAD_LOCAL RNG, and this loop is
+		// schedule(dynamic), so which thread -- and therefore which draw -- a
+		// chromosome receives is not reproducible. recalc==1 here means the hull
+		// is recomputed WITH the perturbed coordinate, so the returned CF depends
+		// on that draw. It is target-specific via the failsafe firing rate:
+		// 1P2Y fires 3575 times against a median of 42 across the 84-target set,
+		// a 15x outlier with no target in between.
+		//
+		// Setting this flag SUPPRESSES that divergence (eval_threads=1 removes the
+		// scheduling variable) but does not fix it, and pays for determinism by
+		// serialising evaluation. The cause is addressed by
+		// FLEXAIDDS_VCT_COORD_GUARD in Vcontacts.cpp, which keeps the threads.
 		static const bool deterministic_eval = [](){
 #ifdef FLEXAID_DETERMINISTIC
 			return true;
@@ -3370,6 +3431,74 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		}
 		if (record_initial_workers)
 			flexaids::observe_ga_population_workers("calculate_fitness", pop_size, 0, initial_workers);
+
+		// -- SELECTIVE-RESET INVARIANT CHECKER (log-only, DEFAULT OFF) ---------
+		// Gated by FLEXAIDDS_SELECTIVE_INVARIANT_CHECK.
+		//
+		// use_selective is an optimisation resting on an UNSTATED invariant: only
+		// ic2cf modifies atoms, so restoring dirty_atm suffices. The guard in
+		// Vcontacts.cpp fixes the one violator found; this checks the INVARIANT,
+		// so the next violator is caught the day it lands rather than after a
+		// campaign has been scored against it.
+		//
+		// PLACED AFTER THE PARALLEL-FOR ON PURPOSE: the defect hunted is a
+		// displacement that PERSISTS in tl_atoms across chromosomes, so one check
+		// per generation catches it at cost eval_threads*natm instead of per
+		// chromosome -- and needs no edit to the default(none) pragma or its
+		// shared() clause, which is the genuinely risky change in this function.
+		//
+		// DEBUG MODE, NOT A PRODUCTION DEFAULT: still O(eval_threads * natm *
+		// log n_dirty) per generation when enabled.
+		//
+		// NON-VACUITY IS BUILT IN: it announces the number of comparisons it will
+		// make BEFORE any verdict, so "no violations" can never be confused with
+		// "the check never ran" -- a failure this project has hit more than once.
+		if (flexaids::env_bool("FLEXAIDDS_SELECTIVE_INVARIANT_CHECK", false)) {
+			static bool announced = false;
+			static int  reported  = 0;
+			if (!use_selective) {
+				if (!announced) {
+					announced = true;
+					fprintf(stderr, "[SELECTIVE-INVARIANT] SKIPPED: use_selective=0 "
+					        "(full copy per chromosome), invariant trivially held\n");
+				}
+			} else {
+				const int nthr = std::min(eval_threads,
+				                          static_cast<int>(tl_atoms.size()));
+				long long checked = 0, violations = 0;
+				double worst = 0.0;
+				for (int t = 0; t < nthr; ++t) {
+					for (int ai = 1; ai <= natm; ++ai) {
+						if (std::binary_search(dirty_atm.begin(),
+						                       dirty_atm.end(), ai)) continue;
+						++checked;
+						const float* a = atoms[ai].coor;
+						const float* b = tl_atoms[t][ai].coor;
+						if (a[0] == b[0] && a[1] == b[1] && a[2] == b[2]) continue;
+						++violations;
+						const double dx = b[0]-a[0], dy = b[1]-a[1], dz = b[2]-a[2];
+						const double mag = std::sqrt(dx*dx + dy*dy + dz*dz);
+						if (mag > worst) worst = mag;
+						if (reported < 20) {
+							++reported;
+							fprintf(stderr, "[SELECTIVE-INVARIANT] VIOLATION "
+							        "thread=%d idx=%d number=%d |d|=%.6f\n",
+							        t, ai, atoms[ai].number, mag);
+						}
+					}
+				}
+				if (!announced) {
+					announced = true;
+					fprintf(stderr, "[SELECTIVE-INVARIANT] ARMED: eval_threads=%d "
+					        "natm=%d n_dirty_atm=%d -> %lld comparisons/generation\n",
+					        nthr, natm, n_dirty_atm, checked);
+				}
+				if (violations > 0)
+					fprintf(stderr, "[SELECTIVE-INVARIANT] generation: checked=%lld "
+					        "violations=%lld worst|d|=%.6f\n",
+					        checked, violations, worst);
+			}
+		}
 	}
 	}  // !gpu_handled
 

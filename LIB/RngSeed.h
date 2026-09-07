@@ -159,7 +159,23 @@ inline std::mt19937 make_thread_rng(std::uint64_t stream = 0)
 /// FLEXAIDDS_RNG_STREAM_FIX so an A/B of either gate stays single-variable.
 inline bool voronoi_keyed_jitter_enabled() noexcept
 {
-    return flexaids::env_bool("FLEXAIDDS_VORONOI_KEYED_JITTER", false);
+    // EPOCH-CACHED, matching rng_stream_fix_enabled() below and the pattern this
+    // header's own comment (above) already describes -- which this function was
+    // the one exception to. Before caching, it called env_bool(), and therefore
+    // std::getenv(), on EVERY Voronoi hull failure: 18,771 calls in one measured
+    // 1P2Y run (gen=1000, omp=1, seed 12345). env_bool_str() is noexcept and
+    // parses into a stack buffer with no allocation, so calling it from a
+    // noexcept function is safe; caching the RESULT rather than re-implementing
+    // the parse preserves env_bool's exact 1/true/yes/on semantics.
+    thread_local std::uint64_t flag_epoch = ~0ULL;
+    thread_local bool flag = false;
+
+    const std::uint64_t epoch = g_seed_epoch.load(std::memory_order_acquire);
+    if (flag_epoch != epoch) {
+        flag = flexaids::env_bool("FLEXAIDDS_VORONOI_KEYED_JITTER", false);
+        flag_epoch = epoch;
+    }
+    return flag;
 }
 
 inline bool rng_stream_fix_enabled()

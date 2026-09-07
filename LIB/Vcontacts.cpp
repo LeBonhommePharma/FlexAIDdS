@@ -54,6 +54,115 @@ struct FastpathCache {
 	atomindex* box_ptr = nullptr;
 };
 
+// ---------------------------------------------------------------------------
+// FAILSAFE VISIBILITY (log-only, DEFAULT OFF).
+//
+// WHY THIS EXISTS. calc_region()'s non-convergence failsafe (`edgenum >= 200`,
+// below) perturbs an atom's coordinates and recalculates the hull. Its only
+// diagnostic was a commented-out printf, so a run gives NO signal that it
+// fired; the sole trace is the aggregate FA->skipped counter. That failsafe is
+// the measured root cause of fixed-seed non-determinism on the flexible path:
+// the legacy branch draws its displacement from a THREAD_LOCAL RNG, and the GA
+// evaluates chromosomes under `#pragma omp parallel for schedule(dynamic)`
+// (gaboom.cpp:3282), so which thread — and hence which draw — a chromosome
+// gets is not reproducible. Because recalc==1 on the GA path (gaboom.cpp:3244)
+// the hull is recomputed WITH the perturbed coordinate, so the returned CF
+// depends on that draw. Measured firing counts explain the target specificity
+// exactly: 1P2Y 3575, 1OWE 233, 1JD0 170, 1OQ5 38 — and 1P2Y is the only one
+// of the four that is non-reproducible.
+//
+// DEFAULT-PRESERVING BY CONSTRUCTION. The env var is read ONCE into a function
+// static; unset means every diagnostic branch is dead and no coordinate,
+// score, or pose is touched. Proven, not asserted: pose-hash identity against
+// the unpatched baseline on 1P2Y at omp=1 (the deterministic configuration of
+// the target that fires this failsafe 3575 times).
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// PRISTINE-COORDINATE GUARD for the voronoi_poly2 non-convergence failsafe.
+// Gated by FLEXAIDDS_VCT_COORD_GUARD, DEFAULT OFF.
+//
+// THE DEFECT IT CLOSES, measured on 1P2Y (gen=1000, omp=1, seed 12345):
+//   18,771 failsafe firings across 10,762 voronoi_poly2 calls. 99.7% of those
+//   calls take ONE pass, but 26 calls take ten or more and two exceed a
+//   thousand; the worst reaches pass 1730. Those 26 calls produce 41% of all
+//   firings.
+//
+//   origcoor is re-saved from the CURRENT (already perturbed) coordinates on
+//   every pass, and zeroed at the top of RESTART. So:
+//     (a) a call taking N passes restores the coordinate as of pass N, leaving
+//         N-1 perturbations APPLIED -- up to 1729, RMS 0.21 A per axis;
+//     (b) a pass reaching the restore without re-entering the failsafe restores
+//         (0,0,0) and teleports the atom to the origin -- 79 occurrences;
+//     (c) the `return -1` exit restores nothing at all.
+//
+//   None of that self-heals, because the GA's per-chromosome reset is
+//   SELECTIVE: gaboom.cpp:3042 builds dirty_atm from mov[] and map_par[].atm --
+//   "atom indices modified by ic2cf" -- while this failsafe modifies whichever
+//   atom's hull failed. Measured perturbation set on 1P2Y: 11 ligand atoms
+//   (90001-90011) AND receptor atoms 743 and 2293. A leaked displacement on an
+//   atom outside dirty_atm survives in tl_atoms[tid] for the rest of the run,
+//   independently per thread -- which is a mechanism for thread-dependent
+//   divergence in its own right, distinct from the thread_local RNG draw.
+//
+// WHY A DESTRUCTOR AND NOT A CORRECTED ASSIGNMENT. The guard is ADDITIVE: it
+// does not touch the existing restore. arm() captures the pristine coordinate
+// on the FIRST failsafe pass and is a no-op afterwards, so no pass count can
+// lose the original; the destructor then runs at scope exit -- AFTER the legacy
+// restore and after every `return`, including `return -1` -- so it wins on
+// every exit path without that path having to know it exists. Unarmed, the
+// destructor is a no-op and behaviour is bit-identical to the unpatched engine.
+//
+// NOTE: this makes re-keying the keyed-jitter identity UNNECESSARY. The concern
+// was that arming once would freeze the value passed to pose_atom_identity, so
+// successive passes would apply an identical displacement and the loop could
+// never escape. Because the guard is additive, origcoor keeps its per-pass role
+// as the identity source and still varies pass to pass; only the FINAL restore
+// changes. The identity is deliberately left alone.
+// ---------------------------------------------------------------------------
+static bool vct_coord_guard_enabled()
+{
+    static const bool on = []() {
+        const char* raw = std::getenv("FLEXAIDDS_VCT_COORD_GUARD");
+        return raw != nullptr && raw[0] != '\0' && raw[0] != '0';
+    }();
+    return on;
+}
+
+namespace {
+struct AtomCoordGuard {
+    float* coor  = nullptr;
+    float  saved[3] = {0.0f, 0.0f, 0.0f};
+    bool   armed = false;
+
+    AtomCoordGuard() = default;
+    AtomCoordGuard(const AtomCoordGuard&) = delete;
+    AtomCoordGuard& operator=(const AtomCoordGuard&) = delete;
+
+    /// Capture the pristine coordinate. ARM ONCE: later calls are no-ops.
+    void arm(float* c) noexcept
+    {
+        if (armed || c == nullptr) return;
+        saved[0] = c[0]; saved[1] = c[1]; saved[2] = c[2];
+        coor = c; armed = true;
+    }
+
+    ~AtomCoordGuard()
+    {
+        if (!armed || coor == nullptr) return;
+        coor[0] = saved[0]; coor[1] = saved[1]; coor[2] = saved[2];
+    }
+};
+}  // namespace
+
+static bool vct_failsafe_diag()
+{
+    static const bool on = []() {
+        const char* raw = std::getenv("FLEXAIDDS_VCT_FAILSAFE_DIAG");
+        return raw != nullptr && raw[0] != '\0' && raw[0] != '0';
+    }();
+    return on;
+}
+
 thread_local FastpathCache g_fp;
 thread_local std::vector<int> g_scorable;
 thread_local bool g_fastpath_on = false;
@@ -630,6 +739,22 @@ int voronoi_poly2(VC_Global *VC,int atomzero, plane cont[], float rado,
 	// failsafe variables:
 	char   recalc;       // flag if hull is being recalculated (orig. unbounded)
 	float  origcoor[3];  // original pdb coordinates for atom. 
+	// PASS COUNTER (instrumentation). Declared BEFORE the RESTART label so it
+	// SURVIVES `goto RESTART` -- origcoor does NOT, and that lifetime mismatch
+	// is exactly the defect this counter exists to size. Always maintained,
+	// logged only under FLEXAIDDS_VCT_FAILSAFE_DIAG. An int increment touches
+	// no coordinate, no RNG and no score, so the default path stays
+	// bit-identical -- proven by pose-hash identity, not asserted.
+	//
+	// WHY A COUNTER AND NOT A LOG HEURISTIC: consecutive same-atom log lines
+	// conflate SEPARATE voronoi_poly2 calls, which put a spurious apparent max
+	// of 1864 passes on a single call. This is the honest per-call number, and
+	// it is what any bound on the RESTART loop must be sized from.
+	int    fs_pass = 0;  // failsafe passes taken by THIS voronoi_poly2 call
+	// Declared BEFORE the RESTART label so `goto RESTART` neither destroys nor
+	// re-constructs it: the label follows this declaration, so no scope is
+	// entered or left and the captured pristine coordinate survives every pass.
+	AtomCoordGuard coord_guard;
     
 	recalc = 'N';
 RESTART:
@@ -831,6 +956,9 @@ RESTART:
 			// ===== failsafe - if solution is not converging, perturb atom  =====
 			// ===== coordinates and recalculate.                            =====
 			if(edgenum >= 200) {
+				++fs_pass;
+				if (vct_coord_guard_enabled() && VC->Calc[atomzero].atom)
+					coord_guard.arm(VC->Calc[atomzero].atom->coor);
 				//printf("********* invalid solution for hull, recalculating *********\n");
 				VC->seed[atomzero*3] = -1;  // reset to no seed vertex
 				origcoor[0] = VC->Calc[atomzero].atom->coor[0];
@@ -853,6 +981,23 @@ RESTART:
 					VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
 					VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
 					VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
+				}
+
+				// Log-only; dead unless FLEXAIDDS_VCT_FAILSAFE_DIAG is set.
+				// Reports which branch supplied the displacement and its actual
+				// magnitude, so the legacy branch's thread-dependence is
+				// observable rather than inferred.
+				if (vct_failsafe_diag()) {
+					const int anum_d = VC->Calc[atomzero].atom
+						? VC->Calc[atomzero].atom->number : atomzero;
+					fprintf(stderr,
+						"[VCT-FAILSAFE] fire atom=%d edgenum=%d pass=%d branch=%s "
+						"d=(%.6f,%.6f,%.6f)\n",
+						anum_d, edgenum, fs_pass,
+						flexaids_rng::voronoi_keyed_jitter_enabled() ? "keyed" : "legacy",
+						VC->Calc[atomzero].atom->coor[0] - origcoor[0],
+						VC->Calc[atomzero].atom->coor[1] - origcoor[1],
+						VC->Calc[atomzero].atom->coor[2] - origcoor[2]);
 				}
                 
 				// *** NEW ***
@@ -946,6 +1091,31 @@ RESTART:
 	if(recalc == 'N') {
 		save_seeds(VC->seed,cont, VC->poly, vn, atomzero);
 	} else {
+		// LATENT-BUG GUARD (log-only, dead unless the diag env var is set).
+		//
+		// origcoor is zeroed at the top of RESTART and only re-populated inside
+		// the failsafe block. So a pass arriving here with recalc=='Y' WITHOUT
+		// having re-entered the failsafe would restore (0,0,0) and teleport the
+		// atom to the origin -- tens of Angstroms outside the coordinate box.
+		//
+		// This is a source-reading concern, NOT an observed one. Measured on the
+		// receptor as actually scored (written via
+		// FLEXAIDDS_WRITE_FLEXED_RECEPTOR, 4,169 atoms in common with the apo
+		// input): ZERO atoms moved. And 9,672 atoms across 283 campaign pose
+		// files had none closer than 41 A to the origin. So the path appears
+		// unreachable in practice. This guard makes that OBSERVABLE rather than
+		// assumed, and deliberately does NOT alter the restore: changing
+		// behaviour on a path never seen to fire would reprice results for no
+		// measured benefit.
+		if (vct_failsafe_diag()
+		    && origcoor[0] == 0.0f && origcoor[1] == 0.0f && origcoor[2] == 0.0f) {
+			fprintf(stderr,
+				"[VCT-FAILSAFE] *** origcoor==(0,0,0) at restore, atom=%d pass=%d: "
+				"this restore TELEPORTS THE ATOM TO THE ORIGIN\n",
+				VC->Calc[atomzero].atom
+					? VC->Calc[atomzero].atom->number : atomzero,
+				fs_pass);
+		}
 		// reset atom coordinates to original values
 		VC->Calc[atomzero].atom->coor[0] = origcoor[0];
 		VC->Calc[atomzero].atom->coor[1] = origcoor[1];
