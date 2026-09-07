@@ -1,0 +1,82 @@
+# EditorConfig for FlexAIDdS — https://editorconfig.org
+#
+# WHY THIS FILE EXISTS. LIB/ carries two indentation conventions and the mix is
+# not arbitrary: the ORIGINAL hand-written FlexAID core is tab-indented, while
+# the newer modules (statmech, encom, Shannon, tENCoM, PoseBust, ...) are
+# 4-space. With no editorconfig, an editor silently applies whichever style it
+# defaults to and produces files that are internally mixed — which then breaks
+# exact-match edits, because a tab-indented line and a space-indented line at
+# the same visual depth are DIFFERENT strings that render identically.
+#
+# THE RULE. Spaces are the project default, matching .clang-format
+# (UseTab: Never, IndentWidth: 4). The 45 legacy files enumerated below keep
+# tabs, so editing them does not convert their indentation. New files therefore
+# default to spaces without anyone having to remember to.
+#
+# The list is ENUMERATED, not a glob, deliberately: a glob over LIB/ would also
+# capture the modern space-indented modules that live there, and would capture
+# new files, which should be spaces. Membership was measured (>=60% tab-led
+# lines over >=50 indented lines), not chosen by hand; the lowest member sits at
+# 66% and the bulk are 95-100%.
+#
+# Widths below were read off each type's own indentation ladder in this tree
+# (e.g. C++ and Python show 4/8/12/16, YAML shows multiples of 2), NOT assumed.
+# There are no Makefiles tracked, so no tab-required exception is needed.
+#
+# Converging a legacy file to spaces is fine, but do it as its OWN
+# whitespace-only commit and drop it from this list in the same commit, so
+# review can skip the diff and the two never disagree.
+#
+# The brace group below is one long line because EditorConfig section headers
+# MUST be single-line -- a multi-line glob parses as garbage and is silently
+# ignored, i.e. a config that looks present and does nothing.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# ---- project default: C/C++ is spaces, matching .clang-format ---------------
+[*.{c,cc,cxx,cpp,h,hh,hpp}]
+indent_style = space
+indent_size = 4
+
+# ---- the original hand-written FlexAID core: TABS --------------------------
+# trim_trailing_whitespace is off here on purpose. These files carry historical
+# trailing whitespace, and an editor stripping it on save would produce a large
+# unrelated diff in exactly the files where review attention is scarcest.
+[{LIB/BindingMode.cpp,LIB/BindingMode.h,LIB/DensityPeak_Cluster.cpp,LIB/FOPTICS.cpp,LIB/FOPTICS.h,LIB/Vcontacts.cpp,LIB/Vcontacts.h,LIB/add2_optimiz_vec.cpp,LIB/assign_shortflex.cpp,LIB/assign_types.cpp,LIB/build_close.cpp,LIB/build_rotamers.cpp,LIB/buildlist.cpp,LIB/calc_center.cpp,LIB/calc_rmsd_chrom.cpp,LIB/check_clash.cpp,LIB/cluster.cpp,LIB/ensemble_pipeline.h,LIB/flexaid.h,LIB/gaboom.cpp,LIB/gaboom.h,LIB/generate_grid.cpp,LIB/get_yval.cpp,LIB/ic2cf.cpp,LIB/modify_pdb.cpp,LIB/partition_grid.cpp,LIB/read_constraints.cpp,LIB/read_coor.cpp,LIB/read_flexscfile.cpp,LIB/read_grid.cpp,LIB/read_input.cpp,LIB/read_lig.cpp,LIB/read_normalgrid.cpp,LIB/read_rmsdst.cpp,LIB/read_spheres.cpp,LIB/residue_conect.cpp,LIB/shortest_path.cpp,LIB/soft_wall.h,LIB/top.cpp,LIB/top_helpers.cpp,LIB/update_optres.cpp,LIB/vcfunction.cpp,LIB/write_pdb.cpp,LIB/write_rrd.cpp,tests/test_contacts_epoch.cpp}]
+indent_style = tab
+indent_size = 4
+tab_width = 4
+trim_trailing_whitespace = false
+
+# ---- other languages ------------------------------------------------------
+[*.py]
+indent_style = space
+indent_size = 4
+
+[*.sh]
+indent_style = space
+indent_size = 4
+
+[{CMakeLists.txt,*.cmake}]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Two trailing spaces are a significant line break in Markdown.
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
