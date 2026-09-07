@@ -1614,6 +1614,13 @@ flexaids_add_unit_test(test_protocol_config
             tests/cf_aggregator_stubs.cpp
             LIB/ic2cf.cpp
             LIB/rot_gene_index.cpp   # ic2cf.cpp calls it since 94d2d0ba
+            # be8f725c routed ic2cf.cpp's ligand-entropy path through
+            # tENCoM::vibrational_eigenvalues (tencm.cpp). That commit was
+            # verified only via the ligand_tencom_pose CLI, never by building
+            # this target, so CI went red on an unresolved symbol. tencm.cpp has
+            # no external LIB dependencies of its own (measured), so it links
+            # cleanly here. Found by external audit.
+            LIB/tENCoM/tencm.cpp
         TEST_NAME CFAggregatorTests
     )
 
