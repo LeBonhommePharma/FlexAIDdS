@@ -586,3 +586,67 @@ TEST(DualAssemblyRunner, SimCCadenceIsPerTrackNotGlobal) {
     EXPECT_TRUE(translation_sim_c_flags[3]);
     EXPECT_EQ(sim_c_calls, 2);
 }
+
+TEST(DualAssemblyRunner, PoseLocalThermoRewriteDefaultsOff)
+{
+    natural::DualAssemblyConfig cfg;
+    EXPECT_FALSE(cfg.enable_pose_local_thermo_rewrite);
+    EXPECT_TRUE(cfg.pose_rewrite_elements.empty());
+    EXPECT_TRUE(cfg.pose_rewrite_poses.empty());
+}
+
+TEST(DualAssemblyRunner, PoseLocalThermoRewriteIsDiagnosticOnly)
+{
+    natural::DualAssemblyConfig cfg;
+    cfg.protofibril_pdb = "fake.pdb";
+    cfg.sequence_fasta  = std::string(80, 'A');
+    cfg.checkpoint_interval = 20;
+    cfg.include_reciprocal_controls = false;
+    cfg.sim_c_enabled = false;
+    cfg.output_csv = "/tmp/dual_assembly_pose_rewrite.csv";
+    cfg.nascent_pdb_dir = "/tmp/dual_assembly_pose_rewrite_pdbs";
+    cfg.enable_pose_local_thermo_rewrite = true;
+
+    natural::DecisionElement el;
+    el.ss = natural::SSClass::RNA_STEM_LOOP;
+    el.label = "hp";
+    el.na_start = 0;
+    el.na_end = 10;
+    cfg.pose_rewrite_elements.push_back(el);
+
+    natural::PoseView pose;
+    pose.score_kcal = -1.0;
+    natural::PoseContact c;
+    c.kind = natural::ContactKind::RNA_STEM_STACK;
+    c.geometry_weight = 1.0;
+    c.nt_index = 3;
+    pose.contacts.push_back(c);
+    cfg.pose_rewrite_poses.push_back(pose);
+
+    auto sim_a = [](const std::string&, const std::string&, int L_k, double T) {
+        return synthetic_engine(T, 16, 1.0, -4.0, 9u + L_k);
+    };
+    auto trunc = [](const std::string&, int L_k, const std::string&) {
+        return std::string("/tmp/dual_assembly_pose_rewrite_L") + std::to_string(L_k) + ".pdb";
+    };
+
+    natural::DualAssemblyRunner runner(std::move(cfg), sim_a, nullptr, nullptr, trunc);
+    auto history = runner.run();
+    ASSERT_FALSE(history.empty());
+
+    bool saw_rewrite = false;
+    for (const auto& [ck, out] : history) {
+        if (ck.in_tunnel || ck.chaperone_shielded || !ck.direct_encounter_allowed)
+            continue;
+        EXPECT_TRUE(std::isfinite(out.dG_A_kcal));
+        EXPECT_TRUE(out.pose_local_thermo_applied);
+        EXPECT_LT(out.pose_local_dH_kcal, 0.0);
+        EXPECT_NEAR(out.pose_local_dH_kcal, -1.2, 1e-12);
+        EXPECT_TRUE(std::isfinite(out.pose_local_dG_kcal));
+        // Validated DualAssembly ΔG is the StatMech engine value, not the local SS patch.
+        EXPECT_NE(out.dG_A_kcal, out.pose_local_dG_kcal);
+        saw_rewrite = true;
+        break;
+    }
+    EXPECT_TRUE(saw_rewrite);
+}

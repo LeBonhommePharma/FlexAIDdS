@@ -10,12 +10,14 @@
 //     (see PoseHelixThermoRewrite.h).
 //   2026 C++ header NATURaL = "Native Assembly of co-Transcriptionally /
 //     co-Translationally Unified Receptor–Ligand" (this DualAssembly module).
+// Directory name remains NATURaL (historical spelling).
 //
 // Distinct Zhao 2011 papers:
 //   • Zhao, Zhang, Chen, J. Chem. Phys. 135, 245101 (2011) — RNA
 //     cotranscriptional folding kinetics (2014 NATURAL lineage).
 //   • Zhao et al., J. Phys. Chem. B 115, 3987 (2011) — ribosome master
 //     equation / protein cotranslation ONLY (see RibosomeElongation.h).
+//     Do not cite JPCB 2011 as an RNA/DNA folding paper.
 //
 // Auto-detects when the ligand is nucleotide/sugar-containing or the receptor
 // is a nucleic acid chain, then activates DualAssembly mode.
@@ -29,6 +31,11 @@
 // Also supports transmembrane (TM) domain insertion via the Sec translocon
 // (see TransloconInsertion model below).
 //
+// Pose→local SS ΔH/ΔS rewrite (2014 ligand coupling, generalized to RNA/DNA/
+// protein helix/sheet) lives in PoseLocalThermoRewrite.h — experimental,
+// default OFF, not wired into G_natural. Same algebra, class-specific tables.
+// PoseHelixThermoRewrite remains the RNA decision-helix sidecar (default OFF).
+//
 // Fully integrated with:
 //   – RibosomeElongation (Zhao et al. 2011 JPCB master equation, codon rates)
 //   – ShannonThermoStack (entropy per growth step, time-weighted)
@@ -36,6 +43,7 @@
 //   – AlphaShape Contact Function (incremental ΔSASA)
 //   – TransloconInsertion (TM helix lateral gating, von Heijne 2007)
 //   – PoseHelixThermoRewrite (experimental, default OFF; RNA DualAssembly sidecar)
+//   – PoseLocalThermoRewrite (experimental, default OFF; RNA/DNA/helix/sheet)
 #pragma once
 
 #include "../flexaid.h"
@@ -71,6 +79,10 @@ struct NATURaLConfig {
     int              max_growth_steps        = -1; // -1 = full sequence length
     ribosome::Organism organism              = ribosome::Organism::EcoliK12;
     bool             use_ribosome_speed      = true;  // Zhao et al. 2011 JPCB rates
+
+    // Experimental pose→local SS ΔH/ΔS rewrite (PoseLocalThermoRewrite).
+    // Default OFF. Does not mutate DualAssemblyEngine growth ΔG or G_natural.
+    bool             pose_local_thermo_rewrite = false;
     bool             model_tm_insertion      = true;  // model TM translocon
 
     // ── Ion-dependent RNA folding ──────────────────────────────────────────

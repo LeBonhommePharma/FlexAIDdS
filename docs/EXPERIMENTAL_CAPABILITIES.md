@@ -19,7 +19,14 @@ At the current stage, the following should be treated as experimental:
 - Bonhomme Fleet and iCloud-driven distributed execution
 - NATURaL and related co-translational or co-transcriptional workflows
 - PoseHelixThermoRewrite / pose→helix ΔH/ΔS rewrite (2014 NATURAL seminar glue; default OFF; not Astex / not `G_natural`)
-- backend-specific acceleration paths not required by the Core 1.0 support matrix
+- PoseLocalThermoRewrite (`LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}`): experimental
+  docking-pose rewrite of local secondary-structure ΔH/ΔS. RNA, DNA, protein
+  α-helix, and protein β-sheet share the same algebra and use **class-specific**
+  increment tables (Turner-shaped RNA ≠ SantaLucia-shaped DNA ≠ helix ≠ sheet).
+  Default OFF (`DualAssemblyConfig::enable_pose_local_thermo_rewrite`,
+  `FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE`). Draft increments are not claim-ready.
+  Does not feed `G_natural` / Astex / FlexADS claim contracts. See
+  `docs/POSE_LOCAL_THERMO_REWRITE.md`.
 - backend-specific acceleration paths not required by the Core 1.0 support matrix
 - benchmark claims not yet backed by a repository reproducibility bundle
 
@@ -43,6 +50,9 @@ The following are intentionally kept experimental (see `docs/thermodynamics.md` 
 - PoseHelixThermoRewrite (`LIB/NATURaL/PoseHelixThermoRewrite`) — docking-pose mixture that
   rewrites RNA decision-helix ΔH/ΔS (loop ΔS, stem stacking ΔH). Experimental; default OFF;
   DualAssemblyEngine::run() does not apply it. See `docs/POSE_HELIX_THERMO_REWRITE.md`.
+- PoseLocalThermoRewrite (`LIB/NATURaL/PoseLocalThermoRewrite`) — same algebra generalized
+  to RNA/DNA/helix/sheet with class-specific tables. Experimental; default OFF. See
+  `docs/POSE_LOCAL_THERMO_REWRITE.md`.
 
 These features are fully implemented with tests and JSON exposure but require additional benchmarking or calibration data before promotion to validated status.
 4. an unambiguous ownership in the product boundary defined by `PRODUCT.md`

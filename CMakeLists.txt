@@ -1218,6 +1218,7 @@ if(ENABLE_DUAL_ASSEMBLY_TOOL)
     add_executable(dual_assembly
         LIB/NATURaL/dual_assembly_main.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
@@ -1509,6 +1510,15 @@ if(BUILD_TESTING)
     flexaids_add_unit_test(test_thermo_gate
         SOURCES tests/test_thermo_gate.cpp
         TEST_NAME ThermoGateTests
+    )
+
+    # test_pose_local_thermo_rewrite — experimental NATURaL pose→local SS ΔH/ΔS
+    # (pure function; no GA / DualAssemblyEngine).
+    flexaids_add_unit_test(test_pose_local_thermo_rewrite
+        SOURCES
+            tests/test_pose_local_thermo_rewrite.cpp
+            LIB/NATURaL/PoseLocalThermoRewrite.cpp
+        TEST_NAME PoseLocalThermoRewriteTests
     )
 
     # test_thermo_ledger — Thermo ledger tests
@@ -1804,6 +1814,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
         LIB/LigandRingFlex/SugarPucker.cpp
         LIB/UnifiedHardwareDispatch.cpp
@@ -1863,6 +1874,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
         LIB/LigandRingFlex/SugarPucker.cpp
         LIB/UnifiedHardwareDispatch.cpp
@@ -2141,6 +2153,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/ProtocolConfig.cpp
@@ -2199,6 +2212,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -2254,6 +2268,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/ProtocolConfig.cpp
@@ -2312,6 +2327,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -2367,6 +2383,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
@@ -2424,6 +2441,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
@@ -2482,6 +2500,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
@@ -2538,6 +2557,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/InStreamClustering.cpp
@@ -2698,6 +2718,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/ProtocolConfig.cpp
@@ -2914,6 +2935,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/ProtocolConfig.cpp
@@ -3238,6 +3260,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
@@ -3585,6 +3608,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/NATURaL/DualAssemblyRunner.cpp
+        LIB/NATURaL/PoseLocalThermoRewrite.cpp
         LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )

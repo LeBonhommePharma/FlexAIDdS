@@ -57,6 +57,13 @@ struct CheckpointOutcome {
     bool   sim_c_gated_in = false;
     int    protofibril_state_index = 0;
     bool   protofibril_structure_updated = false;
+
+    // Experimental PoseLocalThermoRewrite diagnostic (default unused).
+    // Never a substitute for dG_A_kcal / dG_B_kcal. Finite zeros when inactive.
+    bool   pose_local_thermo_applied = false;
+    double pose_local_dH_kcal = 0.0;
+    double pose_local_dS_cal_per_mol_K = 0.0;
+    double pose_local_dG_kcal = 0.0;
 };
 
 // ─── NascentChainScheduler ───────────────────────────────────────────────────
