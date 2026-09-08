@@ -44,6 +44,12 @@
 
 namespace dataset {
 
+#ifdef _MSC_VER
+// The existing MSVC subprocess fallback uses integer status/sentinel values,
+// not POSIX process IDs. Keep that API compilable without a global pid_t shim.
+using pid_t = int;
+#endif
+
 // =============================================================================
 // Enums
 // =============================================================================

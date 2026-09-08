@@ -268,6 +268,12 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             "FlexAIDdS requires C++26 — found GCC "
             "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to GCC ≥ 14.")
     endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # clang-cl simulates the MSVC ABI (MSVC is true), but its language support
+    # is Clang's. Keep C++26 instead of taking cl.exe's bindings-only C++20 cap.
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
+        message(FATAL_ERROR "FlexAIDdS requires Clang >= 18 for C++26.")
+    endif()
 elseif(MSVC)
     if(MSVC_VERSION LESS 1940)
         message(FATAL_ERROR

@@ -4,6 +4,17 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'LIB/**'
+  workflow_dispatch:
+
+concurrency:
+  group: release-build-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -23,10 +34,12 @@ jobs:
             cc: clang
             cxx: clang++
             artifact_name: flexaidds-macos
-          - name: windows-msvc
+          # The full engine requires Clang >=18 or GCC >=14. MSVC's C++20
+          # compatibility path is reserved for the Python extension smoke job.
+          - name: windows-clang
             os: windows-latest
-            cc: cl
-            cxx: cl
+            cc: clang-cl
+            cxx: clang-cl
             artifact_name: flexaidds-windows
     steps:
       - name: Checkout repository
@@ -52,6 +65,12 @@ jobs:
           choco install ninja eigen -y
         shell: cmd
 
+      - name: Set up Windows SDK and linker environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
       - name: Configure (Unix)
         if: runner.os != 'Windows'
         run: |
@@ -68,36 +87,49 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          clang-cl --version
           cmake -S . -B build -G Ninja ^
             -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_C_COMPILER=clang-cl ^
+            -DCMAKE_CXX_COMPILER=clang-cl ^
+            -DFLEXAIDS_USE_OPENMP=OFF ^
             -DFLEXAIDS_USE_CUDA=OFF ^
             -DFLEXAIDS_USE_METAL=OFF ^
             -DBUILD_PYTHON_BINDINGS=OFF ^
             -DBUILD_TESTING=OFF
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel 2
+
+      - name: Smoke test shipping executables (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          build/FlexAID --help > help.out
+          grep -q 'Usage:' help.out
+          build/FlexAIDdS --version
+
+      - name: Smoke test shipping executables (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          build\FlexAID.exe --help > help.out || exit /b 1
+          findstr /C:"Usage:" help.out || exit /b 1
+          build\FlexAIDdS.exe --version || exit /b 1
 
       - name: Package artifacts (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp -f build/FlexAID dist/ || true
-          cp -f build/FlexAIDdS dist/ || true
-          cp -f build/tENCoM dist/ || true
-          cp -f LICENSE dist/ || true
+          cp -f build/FlexAID build/FlexAIDdS build/tENCoM LICENSE dist/
           tar -czf ${{ matrix.artifact_name }}.tar.gz dist
 
       - name: Package artifacts (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item build\FlexAID.exe dist\ -ErrorAction SilentlyContinue
-          Copy-Item build\FlexAIDdS.exe dist\ -ErrorAction SilentlyContinue
-          Copy-Item build\tENCoM.exe dist\ -ErrorAction SilentlyContinue
-          Copy-Item LICENSE dist\ -ErrorAction SilentlyContinue
+          Copy-Item build\FlexAID.exe, build\FlexAIDdS.exe, build\tENCoM.exe, LICENSE dist\
           Compress-Archive -Path dist\* -DestinationPath ${{ matrix.artifact_name }}.zip -Force
 
       - name: Upload artifact (Unix)
