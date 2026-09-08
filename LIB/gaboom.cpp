@@ -1,5 +1,6 @@
 #include "gaboom.h"
 #include "GaPopulationReceipt.h"
+#include "GaEliteBuffer.h"
 #include "Vcontacts.h"
 #include "fileio.h"
 #include "coarse_init.h"
@@ -696,9 +697,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	const int n_elite = (GB->n_elite > 0)
 	                    ? std::min(GB->n_elite, GB->num_chrom)
 	                    : 0;
-	std::vector<gene>   elite_genes_buf(static_cast<size_t>(n_elite) * GB->num_genes);
-	std::vector<cfstr>  elite_cf_buf(n_elite);
-	std::vector<double> elite_eval_buf(n_elite), elite_app_buf(n_elite);
+	flexaids::GaEliteBuffer elite_buffer(n_elite, GB->num_genes);
 	if (n_elite > 0)
 		fprintf(stderr, "[ELITE] GA-internal elitism active: protecting %d "
 		        "lowest-CF individual(s) per generation\n", n_elite);
@@ -1144,27 +1143,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		// the global best survives both.  Restored over the worst of the new
 		// population right after reproduce() below.  evalue is the (non-apparent)
 		// CF; lower = better pose.
-		if (n_elite > 0) {
-			// Simple CF-minimum elite selection (v31+).
-			// ε-tiebreaker reverted: IC-space distance to opt_par is unreliable for
-			// already-converged poses (IC≠Cartesian proximity; nonlinear FK map +
-			// angular degeneracy). v30 ablation: net-neutral with 6 regressions on
-			// previously-perfect targets (0.00→2-6Å). Revert to plain CF sort.
-			std::vector<int> eidx(GB->num_chrom);
-			for (int q = 0; q < GB->num_chrom; ++q) eidx[q] = q;
-			std::partial_sort(eidx.begin(), eidx.begin() + n_elite, eidx.end(),
-				[&](int a, int b){
-					return (*chrom)[a].evalue < (*chrom)[b].evalue;
-				});
-			for (int e = 0; e < n_elite; ++e) {
-				const chromosome& src = (*chrom)[eidx[e]];
-				elite_cf_buf[e]   = src.cf;
-				elite_eval_buf[e] = src.evalue;
-				elite_app_buf[e]  = src.app_evalue;
-				for (int g = 0; g < GB->num_genes; ++g)
-					elite_genes_buf[static_cast<size_t>(e) * GB->num_genes + g] = src.genes[g];
-			}
-		}
+		elite_buffer.capture(*chrom, GB->num_chrom);
 
 		// ── P5: periodic BOOM random injection (diversity insurance) ──
 		// Every boom_inject_interval generations, replace the worst
@@ -1255,24 +1234,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		// over sharing-reduced fitness).  Overwrite the n_elite WORST individuals
 		// (highest evalue) of the new generation with the elites captured before
 		// boom/sharing, guaranteeing the running best is carried forward intact.
-		if (n_elite > 0) {
-			std::vector<int> widx(GB->num_chrom);
-			for (int q = 0; q < GB->num_chrom; ++q) widx[q] = q;
-			std::partial_sort(widx.begin(), widx.begin() + n_elite, widx.end(),
-				[&](int a, int b){ return (*chrom)[a].evalue > (*chrom)[b].evalue; });
-			for (int e = 0; e < n_elite; ++e) {
-				chromosome& dst = (*chrom)[widx[e]];
-				dst.cf              = elite_cf_buf[e];
-				dst.evalue          = elite_eval_buf[e];
-				dst.app_evalue      = elite_app_buf[e];
-				dst.fitnes          = 0.0;   // recomputed next reproduce()
-				dst.boltzmann_weight = 0.0;
-				dst.free_energy     = 0.0;
-				dst.status          = 'n';   // CF is valid (deep-copied) — no re-eval
-				for (int g = 0; g < GB->num_genes; ++g)
-					dst.genes[g] = elite_genes_buf[static_cast<size_t>(e) * GB->num_genes + g];
-			}
-		}
+		elite_buffer.restore(*chrom, GB->num_chrom);
 
 		// Fix 6: write snapshots COMPACTLY (stride = save_num_chrom), so the
 		// writer's layout matches what the post-GA thermo reader consumes.

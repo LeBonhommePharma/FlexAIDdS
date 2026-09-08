@@ -9,6 +9,7 @@
 // flexaid.h defines E as a macro which conflicts with GoogleTest templates.
 // Include gtest first, then our headers.
 #include "../LIB/gaboom.h"
+#include "../LIB/GaEliteBuffer.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -219,6 +220,73 @@ TEST(CopyChrom, CopiesAllFields) {
         EXPECT_EQ(dst.genes[i].to_int32, src.genes[i].to_int32);
         EXPECT_DOUBLE_EQ(dst.genes[i].to_ic, src.genes[i].to_ic);
     }
+}
+
+TEST(GaElitism, RestoresCachedScoreWithOwnedGenesAndEveryRingField) {
+    ChromArray population(3, 2);
+    auto full_state_score = [](const chromosome& c) {
+        return c.genes[0].to_ic + 2.0 * c.genes[1].to_ic +
+               c.ring_phases[0] + 10.0 * c.ring_six[0] + 100.0 * c.ring_five[0];
+    };
+    for (int i = 0; i < 3; ++i) {
+        auto& c = population[i];
+        c.genes[0] = {i + 10, static_cast<double>(i)};
+        c.genes[1] = {i + 20, static_cast<double>(i + 1)};
+        c.ring_phases[0] = 20.0f + 100.0f * i;
+        c.ring_six[0] = i + 1;
+        c.ring_five[0] = i + 1;
+        c.ring_phases[MAX_RING_FLEX - 1] = 71.0f + i;
+        c.ring_six[MAX_RING_FLEX - 1] = i + 2;
+        c.ring_five[MAX_RING_FLEX - 1] = i + 3;
+        c.evalue = c.cf.com = full_state_score(c);
+        c.app_evalue = c.evalue - 1.0;
+        c.status = 'n';
+    }
+    const chromosome elite = population[0];
+    const gene elite_genes[] = {population[0].genes[0], population[0].genes[1]};
+    gene* const destination_storage = population[2].genes;
+    flexaids::GaEliteBuffer saved(1, 2);
+    saved.capture(population.data(), 3);
+    // Reproduction destroys the original elite's storage and leaves the worst
+    // destination with a different pucker. The actual GA restore must own both.
+    population[0].genes[0].to_ic = 999.0;
+    population[0].ring_phases[0] = 359.0f;
+    population[2].fitnes = population[2].free_energy = population[2].boltzmann_weight = 9.0;
+    saved.restore(population.data(), 3);
+    const auto& restored = population[2];
+    EXPECT_EQ(restored.genes, destination_storage);
+    EXPECT_NE(restored.genes, population[0].genes);
+    EXPECT_EQ(restored.genes[0].to_int32, elite_genes[0].to_int32);
+    EXPECT_DOUBLE_EQ(restored.genes[0].to_ic, elite_genes[0].to_ic);
+    EXPECT_DOUBLE_EQ(restored.genes[1].to_ic, elite_genes[1].to_ic);
+    EXPECT_EQ(std::memcmp(restored.ring_phases, elite.ring_phases, sizeof(elite.ring_phases)), 0);
+    EXPECT_EQ(std::memcmp(restored.ring_six, elite.ring_six, sizeof(elite.ring_six)), 0);
+    EXPECT_EQ(std::memcmp(restored.ring_five, elite.ring_five, sizeof(elite.ring_five)), 0);
+    EXPECT_DOUBLE_EQ(restored.evalue, full_state_score(restored));
+    EXPECT_DOUBLE_EQ(restored.cf.com, restored.evalue);
+    EXPECT_DOUBLE_EQ(restored.app_evalue, elite.app_evalue);
+    EXPECT_EQ(restored.status, 'n');
+    EXPECT_DOUBLE_EQ(restored.fitnes, 0.0);
+    EXPECT_DOUBLE_EQ(restored.free_energy, 0.0);
+    EXPECT_DOUBLE_EQ(restored.boltzmann_weight, 0.0);
+}
+
+TEST(GaElitism, MultipleElitesKeepRankAndDoNotCertifyUnscoredChromosomes) {
+    ChromArray population(3, 1);
+    for (int i = 0; i < 3; ++i) {
+        population[i].evalue = i + 1;
+        population[i].genes[0].to_ic = i + 1;
+        population[i].status = i == 0 ? 'o' : 'n';
+    }
+    flexaids::GaEliteBuffer saved(2, 1);
+    saved.capture(population.data(), 3);
+    for (int i = 0; i < 3; ++i) population[i].evalue = 10 + i;
+    saved.restore(population.data(), 3);
+    EXPECT_DOUBLE_EQ(population[2].evalue, 1.0);
+    EXPECT_DOUBLE_EQ(population[1].evalue, 2.0);
+    EXPECT_EQ(population[2].status, 'o');
+    EXPECT_EQ(population[1].status, 'n');
+    EXPECT_DOUBLE_EQ(population[0].evalue, 10.0);
 }
 
 TEST(SwapChrom, SwapsContents) {
