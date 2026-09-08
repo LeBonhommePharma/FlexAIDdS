@@ -918,6 +918,20 @@ struct HvibColumns {
     float H_rep_mean  = 0.0f;  // mean per-rep vibrational entropy
     float D_vib       = 0.0f;  // inter-rep vibrational divergence
     int   n_reps      = 0;     // contributing reps
+    // Coordinate basis the ligand ENM was assembled in, READ BACK from the model
+    // rather than assumed. Two bases exist (tencm.h: Basis::Cartesian from
+    // build_from_ligand, Basis::Torsional from build_from_ligand_torsional) and
+    // their entropies are NOT interchangeable: Cartesian is 3N with six
+    // rigid-body modes stripped by a cutoff, torsional is dihedral DOFs with no
+    // null space, and a dS_vib cycle mixing them is not a differential. Until
+    // this field existed, every emitted row was Cartesian with nothing recording
+    // it, so a future torsional run would have been indistinguishable in the CSV
+    // from the 2,572 Cartesian cells already on disk.
+    // Values: "cartesian" | "torsional" | "none" (no model built). There is
+    // deliberately NO "mixed": reps that disagree are refused loudly rather than
+    // given a category, because a mixture is structurally impossible today and a
+    // value for it would be a state that can never occur.
+    std::string basis = "none";
 };
 
 struct PoseHvibColumns {
@@ -927,8 +941,15 @@ struct PoseHvibColumns {
     std::string error;
 };
 
+// basis_out, when non-null, receives the coordinate basis the ligand ENM was
+// actually assembled in, READ BACK from the model via TorsionalENM::basis().
+// Deliberately not a named constant: two builders exist with non-interchangeable
+// spectra, and a hardcoded "cartesian" here would be a field that cannot vary --
+// the exact defect this column exists to prevent. Reading it from the model means
+// the emitted value tracks the builder automatically if the call below changes.
 static std::vector<double> compute_pose_eigenvalues(
-    const std::string& pose_path, std::string* error = nullptr)
+    const std::string& pose_path, std::string* error = nullptr,
+    std::string* basis_out = nullptr)
 {
     std::vector<std::array<float,3>> xyz;
     std::vector<std::string> elem;
@@ -959,6 +980,29 @@ static std::vector<double> compute_pose_eigenvalues(
             if (error) *error = "ligand tENCoM model did not build";
             return {};
         }
+        // CHOICE 1 (LP, 2026-09-08): write the expectation down AND ask the model,
+        // then validate they agree. Either alone is weaker. The literal below is a
+        // DECLARATION of what the call above is supposed to produce; basis() is the
+        // measurement. Today they can only agree -- but the day someone swaps
+        // build_from_ligand for build_from_ligand_torsional here without touching
+        // the declaration, this says so instead of emitting a confident wrong label.
+        // That is the whole failure mode this column exists to prevent, applied to
+        // the column itself.
+        const char* expected_basis = "cartesian";      // build_from_ligand, above
+        const char* actual_basis   =
+            (ligand_enm.basis() == tencm::TorsionalENM::Basis::Torsional)
+            ? "torsional" : "cartesian";
+        if (std::strcmp(expected_basis, actual_basis) != 0) {
+            std::cerr << "  [BASIS-MISMATCH] " << pose_path
+                      << ": caller declared '" << expected_basis
+                      << "' but the assembled model reports '" << actual_basis
+                      << "'. The builder changed without its caller. Refusing to "
+                         "emit an entropy whose basis is not the declared one.\n";
+            if (error) *error = "ligand ENM basis mismatch (declared vs assembled)";
+            if (basis_out) *basis_out = "MISMATCH";
+            return {};
+        }
+        if (basis_out) *basis_out = actual_basis;
         // Cartesian ANM contains six rigid-body null modes plus any additional
         // disconnected-network nullspace. Remove numerical remnants relative to
         // the spectrum scale instead of treating tiny positive roundoff as motion.
@@ -1031,8 +1075,36 @@ static HvibColumns compute_target_hvib(const std::vector<std::string>& all_prefi
     std::vector<std::vector<double>> rep_eigs;
     rep_eigs.reserve(pool.size());
     for (size_t i = 0; i < pool.size(); ++i) {
-        std::vector<double> eigs = compute_pose_eigenvalues(pool[i].path);
+        std::string pose_basis;
+        std::vector<double> eigs =
+            compute_pose_eigenvalues(pool[i].path, nullptr, &pose_basis);
+        // A declared-vs-assembled basis mismatch must REFUSE THE TARGET, not skip
+        // one rep. The helper already returns empty on mismatch, so a bare
+        // `continue` would drop that pose and leave the target looking merely
+        // rep-poor -- a loud check failing quietly one level up, which is the
+        // failure shape this whole column exists to catch.
+        if (pose_basis == "MISMATCH") {
+            std::cerr << "  [BASIS-MISMATCH] refusing target: " << pool[i].path
+                      << " reported a basis its caller did not declare.\n";
+            return {};
+        }
         if (eigs.empty()) continue;
+        // CHOICE 2 (LP, 2026-09-08): take the basis from the FIRST rep and assert
+        // the rest match, rather than inventing a "mixed" value. Every rep in a
+        // target goes through the same function in the same process, so a mixture
+        // is structurally impossible today -- which makes a "mixed" branch a gate
+        // that can never fire, the exact thing this codebase keeps getting wrong.
+        // An assertion costs the same and fails LOUDLY if the impossible becomes
+        // possible, instead of silently pooling two coordinate systems.
+        if (out.basis == "none") {
+            out.basis = pose_basis;
+        } else if (out.basis != pose_basis) {
+            std::cerr << "  [BASIS-MISMATCH] pooled reps disagree: '"
+                      << out.basis << "' vs '" << pose_basis
+                      << "'. Pooled vibrational entropy would sum spectra from two "
+                         "coordinate systems; refusing.\n";
+            return {};
+        }
         if (i == 0) {
             const vibentropy::VibEntropyResult rank0 =
                 vibentropy::compute_vib_entropy_collapse({eigs});
@@ -6199,6 +6271,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             const double vct_r0 = protocol_cfg_.vct_r0;
             const bool vct_norm = protocol_cfg_.vct_normalize_contacts;
             const double vct_entropy_w = protocol_cfg_.vct_entropy_weight;
+            // tENCoM ligand vibrational entropy weight. Was a hardcoded 0.0 in
+            // the emit below, which made the campaign's own entropy channel
+            // unreachable through this harness: measured 0 of 4000 emitted
+            // configs with a nonzero value, 0 drivers setting it. Now sourced
+            // from ProtocolConfig like every other scoring knob, DEFAULT 0.0,
+            // so with FLEXAIDDS_TENCOM_WEIGHT unset the emitted JSON is byte-
+            // identical to before and ic2cf.cpp:29 still skips the ANM.
+            const double tencom_w = protocol_cfg_.tencom_weight;
             // v136: sas_weight / hbond_rank restored to the pre-v122 values
             // (0.40 / true).  The v122 flip to 1.0 / false (152426c59) collapsed
             // genuine top-1 from 52.2% to 6%: at sas_weight=1.0 the SAS penalty
@@ -6271,14 +6351,6 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // FLEXAIDDS_WAL_CAP_MODE / FLEXAIDDS_WAL_CAP_FLEX in
                 // LIB/vcfunction.cpp, and each FlexAIDdS subprocess inherits this
                 // process's environment, so the value does reach it. What was
-            // tENCoM ligand vibrational entropy weight. Was a hardcoded 0.0 in
-            // the emit below, which made the campaign's own entropy channel
-            // unreachable through this harness: measured 0 of 4000 emitted
-            // configs with a nonzero value, 0 drivers setting it. Now sourced
-            // from ProtocolConfig like every other scoring knob, DEFAULT 0.0,
-            // so with FLEXAIDDS_TENCOM_WEIGHT unset the emitted JSON is byte-
-            // identical to before and ic2cf.cpp:29 still skips the ANM.
-            const double tencom_w = protocol_cfg_.tencom_weight;
                 // missing in past features was the RECORD: dock_config.json is the
                 // artifact a reader greps months later to find out which arm a cell
                 // actually ran. config_parser does not consume these keys (it
@@ -8515,6 +8587,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 result.H_pop       = hv.H_pop;
                 result.H_rep_mean  = hv.H_rep_mean;
                 result.D_vib       = hv.D_vib;
+                result.tencom_basis = hv.basis;
+                // eigen_model was declared with a hardcoded "ligand_cartesian_anm"
+                // default and NEVER assigned anywhere, so the JSON it feeds at
+                // :8652 asserted a basis nothing had measured. Derived from the
+                // same single source as tencom_basis so the two cannot disagree.
+                if      (hv.basis == "torsional") result.eigen_model = "ligand_torsional_enm";
+                else if (hv.basis == "cartesian") result.eigen_model = "ligand_cartesian_anm";
+                else                              result.eigen_model = "ligand_" + hv.basis;
                 std::cerr << "  [HVIB] " << entry.pdb_id
                           << ": H_rep0=" << std::fixed << std::setprecision(4)
                           << hv.H_rep_rank0
@@ -8696,7 +8776,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "elected_cf,score_pose_consistent,score_pose_delta,"
                            "pose_sha256,rmsd_pose_sha256,"
                            "posebusters_pose_sha256,posebusters_input_sha256,"
-                           "tencom_status,eigen_status,"
+                           "tencom_status,tencom_basis,eigen_status,"
                            "tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
                            "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
                            "seed_echo,pose_source,"
@@ -8752,6 +8832,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.posebusters_pose_sha256 << ","
                         << result.posebusters_input_sha256 << ","
                         << result.tencom_status << ","
+                        << result.tencom_basis << ","
                         << result.eigen_status << ","
                         << result.tencom_pose_sha256 << ","
                         << result.eigen_n_modes << ","
@@ -9177,7 +9258,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "success_rmsd,pb_pass,success_pb,claim_ready,score_pose_consistent,score_pose_delta,"
                "pb_backend,pose_sha256,rmsd_pose_sha256,"
                "posebusters_pose_sha256,posebusters_input_sha256,"
-               "tencom_status,eigen_status,tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
+               "tencom_status,tencom_basis,eigen_status,tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
                "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
                "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
                "seed_echo,pose_source,"
@@ -9223,6 +9304,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.posebusters_pose_sha256 << ","
                 << r.posebusters_input_sha256 << ","
                 << r.tencom_status << ","
+                << r.tencom_basis << ","
                 << r.eigen_status << ","
                 << r.tencom_pose_sha256 << ","
                 << r.eigen_n_modes << ","

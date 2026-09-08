@@ -220,11 +220,23 @@ struct DockingResult {
     std::string posebusters_pose_sha256;  // parent elected PDB consumed by PoseBusters
     std::string posebusters_input_sha256; // derived predicted-ligand SDF consumed by bust
     std::string tencom_status{"not_run"};  // ok | fail | not_run | skipped
+    // Coordinate basis of the ligand ENM behind H_rep_*/D_vib/elected_H_vib:
+    // cartesian | torsional | none. Read back from TorsionalENM::basis(),
+    // never assumed. The two bases are NOT interchangeable (3N with six rigid-body
+    // modes vs dihedral DOFs with no null space), so a dS_vib cycle or a
+    // CF + w*h_rep term that mixes them is not well defined. Every row written
+    // before this column existed was cartesian with nothing recording it.
+    std::string tencom_basis{"none"};
     std::string eigen_status{"not_run"};
     std::string tencom_pose_sha256;   // re-hash of the exact pose consumed by tENCoM/Eigen
     int         eigen_n_modes{0};     // positive ligand ANM eigenmodes on elected pose
     float       elected_H_vib{0.0f}; // H(omega) of the exact elected pose (nats)
-    std::string eigen_model{"ligand_cartesian_anm"};
+    // Was defaulted to "ligand_cartesian_anm" and never assigned, so the JSON it
+    // feeds asserted a Cartesian ENM even on runs where no ENM was built at all.
+    // Now defaults to not_run like tencom_status above and is ASSIGNED from the
+    // measured basis; a row reading "not_run" means no model was assembled, which
+    // is information, whereas the old default was an unfalsifiable claim.
+    std::string eigen_model{"not_run"};
     // Clash diagnostics (populated from stdout parsing)
     long  individuals_clashed{0};     // total clashing evaluations
     long  individuals_total{0};       // total evaluations (across all generations)

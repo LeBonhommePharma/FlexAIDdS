@@ -94,12 +94,25 @@ int main(int argc, char** argv) {
     }
 
     const auto entropy = vibentropy::compute_vib_entropy_collapse({eigenvalues});
+
+    // The reported model name is READ BACK from the assembled Hessian, not written
+    // as a literal. It was `"ligand_cartesian_anm"` hardcoded on the emit line
+    // below, which was true while build_from_ligand was the only builder and would
+    // have become a silent lie the first time build_from_ligand_torsional ran --
+    // the tool would keep reporting "cartesian" while computing a dihedral-basis
+    // spectrum, and the two are not interchangeable. Same reasoning as the
+    // consolidation recorded at the top of this function: one source of truth, so
+    // this CLI and the objective path cannot disagree about what they computed.
+    const char* model_name =
+        (model.basis() == tencm::TorsionalENM::Basis::Torsional)
+        ? "ligand_torsional_enm" : "ligand_cartesian_anm";
+
     std::ostringstream json;
     json << std::setprecision(10)
          << "{\n"
          << "  \"pose\": \"" << json_escape(pose_path) << "\",\n"
          << "  \"engine\": \"tENCoM/Eigen\",\n"
-         << "  \"model\": \"ligand_cartesian_anm\",\n"
+         << "  \"model\": \"" << model_name << "\",\n"
          << "  \"quantity\": \"eigenvalue_spectrum_shannon_entropy\",\n"
          << "  \"units\": \"nats\",\n"
          << "  \"n_atoms\": " << molecule.atoms.size() << ",\n"
