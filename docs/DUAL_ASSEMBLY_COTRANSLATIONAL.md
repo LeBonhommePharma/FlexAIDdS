@@ -379,6 +379,10 @@ a long trajectory is partially readable on disk even if the run is interrupted.
   • `LIB/NATURaL/PoseHelixThermoRewrite.{h,cpp}` — experimental sidecar; RNA DualAssembly
     hook is `NATURaLConfig.enable_pose_helix_rewrite` (false) +
     `DualAssemblyEngine::compute_pose_helix_rewrite()`. `run()` does not apply patches.
+  • `LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}` — experimental generalized pose→local SS
+    ΔH/ΔS rewrite (RNA/DNA/helix/sheet, class-specific tables). Runner hook is
+    `DualAssemblyConfig.enable_pose_local_thermo_rewrite` (false). Diagnostic only;
+    does not mutate `dG_A` / `dG_B`. See `docs/POSE_LOCAL_THERMO_REWRITE.md`.
   • `LIB/DatasetRunner.{h,cpp}` — not touched. The cotranslational runner is a separate
     top-level driver to avoid cross-cutting changes.
 
@@ -422,6 +426,9 @@ a long trajectory is partially readable on disk even if the run is interrupted.
   • Pose→helix ΔH/ΔS rewrite is experimental and default OFF. DualAssemblyRunner does not
     call it (no atom-level poses from the injected GA). DualAssemblyEngine::run() does not
     add patches to CF or `FA->natural_deltaG`.
+  • Pose→local SS ΔH/ΔS rewrite (`PoseLocalThermoRewrite`) is experimental and default OFF.
+    When enabled it writes diagnostic fields on `CheckpointOutcome` only; it does not
+    mutate `dG_A` / `dG_B` or add CSV columns.
   • The transcription tracks do not dock directly against the protofibril
     (`direct_encounter_allowed = false`). Polysome-mode (multiple nascent chains at
     staggered lengths sharing one mRNA against a single protofibril) is a future
@@ -434,6 +441,30 @@ a long trajectory is partially readable on disk even if the run is interrupted.
   • The fibril-growth oracle assumes a single monomer-binding site per checkpoint and a
     well-mixed monomer pool. Surface-bound oligomeric intermediates (e.g. dodecameric
     Aβ*56) are not represented.
+
+---
+
+## 9.1 NATURAL lineage and pose-local SS rewrite
+
+**NATURAL** = Native Assembly of Transcriptionally / Translationally Unified
+Receptor and Ligand.
+
+- Transcriptional → RNA/DNA + ligand (Zhao–Zhang–Chen JCP 2011, above).
+- Translational → protein + ligand (Zhao JPCB 2011 master equation, above).
+
+2014 seminar (LP Morency R2, 2014-07-25) Perl NATURAL: clustering, population
+inheritance, pause at nt repeats, docking poses rewrite helix ΔH/ΔS. 2026
+DualAssembly is the broader C++ home.
+
+Pose→local secondary-structure ΔH/ΔS rewrite (`LIB/NATURaL/PoseLocalThermoRewrite`)
+is that 2014 ligand coupling generalized to RNA stem-loops, DNA stem-loops,
+protein α-helix, and protein β-sheet. The four classes share **algebra only**
+(ΔG = ΔH − TΔS, geometry-weighted contacts, Boltzmann mixture over top-k poses)
+and keep **class-specific increment tables** (Xia 1998 RNA ≠ SantaLucia 1998
+PNAS Table 2 DNA ≠ Scholtz 1991 / Zavrtanik 2026 helix ≠ Meier–Seelig 2008
+sheet midpoint). Experimental, default OFF; see `docs/POSE_LOCAL_THERMO_REWRITE.md`.
+It is not `k_fold` in RibosomeElongation and does not mutate validated
+DualAssembly `dG_A` / `dG_B`.
 
 ---
 

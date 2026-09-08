@@ -1,0 +1,14 @@
+# Lu, Turner, Mathews (2006) Nucleic Acids Res. 34:4912–4924, doi:10.1093/nar/gkl472
+# Table 1 — hairpin-loop initiation enthalpy ΔH°initiation(n)
+# n = number of unpaired nucleotides in the hairpin. n < 3 is not allowed.
+# n > 9 uses the n = 9 term (additional length cost is treated as entropic; ΔS not tabulated).
+# Units: ΔH kcal/mol. ΔS is an experimental gap (not published per n).
+n	dH_kcal
+3	1.3
+4	4.8
+5	3.6
+6	-2.9
+7	1.3
+8	-2.9
+9	5.0
+>9	5.0

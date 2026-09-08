@@ -137,6 +137,7 @@ set(FLEXAID_CORE_SOURCES
     NATURaL/NascentChainScheduler.cpp
     NATURaL/FibrilGrowthOracle.cpp
     NATURaL/DualAssemblyRunner.cpp
+    NATURaL/PoseLocalThermoRewrite.cpp
     ChiralCenter/ChiralCenterGene.cpp
     # ── CleftDetector + Mol2Reader + SdfReader ──
     CleftDetector.cpp

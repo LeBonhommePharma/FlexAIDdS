@@ -405,6 +405,7 @@ TEST(NATURaLConfig, DefaultsAreReasonable) {
     EXPECT_FALSE(cfg.enabled);
     EXPECT_FALSE(cfg.enable_pose_helix_rewrite);
     EXPECT_TRUE(cfg.decision_helices.empty());
+    EXPECT_FALSE(cfg.pose_local_thermo_rewrite);
     EXPECT_GT(cfg.temperature_K, 200.0);
     EXPECT_LT(cfg.temperature_K, 400.0);
     EXPECT_GT(cfg.mg_concentration_mM, 0.0);

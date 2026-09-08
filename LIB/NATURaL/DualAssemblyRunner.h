@@ -13,6 +13,7 @@
 
 #include "FibrilGrowthOracle.h"
 #include "NascentChainScheduler.h"
+#include "PoseLocalThermoRewrite.h"
 #include "../statmech.h"
 
 #include <functional>
@@ -40,11 +41,22 @@ struct DualAssemblyConfig {
     std::string output_csv                  = "cotranslational_trajectory.csv";
     std::string nascent_pdb_dir             = ".";
     double      acceptance_threshold        = 0.5;
-    // Experimental 2014 NATURAL pose→helix ΔH/ΔS rewrite. Default OFF.
-    // DualAssemblyRunner does not invoke PoseHelixThermoRewrite (GA callbacks
-    // currently supply pose RMSDs, not atom coords). Follow-up: wire when a
-    // real-GA backend emits ReceptorNtCoord / LigandPose snapshots.
+
+    // Experimental 2014 NATURAL pose→helix ΔH/ΔS rewrite (PoseHelixThermoRewrite).
+    // Default OFF. DualAssemblyRunner does not invoke it (GA callbacks currently
+    // supply pose RMSDs, not atom coords). Follow-up: wire when a real-GA backend
+    // emits ReceptorNtCoord / LigandPose snapshots. See docs/POSE_HELIX_THERMO_REWRITE.md.
     bool        enable_pose_helix_rewrite   = false;
+
+    // Experimental pose→local SS ΔH/ΔS rewrite (PoseLocalThermoRewrite). Default OFF.
+    // Env override: FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE=1.
+    // When on AND pose_rewrite_elements + pose_rewrite_poses are labelled,
+    // DualAssemblyRunner stores a diagnostic mixture on CheckpointOutcome and
+    // does not overwrite dG_A_kcal / dG_B_kcal or StatMech G_natural.
+    bool enable_pose_local_thermo_rewrite = false;
+    std::vector<DecisionElement> pose_rewrite_elements;
+    std::vector<PoseView>        pose_rewrite_poses;
+    PoseThermoRewriteConfig      pose_rewrite_cfg = default_pose_thermo_rewrite_config();
 };
 
 // ─── GA-backend callback signatures ──────────────────────────────────────────

@@ -3,6 +3,7 @@
 // Copyright 2026 Le Bonhomme Pharma. SPDX-License-Identifier: Apache-2.0
 #include "DualAssemblyRunner.h"
 
+#include "../EnvFlags.h"
 #include "../ShannonThermoStack/ShannonThermoStack.h"
 
 #include <algorithm>
@@ -52,6 +53,9 @@ DualAssemblyRunner::DualAssemblyRunner(DualAssemblyConfig cfg,
         throw std::invalid_argument("DualAssemblyRunner: truncate callback is required");
     if (cfg_.sim_c_enabled && !sim_c_)
         throw std::invalid_argument("DualAssemblyRunner: sim_c callback required when sim_c_enabled");
+    if (flexaids::env_bool("FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE"))
+        cfg_.enable_pose_local_thermo_rewrite = true;
+    cfg_.pose_rewrite_cfg.temperature_K = cfg_.temperature_K;
 }
 
 // ─── Pose-entropy role discriminator ─────────────────────────────────────────
@@ -244,6 +248,23 @@ std::vector<std::pair<Checkpoint, CheckpointOutcome>> DualAssemblyRunner::run() 
 
         // ── T/L discriminator ───────────────────────────────────────────────
         assign_tl(out.H_A_nats, out.H_B_nats, state.tl_prev, out);
+
+        // Experimental pose→local SS rewrite. Diagnostic only: never overwrite
+        // dG_A_kcal / dG_B_kcal (validated DualAssembly thermo stays intact).
+        if (cfg_.enable_pose_local_thermo_rewrite &&
+            !cfg_.pose_rewrite_elements.empty() &&
+            !cfg_.pose_rewrite_poses.empty()) {
+            const LocalThermoMixture mix = rewrite_local_thermo_from_poses(
+                cfg_.pose_rewrite_poses,
+                cfg_.pose_rewrite_elements,
+                cfg_.pose_rewrite_cfg);
+            if (!mix.empty()) {
+                out.pose_local_thermo_applied = true;
+                out.pose_local_dH_kcal = mix.dH_kcal;
+                out.pose_local_dS_cal_per_mol_K = mix.dS_cal_per_mol_K;
+                out.pose_local_dG_kcal = mix.dG_kcal;
+            }
+        }
 
         scheduler_.record(ck, out);
         write_csv_row(cfg_.output_csv, ck, out);

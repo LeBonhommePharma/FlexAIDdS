@@ -1,0 +1,21 @@
+# Xia, SantaLucia, Turner et al. (1998) Biochemistry 37:14719–14735
+# doi:10.1021/bi9809425 — INN-HB Watson–Crick propagation stacks (unique 10).
+# ΔH° and ΔG°37 as restated in Zuber et al. (2022) Nucleic Acids Res. 50:5251
+# Table 1A “1998 Model”, doi:10.1093/nar/gkac261 (PMC9122537).
+# ΔS° = (ΔH° − ΔG°37) / 310.15 K × 1000  (cal mol⁻¹ K⁻¹); T = 37 °C.
+# Initiation, AU-end, and symmetry terms are excluded (not WC stacks).
+# NNDB: Turner & Mathews (2010) NAR 38:D280, doi:10.1093/nar/gkp892
+#   https://rna.urmc.rochester.edu/NNDB/
+# Units: ΔH and ΔG37 kcal/mol ; ΔS cal mol⁻¹ K⁻¹
+# motif: 5′→3′ / 3′→5′ RNA
+motif	dH_kcal	dG37_kcal	dS_cal
+GC/CG	-14.88	-3.42	-36.949863
+CC/GG	-13.39	-3.26	-32.661615
+GA/CU	-12.44	-2.35	-32.532645
+CG/GC	-10.64	-2.36	-26.696760
+AC/UG	-11.40	-2.08	-30.049976
+CA/GU	-10.44	-2.11	-26.857972
+AG/UC	-10.48	-2.08	-27.083669
+UA/AU	-7.69	-1.33	-20.506207
+AU/UA	-9.38	-1.10	-26.696760
+AA/UU	-6.82	-0.93	-18.990811
