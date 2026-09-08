@@ -36,6 +36,20 @@ struct ProtocolConfig {
     double vct_r0{7.0};               ///< FLEXAIDDS_VCT_R0
     bool vct_normalize_contacts{false}; ///< FLEXAIDDS_VCT_NORM (presence)
     double vct_entropy_weight{0.0};   ///< FLEXAIDDS_VCT_ENTROPY_WEIGHT
+    /// tENCoM ligand vibrational Shannon entropy weight: CF += tencom_weight *
+    /// cf.h_rep (ic2cf.cpp). DEFAULT 0.0, which is also the value ic2cf.cpp:29
+    /// short-circuits on, so the ANM is skipped entirely and every existing
+    /// benchmark reproduces bit-for-bit.
+    ///
+    /// WHY THIS FIELD EXISTS. DatasetRunner emitted "tencom_weight": 0.0 as a
+    /// LITERAL, so the campaign's entropy channel was unreachable through the
+    /// harness -- measured: 0 of 4000 emitted dock_config.json on disk carried a
+    /// nonzero value, and 0 drivers set it. The engine side was always ready
+    /// (config_parser.cpp reads scoring.tencom_weight and clamps to [0,2];
+    /// top.cpp's 0.0f is pre-parse init, not a post-parse clobber). This makes
+    /// the harness side match, so an entropy arm is a protocol choice rather
+    /// than a code edit. Mirrors vct_entropy_weight above deliberately.
+    double tencom_weight{0.0};        ///< FLEXAIDDS_TENCOM_WEIGHT
     /// Niche-sharing exponent. nullopt → DatasetRunner uses pop-scaled 4.0.
     std::optional<double> sharing_alpha; ///< FLEXAIDDS_SHARING_ALPHA
     /// Boom inject fraction for legacy seed modes. nullopt → 1.0.
@@ -45,6 +59,8 @@ struct ProtocolConfig {
     bool n_elite_set{false};
     /// True when FLEXAIDDS_VCT_ENTROPY_WEIGHT was present (apply_config gate).
     bool vct_entropy_weight_set{false};
+    /// True when FLEXAIDDS_TENCOM_WEIGHT was present (apply_config gate).
+    bool tencom_weight_set{false};
     bool use_shannon{false};          ///< FLEXAIDDS_USE_SHANNON (presence)
     /// GA fitness model emitted into dock_config.json `ga.fitness_model`.
     /// Default SMFREE — bit-identical to the historical DatasetRunner hardcode.

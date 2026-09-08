@@ -128,6 +128,13 @@ ProtocolConfig ProtocolConfig::from_env() {
         cfg.vct_entropy_weight = *v;
         cfg.vct_entropy_weight_set = true;
     }
+    // tENCoM ligand vibrational entropy weight. Same shape as the VCT weight
+    // above: value plus a _set gate, so apply_config can distinguish "absent"
+    // from "explicitly 0.0". Unset leaves 0.0 and ic2cf.cpp:29 short-circuits.
+    if (auto v = env_opt_double("FLEXAIDDS_TENCOM_WEIGHT")) {
+        cfg.tencom_weight = *v;
+        cfg.tencom_weight_set = true;
+    }
 
     cfg.sharing_alpha = env_opt_double("FLEXAIDDS_SHARING_ALPHA");
     cfg.boom_frac = env_opt_double("FLEXAIDDS_BOOM_FRAC");
@@ -355,6 +362,8 @@ std::string ProtocolConfig::to_json() const {
     json_bool(o, "vct_normalize_contacts", vct_normalize_contacts);
     o << "\"vct_entropy_weight\":" << vct_entropy_weight << ',';
     json_bool(o, "vct_entropy_weight_set", vct_entropy_weight_set);
+    o << "\"tencom_weight\":" << tencom_weight << ',';
+    json_bool(o, "tencom_weight_set", tencom_weight_set);
     if (sharing_alpha) {
         o << "\"sharing_alpha\":" << *sharing_alpha << ',';
     } else {
@@ -463,6 +472,12 @@ ProtocolConfig ProtocolConfig::from_json(const std::string& json_text) {
     }
     if (!root["vct_entropy_weight_set"].is_null())
         cfg.vct_entropy_weight_set = root["vct_entropy_weight_set"].as_bool(false);
+    if (!root["tencom_weight"].is_null()) {
+        cfg.tencom_weight = root["tencom_weight"].as_double(0.0);
+        cfg.tencom_weight_set = true;
+    }
+    if (!root["tencom_weight_set"].is_null())
+        cfg.tencom_weight_set = root["tencom_weight_set"].as_bool(false);
     if (!root["sharing_alpha"].is_null())
         cfg.sharing_alpha = root["sharing_alpha"].as_double(4.0);
     if (!root["boom_frac"].is_null())

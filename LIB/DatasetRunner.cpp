@@ -6271,6 +6271,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // FLEXAIDDS_WAL_CAP_MODE / FLEXAIDDS_WAL_CAP_FLEX in
                 // LIB/vcfunction.cpp, and each FlexAIDdS subprocess inherits this
                 // process's environment, so the value does reach it. What was
+            // tENCoM ligand vibrational entropy weight. Was a hardcoded 0.0 in
+            // the emit below, which made the campaign's own entropy channel
+            // unreachable through this harness: measured 0 of 4000 emitted
+            // configs with a nonzero value, 0 drivers setting it. Now sourced
+            // from ProtocolConfig like every other scoring knob, DEFAULT 0.0,
+            // so with FLEXAIDDS_TENCOM_WEIGHT unset the emitted JSON is byte-
+            // identical to before and ic2cf.cpp:29 still skips the ANM.
+            const double tencom_w = protocol_cfg_.tencom_weight;
                 // missing in past features was the RECORD: dock_config.json is the
                 // artifact a reader greps months later to find out which arm a cell
                 // actually ran. config_parser does not consume these keys (it
@@ -6683,7 +6691,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << (hbond_rank ? "true" : "false") << ",\n"
                    << "    \"metal_coord_enabled\": true,\n"
                    << "    \"sas_weight\": " << sas_weight << ",\n"
-                   << "    \"tencom_weight\": 0.0,\n"
+                   << "    \"tencom_weight\": " << tencom_w << ",\n"
                    << "    \"vct_entropy_weight\": " << vct_entropy_w << "\n"
                    << "  },\n"
                    // MIF-weighted GA seeding: bias gene[0] toward grid points

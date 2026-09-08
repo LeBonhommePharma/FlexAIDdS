@@ -124,6 +124,11 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
 
         {
             double tw = jdbl(config, "scoring", "tencom_weight", 0.0);
+            // Protocol override, same precedence as vct_entropy_weight at :71-73.
+            // Placed BEFORE the clamp deliberately, so an env-supplied weight is
+            // clamped to [0,2] exactly like a config-supplied one -- otherwise
+            // FLEXAIDDS_TENCOM_WEIGHT=50 would bypass a bound the JSON path has.
+            if (proto.tencom_weight_set) tw = proto.tencom_weight;
             if (tw < 0.0) tw = 0.0;
             if (tw > 2.0) tw = 2.0;
             FA->tencom_weight = static_cast<float>(tw);

@@ -285,6 +285,7 @@ void seed_runtime_gates() {
         "FLEXAIDDS_T_EFF",
         "FLEXAIDDS_T_HOT",
         "FLEXAIDDS_TENCOM_SCALE",
+        "FLEXAIDDS_TENCOM_WEIGHT",
         "FLEXAIDDS_VCT_ENTROPY_WEIGHT",
         "FLEXAIDDS_VCT_R0",
         "FLEXAIDDS_VIB_ENTROPY_BINS",
