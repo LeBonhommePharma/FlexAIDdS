@@ -25,8 +25,10 @@ using natural::kMeierSeelig2008SheetFold_dS_cal;
 using natural::kPoseRewrite_kB_kcal_mol_K;
 using natural::kSantaLucia1998DnaWcStackMean_dH_kcal;
 using natural::kSantaLucia1998DnaWcStackMean_dS_cal;
+using natural::kSantaLucia1998Motif;
 using natural::kSantaLucia1998PnasTable2;
 using natural::kScholtz1991HelixFormation_dH_kcal;
+using natural::kXia1998RnaMotif;
 using natural::kXia1998RnaWcStackMean_dH_kcal;
 using natural::kXia1998RnaWcStackMean_dS_cal;
 using natural::kXia1998RnaWcStacks;
@@ -420,4 +422,87 @@ TEST(NnMotifTables, Lu2006HairpinNTable)
     EXPECT_NEAR(lu2006_hairpin_initiation_dH_kcal(12), 5.0, 1e-12);
     EXPECT_FALSE(lookup_lu2006_rna_hairpin(0).has_value());
     EXPECT_NEAR(lookup_lu2006_rna_hairpin(-1)->dH_kcal, 4.8, 1e-12);
+}
+
+// ── Per-SSClass contracts (follow-up to merged #471 PoseHelixThermoRewrite) ──
+
+TEST(SSClassRnaStemLoop, Xia1998SequenceMatchedStackTimesWIsNotSeminarMinus1p2)
+{
+    const auto cfg = natural::default_pose_thermo_rewrite_config();
+    PoseView pose = one_contact(ContactKind::RNA_STEM_STACK, 2.0, /*nt=*/3, /*res=*/-1);
+    pose.contacts[0].motif = "GC/CG";
+    const auto mix = rewrite_local_thermo_from_poses(
+        {pose}, {rna_loop("hp", 0, 10)}, cfg);
+    ASSERT_EQ(mix.n_poses_used, 1);
+    EXPECT_EQ(mix.per_element.at(0).ss, SSClass::RNA_STEM_LOOP);
+    EXPECT_NEAR(mix.dH_kcal, 2.0 * -14.88, 1e-12);
+    EXPECT_NE(mix.dH_kcal, -1.2);
+    EXPECT_NE(mix.dH_kcal, 2.0 * -1.2);
+    for (std::size_t i = 0; i < kXia1998RnaMotif.size(); ++i) {
+        const auto row = lookup_xia1998_rna(kXia1998RnaMotif[i]);
+        ASSERT_TRUE(row.has_value()) << kXia1998RnaMotif[i];
+        EXPECT_NEAR(row->dH_kcal, kXia1998RnaWcStacks[i].dH_kcal, 1e-12);
+        EXPECT_NE(row->dH_kcal, -1.2) << kXia1998RnaMotif[i];
+    }
+}
+
+TEST(SSClassDnaStemLoop, SantaLucia1998PnasTable2LiteralNeverAliasesRna)
+{
+    const auto cfg = natural::default_pose_thermo_rewrite_config();
+    PoseView pose = one_contact(ContactKind::DNA_STEM_STACK, 1.0, 3, -1);
+    pose.contacts[0].motif = "AA/TT";
+    const auto mix = rewrite_local_thermo_from_poses(
+        {pose}, {dna_loop("d", 0, 10)}, cfg);
+    ASSERT_EQ(mix.n_poses_used, 1);
+    EXPECT_EQ(mix.per_element.at(0).ss, SSClass::DNA_STEM_LOOP);
+    EXPECT_NEAR(mix.dH_kcal, -7.9, 1e-12);
+    EXPECT_NEAR(mix.dS_cal_per_mol_K, -22.2, 1e-12);
+    EXPECT_NE(mix.dH_kcal, kXia1998RnaWcStackMean_dH_kcal);
+
+    ASSERT_EQ(kSantaLucia1998Motif.size(), 13u);
+    for (std::size_t i = 0; i < kSantaLucia1998Motif.size(); ++i) {
+        const auto row = lookup_santalucia1998_dna(kSantaLucia1998Motif[i]);
+        ASSERT_TRUE(row.has_value()) << kSantaLucia1998Motif[i];
+        EXPECT_NEAR(row->dH_kcal, kSantaLucia1998PnasTable2[i].dH_kcal, 1e-12)
+            << kSantaLucia1998Motif[i];
+        EXPECT_NEAR(row->dS_cal_per_mol_K, kSantaLucia1998PnasTable2[i].dS_cal_per_mol_K, 1e-12)
+            << kSantaLucia1998Motif[i];
+    }
+    const auto dna_gc = lookup_santalucia1998_dna("GC/CG");
+    const auto rna_gc = lookup_xia1998_rna("GC/CG");
+    ASSERT_TRUE(dna_gc.has_value());
+    ASSERT_TRUE(rna_gc.has_value());
+    EXPECT_NEAR(dna_gc->dH_kcal, -9.8, 1e-12);
+    EXPECT_NEAR(rna_gc->dH_kcal, -14.88, 1e-12);
+    EXPECT_NE(dna_gc->dH_kcal, rna_gc->dH_kcal);
+}
+
+TEST(SSClassProteinHelix, Scholtz1991DeltaHAndBackboneDeltaSFormation)
+{
+    const auto cfg = natural::default_pose_thermo_rewrite_config();
+    const auto mix = rewrite_local_thermo_from_poses(
+        {one_contact(ContactKind::PROTEIN_HELIX_BB_HBOND, 1.0, -1, 12)},
+        {helix("H1", 10, 20)},
+        cfg);
+    ASSERT_EQ(mix.n_poses_used, 1);
+    EXPECT_EQ(mix.per_element.at(0).ss, SSClass::PROTEIN_HELIX);
+    EXPECT_NEAR(mix.dH_kcal, -1.3, 1e-12);
+    EXPECT_NEAR(mix.dS_cal_per_mol_K, -5.2, 1e-12);
+    EXPECT_NEAR(mix.dH_kcal, kScholtz1991HelixFormation_dH_kcal, 1e-12);
+    EXPECT_NEAR(mix.dS_cal_per_mol_K, kZavrtanik2026HelixFormation_dS_cal, 1e-12);
+}
+
+TEST(SSClassProteinSheet, MeierSeelig2008MidpointWithDistinctHelixTable)
+{
+    const auto cfg = natural::default_pose_thermo_rewrite_config();
+    const auto mix = rewrite_local_thermo_from_poses(
+        {one_contact(ContactKind::PROTEIN_SHEET_BRIDGE_HBOND, 1.0, -1, 12, 40)},
+        {sheet("E1", 10, 20, 35, 45)},
+        cfg);
+    ASSERT_EQ(mix.n_poses_used, 1);
+    EXPECT_EQ(mix.per_element.at(0).ss, SSClass::PROTEIN_SHEET);
+    EXPECT_NEAR(mix.dH_kcal, -0.4, 1e-12);
+    EXPECT_NEAR(mix.dS_cal_per_mol_K, -1.0, 1e-12);
+    EXPECT_NEAR(mix.dH_kcal, kMeierSeelig2008SheetFold_dH_kcal, 1e-12);
+    EXPECT_NE(mix.dH_kcal, kScholtz1991HelixFormation_dH_kcal);
 }

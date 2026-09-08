@@ -78,3 +78,14 @@ of `atom_struct`, so unit tests do not need a full engine.
 Do not use this module for Astex success, PoseBusters gates, or METHODS claim
 contracts. Treat outputs as a helix-parameter diagnostic for RNA DualAssembly
 experiments only.
+
+## Class-table generalization
+
+`LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}` (see `docs/POSE_LOCAL_THERMO_REWRITE.md`)
+extends this 2014 ligand coupling to **RNA, DNA, protein helix, and protein sheet**
+with class-specific published tables (Xia 1998, Lu/Mathews 2006 / NNDB,
+SantaLucia 1998 PNAS Table 2, Scholtz 1991, Meier–Seelig 2008). Same algebra
+(`ΔG = ΔH − TΔS`, geometry weight `w`, Boltzmann mixture); **different tables**.
+PoseLocal does **not** use this module’s seminar defaults (−1.2 kcal/stack,
+−3.0 e.u./loop H-bond). Both DualAssembly flags default **OFF**. Neither path
+feeds `G_natural` or Astex claim metrics.

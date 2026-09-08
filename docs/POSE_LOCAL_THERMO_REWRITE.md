@@ -154,6 +154,7 @@ See also `docs/DUAL_ASSEMBLY_COTRANSLATIONAL.md` §10 and
 ## Literature (DOIs)
 
 - Xia, SantaLucia, Turner et al. (1998) *Biochemistry* **37**:14719, doi:10.1021/bi9809425
+- NNDB: Turner & Mathews (2010) *Nucleic Acids Res.* **38**:D280, doi:10.1093/nar/gkp892 — https://rna.urmc.rochester.edu/NNDB/
 - Zuber, Schroeder, Kennedy, Turner (2022) *Nucleic Acids Res.* **50**:5251, doi:10.1093/nar/gkac261
 - Lu, Turner, Mathews (2006) *Nucleic Acids Res.* **34**:4912, doi:10.1093/nar/gkl472
 - SantaLucia Jr (1998) *PNAS* **95**:1460, doi:10.1073/pnas.95.4.1460 (PMC19045) — DNA Table 2
