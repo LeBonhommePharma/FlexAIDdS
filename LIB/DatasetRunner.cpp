@@ -961,15 +961,48 @@ struct PoseHvibColumns {
 // the pose's own directory and then its parent.
 static std::string find_ligtopo_sidecar(const std::string& pose_path)
 {
+    // MATCH BY IDENTITY, NOT BY "first file that looks right". The earlier
+    // version returned the first *_ligtopo.json that std::filesystem happened to
+    // yield, in unspecified order. Ligand PDB serials are assigned per run and
+    // REUSED across targets (90001, 90002, ...), so another target's graph joins
+    // to this pose without any key collision -- a wrong bond tree that reports
+    // success. The pose is <CODE>_<rank>.pdb, so require exactly
+    // <CODE>_ligtopo.json. Found by external audit.
+    const std::string stem = fs::path(pose_path).stem().string();
+    const std::size_t us  = stem.rfind('_');
+    if (us == std::string::npos || us == 0) return std::string();
+    const std::string want = stem.substr(0, us) + "_ligtopo.json";
+
     std::error_code ec;
     fs::path dir = fs::path(pose_path).parent_path();
     for (int up = 0; up < 2 && !dir.empty(); ++up) {
+        // 1. Identity match preferred.
+        const fs::path cand = dir / want;
+        if (fs::exists(cand, ec)) return cand.string();
+
+        // 2. Fallback: accept a *_ligtopo.json ONLY IF IT IS UNIQUE here. The
+        //    hazard the identity match exists to stop is picking one of SEVERAL
+        //    candidates by directory-iteration order, which can bind another
+        //    target's graph to this pose (serials are reused across targets). A
+        //    single candidate cannot be the wrong one by that mechanism. Strict
+        //    identity alone was too narrow: it refused a valid, uniquely-named
+        //    sidecar and turned a working torsional run into status=fail --
+        //    measured, 1YGC went ok/11 modes -> fail/0 modes.
+        //    Two or more candidates still refuse rather than guess.
+        std::vector<std::string> found;
         for (const auto& e : fs::directory_iterator(dir, ec)) {
             if (ec) break;
             const std::string fn = e.path().filename().string();
             if (fn.size() > 13 &&
                 fn.compare(fn.size() - 13, 13, "_ligtopo.json") == 0)
-                return e.path().string();
+                found.push_back(e.path().string());
+        }
+        if (found.size() == 1) return found[0];
+        if (found.size() > 1) {
+            std::cerr << "  [LIGTOPO] " << found.size() << " sidecars in "
+                      << dir.string() << " and none named " << want
+                      << "; refusing to guess\n";
+            return std::string();
         }
         dir = dir.parent_path();
     }
@@ -994,24 +1027,61 @@ static bool load_ligtopo(const std::string& sidecar_path,
     json::Value root = json::parse(ss.str());
     if (root.is_null()) { if (err) *err = "sidecar not parseable"; return false; }
 
-    if (n_flexbonds_out) *n_flexbonds_out = root["n_flexbonds"].as_int(-1);
+    // Schema gate. Without it any JSON object with the right key names is
+    // accepted, including a future v2 whose fields mean something else.
+    const std::string schema = root["schema"].as_string("");
+    if (schema != "flexaidds_ligand_topology_v1") {
+        if (err) *err = "sidecar schema is '" + schema +
+                        "', expected flexaidds_ligand_topology_v1";
+        return false;
+    }
+    // n_flexbonds is REQUIRED, not optional. It was read with a -1 fallback and
+    // the caller's DOF cross-check is written `if (n_flexbonds >= 0 && ...)`, so
+    // a sidecar missing the field silently disabled the very check that catches a
+    // mismatched graph. Found by external audit.
+    const int n_fb = root["n_flexbonds"].as_int(-1);
+    if (n_fb < 0) {
+        if (err) *err = "sidecar has no n_flexbonds; the DOF cross-check cannot run";
+        return false;
+    }
+    if (n_flexbonds_out) *n_flexbonds_out = n_fb;
 
     std::map<long,int> node_of;
     for (std::size_t i = 0; i < serials.size(); ++i)
         node_of[serials[i]] = static_cast<int>(i);
     topo.adjacency.assign(serials.size(), {});
 
+    // FULL COVERAGE IS REQUIRED, and this is the subtle one. A pose atom with no
+    // entry in the sidecar keeps an EMPTY adjacency row, which does not fail --
+    // it silently truncates the downstream traversal in the Jacobian, so that
+    // atom and everything beyond it stop moving with their torsion. The spectrum
+    // is then computed over a different molecule than the one docked, and still
+    // reports success. Every retained pose node must be covered.
+    // Found by external audit.
     const json::Value& atoms_j = root["atoms"];
+    std::vector<char> covered(serials.size(), 0);
     for (std::size_t i = 0; i < atoms_j.size(); ++i) {
         const long sn = static_cast<long>(atoms_j[i]["number"].as_int(-1));
         auto it = node_of.find(sn);
         if (it == node_of.end()) continue;          // hydrogen or not retained
+        covered[static_cast<std::size_t>(it->second)] = 1;
         const json::Value& bl = atoms_j[i]["bond"];
         for (std::size_t b = 0; b < bl.size(); ++b) {
             auto jt = node_of.find(static_cast<long>(bl[b].as_int(-1)));
             if (jt != node_of.end())
                 topo.adjacency[static_cast<std::size_t>(it->second)].push_back(jt->second);
         }
+    }
+    const std::size_t n_missing =
+        static_cast<std::size_t>(std::count(covered.begin(), covered.end(), char(0)));
+    if (n_missing != 0) {
+        if (err) *err = "sidecar covers " +
+                        std::to_string(serials.size() - n_missing) + " of " +
+                        std::to_string(serials.size()) +
+                        " pose heavy atoms; an uncovered atom truncates the "
+                        "torsion's moving set without failing";
+        topo.adjacency.clear();
+        return false;
     }
 
     const json::Value& dofs = root["dofs"];
@@ -1024,6 +1094,15 @@ static bool load_ligtopo(const std::string& sidecar_path,
             return false;                            // exact join or nothing
         }
         topo.rot_bonds.push_back({p->second, d->second});
+    }
+    // The sidecar must be internally consistent before the caller compares it to
+    // what the builder assembled.
+    if (static_cast<int>(topo.rot_bonds.size()) != n_fb) {
+        if (err) *err = "sidecar declares n_flexbonds=" + std::to_string(n_fb) +
+                        " but lists " + std::to_string(topo.rot_bonds.size()) +
+                        " dofs";
+        topo.rot_bonds.clear();
+        return false;
     }
     return true;
 }
