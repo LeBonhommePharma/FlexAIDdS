@@ -10,6 +10,10 @@
 // Include gtest first, then our headers.
 #include "../LIB/gaboom.h"
 #include "../LIB/GaEliteBuffer.h"
+#include "../LIB/GaEvaluationPolicy.h"
+#include "../LIB/GaPopulationReceipt.h"
+#include "../LIB/RngSeed.h"
+#include "../LIB/GAContext.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -19,6 +23,8 @@
 #include <algorithm>
 #include <numeric>
 #include <string>
+#include <atomic>
+#include <memory>
 
 // ===========================================================================
 // HELPERS
@@ -287,6 +293,126 @@ TEST(GaElitism, MultipleElitesKeepRankAndDoNotCertifyUnscoredChromosomes) {
     EXPECT_EQ(population[2].status, 'o');
     EXPECT_EQ(population[1].status, 'n');
     EXPECT_DOUBLE_EQ(population[0].evalue, 10.0);
+}
+
+namespace {
+class GaScopedEnvironment {
+public:
+    GaScopedEnvironment(const char* name, const char* value) : name_(name) {
+        const char* previous = std::getenv(name);
+        existed_ = previous != nullptr;
+        if (previous) previous_ = previous;
+        set(value);
+    }
+    ~GaScopedEnvironment() { set(existed_ ? previous_.c_str() : nullptr); }
+private:
+    void set(const char* value) {
+#ifdef _WIN32
+        _putenv_s(name_.c_str(), value ? value : "");
+#else
+        if (value) setenv(name_.c_str(), value, 1);
+        else unsetenv(name_.c_str());
+#endif
+    }
+    std::string name_, previous_;
+    bool existed_;
+};
+
+std::atomic<int> population_target_calls{0};
+
+cfstr population_scheduling_target(FA_Global*, VC_Global*, atom*, resid*,
+                                  gridpoint*, int, double* values) {
+    ++population_target_calls;
+    // Actual production RNG stream: a worker assignment changes this score.
+    auto& rng = flexaids_rng::lazy_thread_rng(0x0C0A11ULL);
+    cfstr result{};
+    result.com = values[0] + std::uniform_real_distribution<double>(0.0, 0.1)(rng);
+    return result;
+}
+}  // namespace
+
+TEST(GaEvaluation, DeterministicGenerationZeroUsesOneActualWorkerAndStableScores) {
+    GaScopedEnvironment deterministic("FLEXAID_DETERMINISTIC", "1");
+    GaScopedEnvironment cpu("FLEXAIDDS_FORCE_CPU", "1");
+    GaScopedEnvironment receipt("FLEXAIDDS_GEN0_RECEIPT", "observer-only-no-file-written");
+#ifdef _OPENMP
+    const int previous_threads = omp_get_max_threads();
+    const int previous_dynamic = omp_get_dynamic();
+    omp_set_dynamic(0);
+#endif
+    std::vector<std::pair<int32_t, double>> baseline;
+    for (int requested : {1, 4, 4}) {
+#ifdef _OPENMP
+        omp_set_num_threads(requested);
+#endif
+        auto fa = std::make_unique<FA_Global>();
+        auto gb = std::make_unique<GB_Global>();
+        VC_Global vc{};
+        atom atoms[2]{};
+        resid residues[2]{};
+        OptRes optres[1]{};
+        optmap map[1]{};
+        map[0].atm = 1;
+        fa->atm_cnt = fa->atm_cnt_real = fa->res_cnt = fa->num_optres = fa->ntypes = fa->npar = 1;
+        fa->optres = optres;
+        fa->map_par = map;
+        fa->temperature = 300.0;
+        atoms[1].optres = optres;
+        gb->num_chrom = 8;
+        gb->num_genes = 1;
+        gb->duplicates = 1;
+        std::strcpy(gb->fitness_model, "LINEAR");
+        genlim limits{};
+        limits.min = 0.0;
+        limits.max = 63.0;
+        limits.del = 1.0;
+        limits.nbin = 64.0;
+        limits.bin = 1.0 / 64.0;
+        ChromArray population(gb->num_chrom, 1);
+        int draw = 0;
+        std::function<int32_t()> dice = [&] { return ictogene(&limits, ++draw); };
+        std::unordered_map<size_t, int> duplicates;
+        char method[] = "RANDOM";
+        char file[] = "";
+        population_target_calls = 0;
+        flexaids_rng::set_master_seed(12345);
+        flexaids::GaPopulationObservation observation;
+        populate_chromosomes(fa.get(), gb.get(), &vc, population.data(), &limits,
+                             atoms, residues, nullptr, method, population_scheduling_target,
+                             file, 0, 0, 0, dice, duplicates);
+        EXPECT_EQ(population_target_calls.load(), gb->num_chrom);
+        ASSERT_EQ(observation.batches.size(), 1u);
+        const auto& batch = observation.batches[0];
+        EXPECT_EQ(batch.region, "populate_chromosomes");
+        ASSERT_EQ(batch.workers.size(), 1u);
+        EXPECT_EQ(batch.workers[0].team_size, 1);
+        EXPECT_EQ(batch.workers[0].evaluated_chromosomes, 8u);
+        std::vector<std::pair<int32_t, double>> scores;
+        for (const auto& c : population.chroms) {
+            EXPECT_EQ(c.status, 'n');
+            scores.emplace_back(c.genes[0].to_int32, c.evalue);
+        }
+        if (baseline.empty()) baseline = scores;
+        else EXPECT_EQ(scores, baseline) << "requested workers=" << requested;
+        for (auto& c : population.chroms) c.status = 'o';
+        flexaids_rng::set_master_seed(12345);
+        GAContext context;
+        calculate_fitness(fa.get(), gb.get(), &vc, population.data(), &limits,
+                          atoms, residues, nullptr, gb->fitness_model, gb->num_chrom,
+                          0, population_scheduling_target, context);
+        EXPECT_EQ(population_target_calls.load(), 2 * gb->num_chrom);
+        ASSERT_EQ(observation.batches.size(), 2u);
+        EXPECT_EQ(observation.batches[1].region, "calculate_fitness");
+        ASSERT_EQ(observation.batches[1].workers.size(), 1u);
+        EXPECT_EQ(observation.batches[1].workers[0].team_size, 1);
+        EXPECT_EQ(observation.batches[1].workers[0].evaluated_chromosomes, 8u);
+        for (int i = 0; i < gb->num_chrom; ++i)
+            EXPECT_DOUBLE_EQ(population[i].evalue, baseline[i].second);
+    }
+#ifdef _OPENMP
+    omp_set_num_threads(previous_threads);
+    omp_set_dynamic(previous_dynamic);
+#endif
 }
 
 TEST(SwapChrom, SwapsContents) {

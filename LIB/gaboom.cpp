@@ -1,6 +1,7 @@
 #include "gaboom.h"
 #include "GaPopulationReceipt.h"
 #include "GaEliteBuffer.h"
+#include "GaEvaluationPolicy.h"
 #include "Vcontacts.h"
 #include "fileio.h"
 #include "coarse_init.h"
@@ -3020,11 +3021,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	// (guarded by omp_in_parallel() in ic2cf.cpp) to avoid concurrent
 	// linked-list corruption; DEE pruning still operates in serial calls.
 	{
-#ifdef _OPENMP
-		const int n_thr = omp_get_max_threads();
-#else
-		const int n_thr = 1;
-#endif
+		const int n_thr = flexaids::ga_evaluation_threads();
 		const int natm  = FA->atm_cnt;
 		const int natmr = FA->atm_cnt_real;
 		const int nres  = FA->res_cnt;
@@ -3293,64 +3290,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		}
 		const int n_optres_atoms = (int)optres_atom_list.size();
 
-		// ── FLEXAID_DETERMINISTIC (P3 · CI A/B reproducibility) ──────────────
-		// When set, the parallel CF-eval loop runs on a single thread so its
-		// reduction order is serial-equivalent and bit-reproducible run-to-run
-		// (each chromosome writes only its own chrom[ii].cf, so 1-thread ==
-		// deterministic order). Enabled by the compile-time macro
-		// -DFLEXAID_DETERMINISTIC or by env FLEXAID_DETERMINISTIC=<non-empty,
-		// not "0">. See FLEXAID_FAST_DOCKING_PLAN P3/4.3.
-		//
-		// CORRECTED 2026-09-07. This comment previously described the default
-		// multi-thread path as accepting "the ~0.2% chromosome-level numeric
-		// drift documented in OPTIMIZATION_KNOWN_ISSUES.md". THAT CITATION WAS
-		// MISATTRIBUTED: the 0.2% figure in that document belongs to the
-		// FLEXAIDDS_PARALLEL_REPRODUCE (Opt1) section and is explicitly called
-		// flag-ON specific there; the same document measures flag-OFF at 4
-		// threads as REPRODUCIBLE. So the number never described this path.
-		//
-		// WHAT IS ACTUALLY MEASURED about the default (flag-unset) path, on the
-		// FLEXIBLE-sidechain arm, 1P2Y, gen=1000, FLEXAID_SEED=12345, with
-		// FLEXAIDDS_PARALLEL_REPRODUCE unset:
-		//   omp=3  per-restart pose-set jaccard 0.976 / 0.000 / 0.138
-		//          -> NOT reproducible; best CF ranged -254.86 to -230.86
-		//             across four runs of identical inputs
-		//   omp=1  jaccard 1.000 / 1.000 / 1.000 -> reproducible
-		// That is a different GA trajectory, not a rounding difference. Cause:
-		// the Voronoi non-convergence failsafe (Vcontacts.cpp) draws its
-		// coordinate perturbation from a THREAD_LOCAL RNG, and this loop is
-		// schedule(dynamic), so which thread -- and therefore which draw -- a
-		// chromosome receives is not reproducible. recalc==1 here means the hull
-		// is recomputed WITH the perturbed coordinate, so the returned CF depends
-		// on that draw. It is target-specific via the failsafe firing rate:
-		// 1P2Y fires 3575 times against a median of 42 across the 84-target set,
-		// a 15x outlier with no target in between.
-		//
-		// Setting this flag SUPPRESSES that divergence (eval_threads=1 removes the
-		// scheduling variable) but does not fix it, and pays for determinism by
-		// serialising evaluation. The cause is addressed by
-		// FLEXAIDDS_VCT_COORD_GUARD in Vcontacts.cpp, which keeps the threads.
-		static const bool deterministic_eval = [](){
-#ifdef FLEXAID_DETERMINISTIC
-			return true;
-#else
-			const char* env = std::getenv("FLEXAID_DETERMINISTIC");
-			return env && env[0] != '\0' && env[0] != '0';
-#endif
-		}();
-#ifdef _OPENMP
-		const int eval_threads = deterministic_eval ? 1 : n_thr;
-#else
-		// Scalar build: exactly one evaluation thread by construction.
-		// DECLARED IN BOTH BRANCHES DELIBERATELY. The selective-reset invariant
-		// checker below reads eval_threads unconditionally (std::min against
-		// tl_atoms.size()), so confining the declaration to the _OPENMP branch
-		// made an OpenMP-OFF build fail to COMPILE. The checker's runtime env
-		// gate cannot prevent that: a flag guards execution, not translation.
-		// The Eigen compile failure in test_cf_aggregator masked this on every
-		// CI lane. Found by external audit (CORE-1).
-		const int eval_threads = 1;
-#endif
+		// Generation zero and later evaluation use the same effective count.
+		// One worker removes scheduling-dependent jitter-stream assignment; it
+		// does not claim that coordinate guards alone make parallel GA deterministic.
+		const int eval_threads = n_thr;
 		const bool record_initial_workers = flexaids::ga_population_observation_active();
 		std::vector<flexaids::GaPopulationWorkerReceipt> initial_workers(
 		    record_initial_workers ? n_thr : 0);
@@ -4220,11 +4163,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 	// calculate evalue for each chromosome — thread-safe OpenMP parallel eval.
 	// Uses the same per-thread VC/atoms/FA workspace strategy as calculate_fitness.
 	{
-#ifdef _OPENMP
-		const int n_thr = omp_get_max_threads();
-#else
-		const int n_thr = 1;
-#endif
+		const int n_thr = flexaids::ga_evaluation_threads();
 		const int natm  = FA->atm_cnt;
 		const int natmr = FA->atm_cnt_real;
 		const int nres  = FA->res_cnt;
@@ -4332,8 +4271,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		const int p_n_dirty_res = static_cast<int>(p_dirty_res_idx.size());
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) default(none) \
-	shared(p_record_initial_workers, p_initial_workers) \
+#pragma omp parallel for schedule(dynamic) num_threads(n_thr) default(none) \
+	shared(p_record_initial_workers, p_initial_workers, n_thr) \
 	shared(chrom, FA, GB, VC, gene_lim, atoms, residue, cleftgrid, target, \
 	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt, \
 	       n_receptor_chains, p_use_selective, p_dirty_atm, p_dirty_res_idx, \
