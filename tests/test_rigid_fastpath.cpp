@@ -15,6 +15,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -414,7 +415,9 @@ protected:
     void free_vc_box()
     {
         if (vc_.box) {
-            std::free(vc_.box);
+            // vindex boxes belong to Vcontacts' TLS map and remain available
+            // to subsequent calls/workspaces on this thread.
+            if (!fa_.vindex) std::free(vc_.box);
             vc_.box = nullptr;
         }
     }
@@ -654,6 +657,148 @@ TEST_F(RigidFastpathBitIdentity, FastpathActiveOnStableSecondOnEval)
     if (off.fastpath_used >= 0) {
         EXPECT_EQ(off.fastpath_used, 0);
     }
+}
+
+// A region can be destroyed/recreated on the same thread, including reuse of
+// every heap address. Fresh Calc storage must never inherit the old region's
+// TLS rigid snapshot or its per-atom hoisted box assignments.
+TEST_F(RigidFastpathBitIdentity, FreshWorkspaceInvalidatesWarmThreadCache)
+{
+    for (int cache_boxes : {0, 1}) {
+        SCOPED_TRACE(cache_boxes);
+        fa_.vindex = cache_boxes;
+        for (bool fastpath : {false, true}) {
+            SCOPED_TRACE(fastpath);
+            clear_fastpath_env();
+            const PoseRecord gold = eval_vcontacts(0);
+            ASSERT_EQ(gold.vcontacts_rc, 0);
+
+            // Exercise both the full rigid fastpath and HOIST on its own.
+            if (fastpath) set_rigid_fastpath(true);
+            else ASSERT_EQ(setenv("FLEXAIDDS_HOIST_RECEPTOR_INDEX", "1", 1), 0);
+            (void)eval_vcontacts(0);
+            const PoseRecord warm = eval_vcontacts(0);
+            expect_pose_eq(gold, warm, "warm workspace vs baseline");
+            if (fastpath) ASSERT_EQ(warm.fastpath_used, 1);
+
+            // Deliberately preserve storage addresses and semantic identity;
+            // pointer/count comparisons alone cannot detect this reset.
+            std::fill(calc_.begin(), calc_.end(), atomsas{});
+            std::fill(calclist_.begin(), calclist_.end(), -1);
+            std::fill(ca_index_.begin(), ca_index_.end(), -1);
+            std::fill(seed_.begin(), seed_.end(), -1);
+            vc_.calc_count = 0;
+            vc_.numcarec = 0;
+            vc_.n_scorable = 0;
+            vc_.fastpath_used = 0;
+
+            const PoseRecord fresh = eval_vcontacts(0);
+            ASSERT_EQ(fresh.vcontacts_rc, 0);
+            ASSERT_EQ(fresh.calc_count, kNAtoms);
+            EXPECT_EQ(fresh.fastpath_used, 0);
+            expect_pose_eq(gold, fresh, "fresh workspace vs baseline");
+            for (int i = 0; i < kNAtoms; ++i) {
+                EXPECT_EQ(calc_[static_cast<size_t>(i)].atom,
+                          &atoms_[static_cast<size_t>(i)]) << "atom " << i;
+                EXPECT_EQ(calc_[static_cast<size_t>(i)].residue,
+                          &residues_[i < kNRec ? 1 : 2]) << "atom " << i;
+            }
+
+            // Invalidating a fresh workspace must not disable subsequent reuse.
+            const PoseRecord second = eval_vcontacts(0);
+            expect_pose_eq(gold, second, "rewarmed workspace vs baseline");
+            if (fastpath) EXPECT_EQ(second.fastpath_used, 1);
+        }
+    }
+}
+
+// Both workspaces already have valid Calc arrays. Switching back to A must
+// discard B's TLS rigid snapshot even though A's calc_count remains nonzero.
+TEST_F(RigidFastpathBitIdentity, SwitchingBetweenWarmWorkspacesRebuildsSnapshot)
+{
+    for (int cache_boxes : {0, 1}) {
+        SCOPED_TRACE(cache_boxes);
+        fa_.vindex = cache_boxes;
+        clear_fastpath_env();
+        const PoseRecord gold_a = eval_vcontacts(0);
+        ASSERT_EQ(gold_a.vcontacts_rc, 0);
+
+        std::vector<atom> other_atoms = atoms_;
+        for (int i = 0; i < kNRec; ++i) other_atoms[i].coor[0] += CELLSIZE;
+        std::vector<atomsas> other_calc(kNAtoms);
+        std::vector<int> other_calclist(kNAtoms, -1), other_ca_index(kNAtoms, -1);
+        std::vector<int> other_seed(3 * kNAtoms, -1), other_scorable(kNAtoms);
+        VC_Global other_vc = vc_;
+        other_vc.Calc = other_calc.data();
+        other_vc.Calclist = other_calclist.data();
+        other_vc.ca_index = other_ca_index.data();
+        other_vc.seed = other_seed.data();
+        other_vc.scorable_list = other_scorable.data();
+        other_vc.calc_count = 0;
+        other_vc.numcarec = 0;
+        other_vc.n_scorable = 0;
+        other_vc.fastpath_used = 0;
+        other_vc.box = nullptr;
+        // Sequential calls can share transient hull/contact scratch. The two
+        // workspaces retain independent atoms, Calc, Calclist, seeds and counts.
+        auto switch_workspace = [&] {
+            atoms_.swap(other_atoms);
+            calc_.swap(other_calc);
+            calclist_.swap(other_calclist);
+            ca_index_.swap(other_ca_index);
+            seed_.swap(other_seed);
+            scorable_buf_.swap(other_scorable);
+            std::swap(vc_, other_vc);
+        };
+
+        switch_workspace();
+        const PoseRecord gold_b = eval_vcontacts(0);
+        ASSERT_EQ(gold_b.vcontacts_rc, 0);
+        ASSERT_NE(gold_a.boxnum, gold_b.boxnum)
+            << "rigid box assignments must distinguish these workspaces";
+        switch_workspace();
+
+        set_rigid_fastpath(true);
+        (void)eval_vcontacts(0);
+        const PoseRecord warm_a = eval_vcontacts(0);
+        ASSERT_EQ(warm_a.fastpath_used, 1);
+        expect_pose_eq(gold_a, warm_a, "warm A vs baseline A");
+
+        switch_workspace();
+        ASSERT_GT(vc_.calc_count, 0);
+        const PoseRecord switched_b = eval_vcontacts(0);
+        EXPECT_EQ(switched_b.fastpath_used, 0);
+        expect_pose_eq(gold_b, switched_b, "A->B switch vs baseline B");
+        const PoseRecord warm_b = eval_vcontacts(0);
+        ASSERT_EQ(warm_b.fastpath_used, 1);
+
+        switch_workspace();
+        ASSERT_GT(vc_.calc_count, 0);
+        const PoseRecord switched_a = eval_vcontacts(0);
+        EXPECT_EQ(switched_a.fastpath_used, 0);
+        expect_pose_eq(gold_a, switched_a, "B->A switch vs baseline A");
+        EXPECT_EQ(eval_vcontacts(0).fastpath_used, 1);
+    }
+}
+
+// Run cached indexing on a disposable worker: its cache must survive scoring
+// reuse, then its TLS destructor owns cleanup at join. ASan/LSan CI checks the
+// actual allocation lifetime; the fixture never manually frees cached boxes.
+TEST_F(RigidFastpathBitIdentity, CachedBoxesSurviveWorkerReuseAndThreadExit)
+{
+    fa_.vindex = 1;
+    set_rigid_fastpath(true);
+    PoseRecord first, second;
+    std::thread worker([&] {
+        first = eval_vcontacts(0);
+        second = eval_vcontacts(1);
+    });
+    worker.join();
+    EXPECT_EQ(first.vcontacts_rc, 0);
+    EXPECT_EQ(second.vcontacts_rc, 0);
+    EXPECT_EQ(first.fastpath_used, 0);
+    EXPECT_EQ(second.fastpath_used, 1);
+    EXPECT_EQ(vc_.box, nullptr);
 }
 
 // Default-OFF: never leave the flag set (TearDown also unsets).

@@ -54,6 +54,22 @@ struct FastpathCache {
 	atomindex* box_ptr = nullptr;
 };
 
+// Cached vindex boxes belong to the worker thread, not a transient VC_Global.
+// Release allocations when that thread exits; destroying a map of raw pointers
+// alone would leak every box ever indexed by the worker.
+struct IndexedBoxCache {
+    std::map<std::string, atomindex*> indexed;
+    atomindex* previous_box = nullptr;
+    atomsas* owner_calc = nullptr;
+    atom* owner_atoms = nullptr;
+    resid* owner_residues = nullptr;
+
+    ~IndexedBoxCache()
+    {
+        for (const auto& entry : indexed) std::free(entry.second);
+    }
+};
+
 // The non-convergence failsafe perturbs the working coordinate and retries the
 // hull. These switches remain default OFF; parse them with the same spellings
 // as the other protocol gates. Read once per hull so config overlays take effect
@@ -433,8 +449,25 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 {
 	// Each OpenMP worker owns its indexing cache. Sharing these mutable objects
 	// races map insertion, box clearing, and prev_box updates across poses.
-	static thread_local std::map<std::string, atomindex*> indexed;
-	static thread_local atomindex* prev_box = NULL;
+	static thread_local IndexedBoxCache cache;
+	auto& indexed = cache.indexed;
+	auto& prev_box = cache.previous_box;
+	// TLS outlives individual scoring workspaces. Invalidate on A->B->A
+	// workspace switches as well as a newly constructed workspace, whose heap
+	// addresses can match its predecessor. A zero calc_count marks first use.
+	// The box allocations themselves remain owned by the thread cache.
+	const bool owner_changed = cache.owner_calc != VC->Calc ||
+	                           cache.owner_atoms != atoms ||
+	                           cache.owner_residues != residue;
+	if (VC->calc_count == 0 || owner_changed) {
+		g_fp.valid = false;
+		g_scorable.clear();
+		g_prev_sig.clear();
+		prev_box = nullptr;
+	}
+	cache.owner_calc = VC->Calc;
+	cache.owner_atoms = atoms;
+	cache.owner_residues = residue;
 	
 	//VC->planedef = 'X';  // extended radical plane (default)
 	//VC->planedef = 'R';  // radical plane

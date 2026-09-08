@@ -3165,14 +3165,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			// fields: scorable_list, n_scorable, scorable_cap, fastpath_used).
 			std::vector<std::vector<int>>         tl_scorable;
 		};
-		thread_local ParEvalWS ws;  // resident across generations on THIS thread.
-		                       // Must not be process-wide static: --parallel-dock
-		                       // runs GA() under an outer OpenMP parallel-for
-		                       // (ParallelDock.cpp). A shared static races on
-		                       // rebuild and tl_* buffers. Inner eval still
-		                       // shares this thread's tl_* via references
-		                       // captured before the inner omp for, so the
-		                       // serial claim path is unchanged.
+		thread_local ParEvalWS ws;  // Resident across generations on this caller.
+		// Inner evaluators share only this caller's buffers. ParallelDock now
+		// serializes region GAs; thread_local alone never established complete
+		// region ownership of inline scoring buffers or global RNG epochs.
 
 		const bool ws_valid =
 			ws.n_thr == n_thr && ws.natm == natm && ws.nres == nres &&
@@ -3257,8 +3253,12 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			// Keep optres non-cf fields in sync with the reference (cf fields are
 			// cleared per-chromosome in the eval loop below).
 			std::copy(FA->optres, FA->optres + nopt, tl_optres[t].begin());
+			// A new Calc array has no index; a resident one keeps its own count,
+			// never the parent's. Vcontacts uses zero to invalidate its TLS cache.
+			const int retained_calc_count = ws_valid ? tl_vc[t].calc_count : 0;
 			// Refresh the cheap live VC snapshot, then redirect VC scratch.
 			tl_vc[t] = *VC;
+			tl_vc[t].calc_count = retained_calc_count;
 			tl_vc[t].Calc      = tl_calc[t].data();
 			tl_vc[t].Calclist  = tl_calclist[t].data();
 			tl_vc[t].ca_index  = tl_caidx[t].data();
@@ -4205,6 +4205,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			p_fa[t].contributions = p_contrib[t].data();
 			p_fa[t].optres        = p_optres[t].data();
 			p_vc[t].Calc      = p_calc[t].data();
+			p_vc[t].calc_count = 0;  // fresh Calc storage, independent of parent index
 			p_vc[t].Calclist  = p_calclist[t].data();
 			p_vc[t].ca_index  = p_caidx[t].data();
 			p_vc[t].scorable_list = p_scorable[t].data();

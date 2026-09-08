@@ -1,6 +1,7 @@
 // ParallelDock.cpp — Orchestrator for parallel grid-decomposed docking
 #include "ParallelDock.h"
 #include "fileio.h"
+#include "SerialRegionExecution.h"
 
 #include <cstdio>
 #include <cstring>
@@ -54,25 +55,12 @@ void ParallelDockManager::decompose() {
 }
 
 // ============================================================================
-// Phase 2: Run parallel GA instances
+// Phase 2: Run region GA instances (serial within each process)
 // ============================================================================
 
-ParallelDockManager::RegionWorkspace ParallelDockManager::create_workspace() const {
-    RegionWorkspace ws;
-
-    // Shallow copy globals
-    ws.fa = *FA_;
-    ws.gb = *GB_;
-    ws.vc = *VC_;
-
-    // Deep copy mutable arrays. atom[] is 1-based: live atoms occupy
-    // atoms[1]..atoms[atm_cnt] (gaboom.cpp ParEvalWS: atoms + natm + 1).
-    // residue[] is the same layout (res_cnt+1 already). Using atm_cnt as a
-    // half-open C++ end drops atoms[atm_cnt] — the last 1-based atom.
-    ws.atoms_copy.assign(atoms_, atoms_ + flexaid_one_based_copy_n(FA_->atm_cnt));
-    ws.residue_copy.assign(residue_, residue_ + FA_->res_cnt + 1);
-
-    return ws;
+std::unique_ptr<ParallelDockManager::RegionWorkspace>
+ParallelDockManager::create_workspace() const {
+    return std::make_unique<RegionWorkspace>(*FA_, *GB_, *VC_, atoms_, residue_);
 }
 
 void ParallelDockManager::run(
@@ -86,51 +74,35 @@ void ParallelDockManager::run(
     int n_regions = (int)regions_.size();
     results_.resize(n_regions);
 
-    // Seed generator for per-region RNG
-    std::mt19937 seed_gen(42);
+    // Resolve the parent seed once, before a region GA advances the process
+    // master-seed epoch. Region assignment must not depend on scheduling/rank.
+    std::uint64_t parent_seed = 0;
+    if (!flexaids::resolve_region_parent_seed(GB_->seed, parent_seed))
+        throw FlexAIDException("ParallelDock requires GB->seed or FLEXAID_SEED");
+
+    // Scoring scratch is owned per region, but nested pointers and RNG epochs
+    // still prevent safe simultaneous GA calls within one process. Keep the
+    // spatial decomposition and inner GA evaluator parallelism; serialize only
+    // region execution. The shared dispatcher also guards concurrent managers.
+    printf("ParallelDock: serial regions per process; inner GA evaluators retain OpenMP\n");
+    auto execute_region = [&](int r) {
+        const int seed = flexaids::region_seed(parent_seed, r);
+        results_[r] = run_region(regions_[r], static_cast<unsigned int>(seed), target);
+        SharedPose sp;
+        sp.energy = results_[r].best_energy;
+        std::memcpy(sp.grid_coor, results_[r].best_coor, 3 * sizeof(float));
+        sp.source_region = r;
+        pool_.publish(sp);
+    };
 
 #ifdef FLEXAIDS_USE_MPI
-    // MPI distributed mode: each rank processes a subset of regions
-    int rank = MPITransport::rank();
-    int world = MPITransport::world_size();
-
-    // Round-robin assignment
-    for (int r = rank; r < n_regions; r += world) {
-        unsigned int seed = seed_gen() + r;
-        results_[r] = run_region(regions_[r], seed, target);
-
-        // Publish best to shared pool
-        SharedPose sp;
-        sp.energy = results_[r].best_energy;
-        std::memcpy(sp.grid_coor, results_[r].best_coor, 3 * sizeof(float));
-        sp.source_region = r;
-        pool_.publish(sp);
-    }
-
-    // Gather all results to rank 0
-    // (simplified: each rank sends its results)
+    const int rank = MPITransport::rank();
+    const int world = MPITransport::world_size();
+    flexaids::for_each_serial_region(rank, n_regions, world, execute_region);
     auto all_results = MPITransport::gather_results(results_, n_regions);
     if (rank == 0) results_ = std::move(all_results);
-
 #else
-    // Thread-based mode: OpenMP parallel over regions
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(dynamic, 1)
-    #endif
-    for (int r = 0; r < n_regions; r++) {
-        unsigned int seed;
-        #pragma omp critical
-        { seed = seed_gen() + r; }
-
-        results_[r] = run_region(regions_[r], seed, target);
-
-        // Publish best to shared pool (thread-safe)
-        SharedPose sp;
-        sp.energy = results_[r].best_energy;
-        std::memcpy(sp.grid_coor, results_[r].best_coor, 3 * sizeof(float));
-        sp.source_region = r;
-        pool_.publish(sp);
-    }
+    flexaids::for_each_serial_region(0, n_regions, 1, execute_region);
 #endif
 
     printf("ParallelDock: completed %d region GA runs\n", n_regions);
@@ -173,8 +145,10 @@ RegionResult ParallelDockManager::run_region(
         return result;
     }
 
-    // Create per-region workspace (deep copy of mutable state)
-    RegionWorkspace ws = create_workspace();
+    // Own mutable scoring buffers; all remaining borrowed state is used serially.
+    auto workspace = create_workspace();
+    RegionWorkspace& ws = *workspace;
+    ws.gb.seed = static_cast<int>(rng_seed);
 
     // Override grid parameters for this region
     ws.fa.num_grd = sub_num_grd;
@@ -352,6 +326,7 @@ bool ParallelDockManager::get_best_chromosome(chromosome& out_chrom,
     out_chrom.free_energy     = meta.free_energy;
     std::memcpy(out_chrom.ring_phases, meta.ring_phases, sizeof(out_chrom.ring_phases));
     std::memcpy(out_chrom.ring_six,    meta.ring_six,    sizeof(out_chrom.ring_six));
+    std::memcpy(out_chrom.ring_five,   meta.ring_five,   sizeof(out_chrom.ring_five));
 
     // Copy genes[0..num_genes-1]
     for (int g = 0; g < num_genes; g++) {

@@ -6,10 +6,17 @@
 #include <set>
 #include <numeric>
 #include <latch>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 #include <barrier>
 #include "../LIB/AtomCopyExtent.h"
+#include "../LIB/SerialRegionExecution.h"
+#include "../LIB/RegionScoringWorkspace.h"
 #include "../LIB/GridDecomposer.h"
 #include "../LIB/SharedPosePool.h"
 #include "../LIB/statmech.h"
@@ -377,45 +384,145 @@ TEST(ParallelDockWorkspace, AtomCopyIncludesLastOneBasedAtom) {
 }
 
 // ============================================================================
-// thread_local workspace isolation (gaboom ParEvalWS under --parallel-dock)
+// Production region scheduling and scratch ownership
 // ============================================================================
-// Not a race test: two threads write distinct sentinels and publish addresses
-// after join. A process-wide static would share one object; thread_local must
-// not. Production: thread_local ParEvalWS in gaboom.cpp calculate_fitness.
-//
-// Both threads must be ALIVE when they publish &ws. Without a rendezvous t0
-// can run to completion before t1 is scheduled, and the runtime may hand t1
-// the thread-local block t0 just released: p0 == p1 with no sharing at all.
-// Observed on macOS under `ctest -j4` (2 of 4 runs); never in isolation.
 
-TEST(ParEvalWSIsolation, ThreadLocalWorkspacesDoNotShare) {
-    struct WS { int sentinel = 0; };
-    thread_local WS ws;
+namespace {
+void set_region_test_seed_env(const char* value) {
+#ifdef _WIN32
+    _putenv_s("FLEXAID_SEED", value ? value : "");
+#else
+    if (value) setenv("FLEXAID_SEED", value, 1);
+    else unsetenv("FLEXAID_SEED");
+#endif
+}
 
-    WS* p0 = nullptr;
-    WS* p1 = nullptr;
-    int v0 = -1;
-    int v1 = -1;
-    std::latch both_published(2);
+struct RegionSeedStateGuard {
+    const bool had_env = std::getenv("FLEXAID_SEED") != nullptr;
+    const std::string env = had_env ? std::getenv("FLEXAID_SEED") : "";
+    const bool had_master = flexaids_rng::has_master_seed();
+    const std::uint64_t master = flexaids_rng::master_seed();
 
-    std::thread t0([&] {
-        ws.sentinel = 7;
-        p0 = &ws;
-        v0 = ws.sentinel;
-        both_published.arrive_and_wait();
+    ~RegionSeedStateGuard() {
+        set_region_test_seed_env(had_env ? env.c_str() : nullptr);
+        flexaids_rng::set_master_seed(master);
+        flexaids_rng::g_has_master_seed.store(had_master);
+    }
+};
+}  // namespace
+
+TEST(SerialRegionExecution, ExplicitParentSeedSurvivesPriorRegionEpochs) {
+    RegionSeedStateGuard restore;
+    set_region_test_seed_env("12345");
+    std::uint64_t first = 0, repeated = 0;
+    flexaids_rng::set_master_seed(98765);
+    EXPECT_TRUE(flexaids::resolve_region_parent_seed(0, first));
+    EXPECT_EQ(first, 12345u);
+
+    // Exercise the same mutation each actual region GA performs.
+    flexaids_rng::set_master_seed(flexaids::region_seed(first, 3));
+    EXPECT_TRUE(flexaids::resolve_region_parent_seed(0, repeated));
+    EXPECT_EQ(repeated, first);
+    EXPECT_EQ(flexaids::region_seed(repeated, 0), flexaids::region_seed(first, 0));
+
+    // A configured GB seed still wins; a master seed is only a fallback.
+    EXPECT_TRUE(flexaids::resolve_region_parent_seed(444, repeated));
+    EXPECT_EQ(repeated, 444u);
+    set_region_test_seed_env(nullptr);
+    flexaids_rng::set_master_seed(777);
+    EXPECT_TRUE(flexaids::resolve_region_parent_seed(0, repeated));
+    EXPECT_EQ(repeated, 777u);
+}
+
+TEST(SerialRegionExecution, ConcurrentDispatchersCannotOverlapRegionCallbacks) {
+    // Same dispatcher as ParallelDockManager::run; no stand-in thread_local.
+    std::atomic<int> active{0}, peak{0}, completed{0};
+    std::latch ready(2);
+    auto dispatch = [&] {
+        ready.arrive_and_wait();
+        flexaids::for_each_serial_region(0, 3, 1, [&](int region) {
+            const int now = ++active;
+            int prior = peak.load();
+            while (prior < now && !peak.compare_exchange_weak(prior, now)) {}
+            flexaids_rng::set_master_seed(flexaids::region_seed(12345, region));
+            const auto epoch = flexaids_rng::g_seed_epoch.load();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            EXPECT_EQ(flexaids_rng::g_seed_epoch.load(), epoch);
+            --active;
+            ++completed;
+        });
+    };
+    std::thread first(dispatch), second(dispatch);
+    first.join();
+    second.join();
+    EXPECT_EQ(completed.load(), 6);
+    EXPECT_EQ(peak.load(), 1);
+}
+
+TEST(SerialRegionExecution, RegionSeedsFollowGlobalIndexAcrossRankAssignments) {
+    std::vector<int> local(8), distributed(8);
+    flexaids::for_each_serial_region(0, 8, 1, [&](int region) {
+        local[region] = flexaids::region_seed(12345, region);
+        EXPECT_GT(local[region], 0);
     });
-    std::thread t1([&] {
-        ws.sentinel = 9;
-        p1 = &ws;
-        v1 = ws.sentinel;
-        both_published.arrive_and_wait();
-    });
-    t0.join();
-    t1.join();
+    for (int rank = 0; rank < 3; ++rank)
+        flexaids::for_each_serial_region(rank, 8, 3, [&](int region) {
+            distributed[region] = flexaids::region_seed(12345, region);
+        });
+    EXPECT_EQ(distributed, local);
+    EXPECT_EQ(std::set<int>(local.begin(), local.end()).size(), local.size());
+    EXPECT_NE(flexaids::region_seed(98765, 0), local[0]);
+}
 
-    ASSERT_NE(p0, nullptr);
-    ASSERT_NE(p1, nullptr);
-    EXPECT_NE(p0, p1);
-    EXPECT_EQ(v0, 7);
-    EXPECT_EQ(v1, 9);
+TEST(RegionScoringWorkspace, OwnsScratchRebindsOptresAndSupportsContactReallocation) {
+    auto fa = std::make_unique<FA_Global>();
+    GB_Global gb{};
+    VC_Global vc{};
+    atom atoms[3]{};
+    resid residues[2]{};
+    OptRes optres[1]{};
+    fa->atm_cnt = fa->atm_cnt_real = 2;
+    fa->res_cnt = fa->num_optres = fa->ntypes = 1;
+    fa->optres = optres;
+    atoms[2].optres = &optres[0];
+    atoms[2].coor[0] = 17.0f;
+    optres[0].cf.com = 42.0;
+    ca_struct parent_contact{};
+    parent_contact.area = 8.5;
+    vc.ca_rec = &parent_contact; // deliberately non-heap: must never free/realloc parent
+    vc.ca_recsize = 100;
+    auto first = std::make_unique<flexaids::RegionScoringWorkspace>(*fa, gb, vc, atoms, residues);
+    auto second = std::make_unique<flexaids::RegionScoringWorkspace>(*fa, gb, vc, atoms, residues);
+    EXPECT_EQ(first->atoms_copy[2].optres, &first->optres[0]);
+    EXPECT_EQ(second->atoms_copy[2].optres, &second->optres[0]);
+    EXPECT_EQ(first->atoms_copy[1].optres, nullptr);
+    EXPECT_NE(first->fa.optres, fa->optres);
+    EXPECT_NE(first->fa.contacts, second->fa.contacts);
+    EXPECT_NE(first->fa.contributions, second->fa.contributions);
+    EXPECT_NE(first->vc.Calc, second->vc.Calc);
+    EXPECT_NE(first->vc.Calclist, second->vc.Calclist);
+    EXPECT_NE(first->vc.ca_rec, vc.ca_rec);
+    EXPECT_NE(first->vc.ca_index, second->vc.ca_index);
+    EXPECT_NE(first->vc.seed, second->vc.seed);
+    EXPECT_NE(first->vc.contlist, second->vc.contlist);
+    EXPECT_NE(first->vc.ptorder, second->vc.ptorder);
+    EXPECT_NE(first->vc.centerpt, second->vc.centerpt);
+    EXPECT_NE(first->vc.poly, second->vc.poly);
+    EXPECT_NE(first->vc.cont, second->vc.cont);
+    EXPECT_NE(first->vc.vedge, second->vc.vedge);
+    EXPECT_NE(first->vc.scorable_list, second->vc.scorable_list);
+    first->atoms_copy[2].optres->cf.com = -5.0;
+    first->vc.Calc[0].atom = &first->atoms_copy[2];
+    EXPECT_DOUBLE_EQ(optres[0].cf.com, 42.0);
+    EXPECT_DOUBLE_EQ(second->optres[0].cf.com, 42.0);
+    // save_areas() is permitted to realloc this exact allocation. Using a
+    // vector's data() here is an allocator mismatch, even without concurrency.
+    auto* grown = static_cast<ca_struct*>(std::realloc(first->vc.ca_rec, 10100 * sizeof(ca_struct)));
+    ASSERT_NE(grown, nullptr);
+    first->vc.ca_rec = grown;
+    first->vc.ca_recsize = 10100;
+    first.reset();
+    EXPECT_FLOAT_EQ(parent_contact.area, 8.5f);
+    EXPECT_EQ(atoms[2].optres, optres);
+    EXPECT_FLOAT_EQ(atoms[2].coor[0], 17.0f);
 }

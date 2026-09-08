@@ -2722,6 +2722,7 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_add_unit_test(test_parallel_dock
         SOURCES
             tests/test_parallel_dock.cpp
+            LIB/GAContext.cpp
             LIB/GridDecomposer.cpp
             LIB/SharedPosePool.cpp
             LIB/statmech.cpp
