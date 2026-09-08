@@ -63,8 +63,8 @@
 #include <vector>
 #include <filesystem>
 #include <system_error>
-#include <unistd.h>
 #ifndef _WIN32
+#include <unistd.h>
 #include <sys/wait.h>
 #endif
 
