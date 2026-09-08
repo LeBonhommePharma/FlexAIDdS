@@ -13,9 +13,26 @@
 #include <utility>
 #include <stdexcept>
 #include "tENCoM/tencm.h"
+#include "VibEntropy.h"   // canonical declaration; see the ODR note below
 
 namespace vibentropy {
-double compute_vib_entropy_collapse(const std::vector<std::vector<double>>&) { return 0.0; }
+// SIGNATURE MUST MATCH VibEntropy.h EXACTLY. This stub returned `double` while
+// the canonical declaration at VibEntropy.h:83 returns VibEntropyResult, and the
+// production caller (ic2cf.cpp:50) reads `.H_pop` off it. Because the two live in
+// separate translation units the compiler could not see the conflict: it is a
+// silent ODR violation that links, and would return garbage the moment this path
+// became reachable in the fixture. The canonical header is now included so any
+// future drift is a COMPILE error instead.
+//
+// Throws rather than returning a zeroed result: this fixture deliberately does
+// not exercise the vibrational-entropy path (its tENCoM model builder is a
+// no-op), so reaching this is a test-construction error that should be loud, not
+// a silently plausible 0.0. Found by external audit.
+VibEntropyResult compute_vib_entropy_collapse(const std::vector<std::vector<double>>&) {
+    throw std::logic_error(
+        "cf_aggregator fixture: compute_vib_entropy_collapse is not exercised by "
+        "these tests; if you reached it, wire a real model or extend the stub");
+}
 }
 namespace sugar_pucker {
 enum class SugarType;
