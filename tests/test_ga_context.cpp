@@ -268,6 +268,9 @@ TEST(RngSeedTest, VoronoiKeyedJitterIndependentOfRngStreamFix) {
     }
     {
         ScopedEnv off("FLEXAIDDS_VORONOI_KEYED_JITTER", "off");
+        // Flags are cached for one seed epoch, including environment changes.
+        EXPECT_TRUE(flexaids_rng::voronoi_keyed_jitter_enabled());
+        flexaids_rng::set_master_seed(12345);
         EXPECT_FALSE(flexaids_rng::voronoi_keyed_jitter_enabled());
     }
 }
