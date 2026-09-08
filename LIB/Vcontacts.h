@@ -204,6 +204,26 @@ std::string  generate_dim_sig(float* global_min, int dim);
 void        vc_publish_scorable(VC_Global* VC);
 const int*  vc_scorable_indices(int* n);
 bool        vc_fastpath_active();
+
+#ifdef FLEXAIDS_VCONTACTS_TEST_HOOKS
+// Test-only fault injection and receipts for the production hull retry path.
+// This interface and its instrumentation do not exist in engine builds.
+namespace flexaids_vct_test {
+struct Trace {
+    int force_failsafe_passes = 0;
+    int hull_passes = 0;
+    int failsafe_entries = 0;
+    int success_exits = 0;
+    int error_exits = 0;
+    bool local_mode = false;
+    bool coord_guard_requested = false;
+    bool diagnostics_enabled = false;
+    float working_after_perturb[3] = {};
+    float input_after_perturb[3] = {};
+};
+Trace& trace();
+}
+#endif
 // ========================================================================
 
 /*

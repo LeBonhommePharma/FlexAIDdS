@@ -1910,6 +1910,17 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_configure_msvc_test(test_vcontacts)
     add_test(NAME VcontactsTests COMMAND test_vcontacts)
 
+    flexaids_add_unit_test(test_vcontacts_failsafe
+        SOURCES
+            tests/test_vcontacts_failsafe.cpp
+            tests/stubs.cpp
+            LIB/Vcontacts.cpp
+            LIB/geometry.cpp
+        DEFINES FLEXAIDS_VCONTACTS_TEST_HOOKS
+        LINK_OPENMP
+        TEST_NAME VcontactsFailsafeTests
+    )
+
     flexaids_add_unit_test(test_get_yval_lut
         SOURCES
             tests/test_get_yval_lut.cpp
