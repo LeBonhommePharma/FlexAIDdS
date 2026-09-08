@@ -1613,14 +1613,27 @@ flexaids_add_unit_test(test_protocol_config
             tests/test_cf_aggregator.cpp
             tests/cf_aggregator_stubs.cpp
             LIB/ic2cf.cpp
-            LIB/rot_gene_index.cpp   # ic2cf.cpp calls it since 94d2d0ba
-            # be8f725c routed ic2cf.cpp's ligand-entropy path through
-            # tENCoM::vibrational_eigenvalues (tencm.cpp). That commit was
-            # verified only via the ligand_tencom_pose CLI, never by building
-            # this target, so CI went red on an unresolved symbol. tencm.cpp has
-            # no external LIB dependencies of its own (measured), so it links
-            # cleanly here. Found by external audit.
-            LIB/tENCoM/tencm.cpp
+            # THIS TARGET IS DELIBERATELY HERMETIC: ic2cf.cpp's collaborators are
+            # supplied by tests/cf_aggregator_stubs.cpp, NOT by linking production
+            # translation units. Do not add LIB/*.cpp here to resolve a symbol --
+            # add or fix a stub instead. Two rounds of exactly that mistake:
+            #
+            #   1. LIB/rot_gene_index.cpp and LIB/tENCoM/tencm.cpp were both added
+            #      to resolve symbols the stubs ALREADY define (rot_gene_index,
+            #      rot_gene_guard_hits, TorsionalENM::build_from_ligand,
+            #      TorsionalENM::vibrational_eigenvalues -- stubs lines 26/27/83/91).
+            #      That is 4 duplicate symbols at link.
+            #   2. The duplicates were INVISIBLE because tencm.cpp includes
+            #      <Eigen/Dense> and this target has no Eigen include path, so the
+            #      build died at COMPILE time first ("Eigen/Dense: file not found",
+            #      Linux GCC/Clang/MPI/ASan and macOS) and never reached the linker.
+            #      Adding Eigen here "fixed" the compile and exposed the link error
+            #      underneath -- a repair that traded one red CI for another.
+            #
+            # Removing both sources restores the hermetic design: no Eigen, no
+            # OpenMP, no heavy deps, and the stubs remain the single definition of
+            # every collaborator. If ic2cf.cpp acquires a NEW dependency, stub it.
+            # Found by external audit (CI-1).
         TEST_NAME CFAggregatorTests
     )
 
