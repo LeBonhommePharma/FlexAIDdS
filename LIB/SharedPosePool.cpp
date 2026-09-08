@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <string>
 
 SharedPosePool::SharedPosePool(int pool_size)
     : capacity_(pool_size), used_(0)
