@@ -133,6 +133,7 @@ set(FLEXAID_CORE_SOURCES
     NATURaL/RibosomeElongation.cpp
     NATURaL/TransloconInsertion.cpp
     NATURaL/NucleationDetector.cpp
+    NATURaL/PoseHelixThermoRewrite.cpp
     NATURaL/NascentChainScheduler.cpp
     NATURaL/FibrilGrowthOracle.cpp
     NATURaL/DualAssemblyRunner.cpp

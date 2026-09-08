@@ -1,23 +1,41 @@
-// NATURaLDualAssembly.h — Native Assembly of co-Transcriptionally/co-Translationally
-//                          Unified Receptor–Ligand (NATURaL) module
+// NATURaLDualAssembly.h — DualAssembly co-transcriptional / co-translational engine
+//
+// Two acronyms (do not conflate):
+//   2014 seminar NATURAL = "Native Assembly of Transcriptionally-Unified RNA
+//     And Ligand" (LP Morency, master’s seminar R2, 2014-07-25). Perl
+//     implementation of Zhao, Zhang, Chen, J. Chem. Phys. 135, 245101 (2011)
+//     doi:10.1063/1.3671644 (RNA cotranscriptional folding kinetics) with
+//     clustering, population inheritance, slower transcription at nucleotide
+//     repeats, and docking poses that rewrite helix ΔH/ΔS
+//     (see PoseHelixThermoRewrite.h).
+//   2026 C++ header NATURaL = "Native Assembly of co-Transcriptionally /
+//     co-Translationally Unified Receptor–Ligand" (this DualAssembly module).
+//
+// Distinct Zhao 2011 papers:
+//   • Zhao, Zhang, Chen, J. Chem. Phys. 135, 245101 (2011) — RNA
+//     cotranscriptional folding kinetics (2014 NATURAL lineage).
+//   • Zhao et al., J. Phys. Chem. B 115, 3987 (2011) — ribosome master
+//     equation / protein cotranslation ONLY (see RibosomeElongation.h).
 //
 // Auto-detects when the ligand is nucleotide/sugar-containing or the receptor
-// is a nucleic acid chain, then activates co-translational DualAssembly mode.
+// is a nucleic acid chain, then activates DualAssembly mode.
 //
-// In DualAssembly, the receptor chain grows residue-by-residue at ribosome speed
-// (Zhao 2011 master equation; see RibosomeElongation.h) while the ligand is
-// present from the start, computing incremental CF and Shannon entropy at each
-// growth step to capture co-translational stereochemical selection.
+// In DualAssembly, the receptor chain grows residue-by-residue. Protein tracks
+// use ribosome speed from the JPCB 2011 master equation (RibosomeElongation.h);
+// RNA tracks reuse the same ODE with RNAP rates. Incremental CF and Shannon
+// entropy are computed at each growth step. That CF+Shannon instantaneous ΔG
+// is not the 2014 seminar ligand coupling (pose→helix ΔH/ΔS rewrite).
 //
 // Also supports transmembrane (TM) domain insertion via the Sec translocon
 // (see TransloconInsertion model below).
 //
 // Fully integrated with:
-//   – RibosomeElongation (Zhao 2011 master equation, codon-dependent rates)
+//   – RibosomeElongation (Zhao et al. 2011 JPCB master equation, codon rates)
 //   – ShannonThermoStack (entropy per growth step, time-weighted)
 //   – SugarPuckerGene (activated for nucleotide ligands)
 //   – AlphaShape Contact Function (incremental ΔSASA)
 //   – TransloconInsertion (TM helix lateral gating, von Heijne 2007)
+//   – PoseHelixThermoRewrite (experimental, default OFF; RNA DualAssembly sidecar)
 #pragma once
 
 #include "../flexaid.h"
@@ -26,6 +44,7 @@
 #include "RibosomeElongation.h"
 #include "TransloconInsertion.h"
 #include "NucleationDetector.h"
+#include "PoseHelixThermoRewrite.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -51,7 +70,7 @@ struct NATURaLConfig {
     double           temperature_K           = 298.15;
     int              max_growth_steps        = -1; // -1 = full sequence length
     ribosome::Organism organism              = ribosome::Organism::EcoliK12;
-    bool             use_ribosome_speed      = true;  // use Zhao 2011 rates
+    bool             use_ribosome_speed      = true;  // Zhao et al. 2011 JPCB rates
     bool             model_tm_insertion      = true;  // model TM translocon
 
     // ── Ion-dependent RNA folding ──────────────────────────────────────────
@@ -81,6 +100,14 @@ struct NATURaLConfig {
     int              min_hairpin_stem_bp     = 4;     // RNA: min stem length (bp)
     double           helix_propensity_thresh = 1.03;  // protein: Chou-Fasman P_α mean
     int              hydrophobic_run_min     = 4;     // protein: min ILVFMW run length
+
+    // ── Experimental pose→helix ΔH/ΔS rewrite (2014 NATURAL seminar) ──
+    // Default OFF. DualAssemblyEngine::run() never folds these patches into CF
+    // or FA->natural_deltaG. Call DualAssemblyEngine::compute_pose_helix_rewrite()
+    // explicitly on an RNA receptor. Not claim-ready; not Astex election.
+    bool                      enable_pose_helix_rewrite = false;
+    PoseHelixRewriteConfig    pose_helix{};
+    std::vector<HelixSegment>  decision_helices;
 };
 
 // Auto-configure from receptor and ligand properties.
@@ -184,6 +211,13 @@ public:
 
     // Whether NATURaL mode was active
     bool is_active() const noexcept { return config_.enabled; }
+
+    // Experimental sidecar (2014 NATURAL pose→helix ΔH/ΔS).
+    // Empty unless enable_pose_helix_rewrite is true AND the receptor is RNA.
+    // Never mutates final_deltaG_ / CF / FA->natural_deltaG.
+    PoseHelixRewriteResult compute_pose_helix_rewrite(
+        const std::vector<ReceptorNtCoord>& rna_nts,
+        const std::vector<LigandPose>& poses) const;
 
 private:
     NATURaLConfig config_;

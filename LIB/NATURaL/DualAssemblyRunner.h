@@ -40,6 +40,11 @@ struct DualAssemblyConfig {
     std::string output_csv                  = "cotranslational_trajectory.csv";
     std::string nascent_pdb_dir             = ".";
     double      acceptance_threshold        = 0.5;
+    // Experimental 2014 NATURAL pose→helix ΔH/ΔS rewrite. Default OFF.
+    // DualAssemblyRunner does not invoke PoseHelixThermoRewrite (GA callbacks
+    // currently supply pose RMSDs, not atom coords). Follow-up: wire when a
+    // real-GA backend emits ReceptorNtCoord / LigandPose snapshots.
+    bool        enable_pose_helix_rewrite   = false;
 };
 
 // ─── GA-backend callback signatures ──────────────────────────────────────────

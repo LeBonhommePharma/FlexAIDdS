@@ -9,6 +9,30 @@ docking trajectory onto human-cell elongation rates. The Aβ42 protofibril (PDB 
 lives under `LIB/NATURaL/` and is exposed through the `dual_assembly` CLI and
 `scripts/run_dual_assembly_cotranslational.sh`.
 
+### Lineage: 2014 NATURAL vs 2026 NATURaL (do not conflate Zhao 2011 papers)
+
+**2014 NATURAL** = "Native Assembly of Transcriptionally-Unified RNA And Ligand"
+(LP Morency, master’s seminar R2, 2014-07-25). That Perl implementation followed
+Zhao, Zhang, Chen, *Cotranscriptional folding kinetics of ribonucleic acid secondary
+structures*, J. Chem. Phys. **135**, 245101 (2011), doi:10.1063/1.3671644, and added
+(1) clustering, (2) population inheritance across elongation, (3) slower transcription
+at nucleotide repeats, and (4) docking poses that rewrite helix ΔH/ΔS (loop entropy ↓
+for ligand contacts; stacking enthalpy more favorable for aromatic stacking on the
+decision helix). The 2026 C++ glue for piece (4) is `LIB/NATURaL/PoseHelixThermoRewrite`
+— experimental, default OFF; see `docs/POSE_HELIX_THERMO_REWRITE.md`.
+
+**2026 C++ NATURaL** is the broader DualAssembly acronym: Native Assembly of
+co-Transcriptionally / co-Translationally Unified Receptor–Ligand.
+
+**Zhao 2011 JPCB is a different paper.** Zhao et al., J. Phys. Chem. B **115**, 3987
+(2011) is the ribosome master equation / protein cotranslation model used by
+`RibosomeElongation.h`. Do not cite it as the RNA cotranscriptional folding-kinetics
+source, and do not cite the JCP paper as the ribosome ODE.
+
+NucleationDetector hairpin ΔG is sequence-only (Turner). DualAssemblyEngine CF +
+Shannon instantaneous ΔG is not the seminar ligand coupling. Optional StatMech
+`G_natural` is not fed by pose→helix patches.
+
 ---
 
 ## 1. Motivation: the Target/Ligand assignment problem
@@ -350,7 +374,11 @@ a long trajectory is partially readable on disk even if the run is interrupted.
   • `LIB/GrandPartitionFunction.h::GrandPartitionFunction` — one instance per oracle. Two
     entries: the empty site (implicit "1") and `"monomer"` updated each Sim C via
     `add_or_overwrite("monomer", log_Z_monomer, c_monomer_M)`.
-  • `LIB/NATURaL/{NATURaLDualAssembly,RibosomeElongation}.{h,cpp}` — unchanged.
+  • `LIB/NATURaL/{NATURaLDualAssembly,RibosomeElongation}.{h,cpp}` — elongation /
+    DualAssemblyEngine CF+Shannon path unchanged by pose→helix rewrite (default OFF).
+  • `LIB/NATURaL/PoseHelixThermoRewrite.{h,cpp}` — experimental sidecar; RNA DualAssembly
+    hook is `NATURaLConfig.enable_pose_helix_rewrite` (false) +
+    `DualAssemblyEngine::compute_pose_helix_rewrite()`. `run()` does not apply patches.
   • `LIB/DatasetRunner.{h,cpp}` — not touched. The cotranslational runner is a separate
     top-level driver to avoid cross-cutting changes.
 
@@ -391,6 +419,9 @@ a long trajectory is partially readable on disk even if the run is interrupted.
 
   • The MVP truncates the nascent chain in extended geometry only. ESMFold integration for
     per-residue secondary-structure-aware truncation is post-MVP.
+  • Pose→helix ΔH/ΔS rewrite is experimental and default OFF. DualAssemblyRunner does not
+    call it (no atom-level poses from the injected GA). DualAssemblyEngine::run() does not
+    add patches to CF or `FA->natural_deltaG`.
   • The transcription tracks do not dock directly against the protofibril
     (`direct_encounter_allowed = false`). Polysome-mode (multiple nascent chains at
     staggered lengths sharing one mRNA against a single protofibril) is a future
@@ -408,8 +439,12 @@ a long trajectory is partially readable on disk even if the run is interrupted.
 
 ## 10. References
 
+  • Zhao, Zhang, Chen, *Cotranscriptional folding kinetics of ribonucleic acid secondary
+    structures*, J. Chem. Phys. **135**, 245101 (2011), doi:10.1063/1.3671644 — RNA
+    cotranscriptional folding kinetics; 2014 NATURAL (LP Morency seminar) lineage.
+  • Zhao et al. 2011 J. Phys. Chem. B **115**, 3987 — ribosome master equation / protein
+    cotranslation ONLY (not the JCP RNA folding-kinetics paper).
   • Hessa et al. 2007 Nature 450:1026 — TM-helix code.
-  • Zhao et al. 2011 J. Phys. Chem. B 115:3987 — ribosome master equation.
   • Wohlgemuth et al. 2008 — E. coli elongation rate.
   • Ingolia et al. 2011 — human elongation rate.
   • Pechmann & Frydman 2013 Nat. Struct. Mol. Biol. 20:237 — translational pausing.

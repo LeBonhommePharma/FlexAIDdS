@@ -18,6 +18,8 @@ At the current stage, the following should be treated as experimental:
 - TypeScript, PWA, dashboard, and browser-facing viewers
 - Bonhomme Fleet and iCloud-driven distributed execution
 - NATURaL and related co-translational or co-transcriptional workflows
+- PoseHelixThermoRewrite / pose→helix ΔH/ΔS rewrite (2014 NATURAL seminar glue; default OFF; not Astex / not `G_natural`)
+- backend-specific acceleration paths not required by the Core 1.0 support matrix
 - backend-specific acceleration paths not required by the Core 1.0 support matrix
 - benchmark claims not yet backed by a repository reproducibility bundle
 
@@ -38,6 +40,9 @@ The following are intentionally kept experimental (see `docs/thermodynamics.md` 
 - Temperature scan + model-derived ΔCp fitting (explicitly labelled `model_derived` / `experimental`)
 - Cleft annotation and flexible residue selection (preprocessing only)
 - Advanced compensation / enthalpy-entropy diagnostic metrics (for analysis only)
+- PoseHelixThermoRewrite (`LIB/NATURaL/PoseHelixThermoRewrite`) — docking-pose mixture that
+  rewrites RNA decision-helix ΔH/ΔS (loop ΔS, stem stacking ΔH). Experimental; default OFF;
+  DualAssemblyEngine::run() does not apply it. See `docs/POSE_HELIX_THERMO_REWRITE.md`.
 
 These features are fully implemented with tests and JSON exposure but require additional benchmarking or calibration data before promotion to validated status.
 4. an unambiguous ownership in the product boundary defined by `PRODUCT.md`
