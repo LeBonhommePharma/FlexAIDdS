@@ -39,10 +39,84 @@
 #include <sstream>
 #include <algorithm>
 #ifdef _WIN32
+#  include <fcntl.h>
+#  include <filesystem>
 #  include <io.h>
-#  define mkstemp(t) _mktemp_s(t, strlen(t)+1)
+#  include <share.h>
+#  include <sys/stat.h>
 #else
 #  include <unistd.h>
+#endif
+
+#ifdef _WIN32
+namespace {
+// _mktemp_s generates a name only. Open it exclusively before passing a real
+// descriptor to _fdopen, and retain the file until read_pdb has reopened it.
+struct WindowsTempPdb {
+    char path[MAX_PATH__]{};
+    FILE* stream = nullptr;
+
+    explicit WindowsTempPdb(const char* pattern) {
+        std::error_code error;
+        const auto directory = std::filesystem::temp_directory_path(error);
+        if (error) {
+            errno = ENOENT;
+            return;
+        }
+        const std::string candidate = (directory / pattern).string();
+        if (candidate.size() >= sizeof(path)) {
+            errno = ENAMETOOLONG;
+            return;
+        }
+
+        for (int attempt = 0; attempt < 100; ++attempt) {
+            std::memcpy(path, candidate.c_str(), candidate.size() + 1);
+            const errno_t name_error = _mktemp_s(path, sizeof(path));
+            if (name_error != 0) {
+                path[0] = '\0';
+                errno = name_error;
+                return;
+            }
+            int fd = -1;
+            const errno_t open_error = _sopen_s(
+                &fd, path, _O_CREAT | _O_EXCL | _O_RDWR | _O_BINARY | _O_NOINHERIT,
+                _SH_DENYRW, _S_IREAD | _S_IWRITE);
+            if (open_error != 0) {
+                // Never remove a candidate that another process created.
+                path[0] = '\0';
+                if (open_error == EEXIST) continue;
+                errno = open_error;
+                return;
+            }
+            stream = _fdopen(fd, "wb");
+            if (!stream) {
+                const int stream_error = errno;
+                _close(fd);
+                std::remove(path);
+                path[0] = '\0';
+                errno = stream_error;
+            }
+            return;
+        }
+        errno = EEXIST;
+    }
+
+    WindowsTempPdb(const WindowsTempPdb&) = delete;
+    WindowsTempPdb& operator=(const WindowsTempPdb&) = delete;
+
+    void close() {
+        if (stream) {
+            std::fclose(stream);
+            stream = nullptr;
+        }
+    }
+
+    ~WindowsTempPdb() {
+        close();
+        if (path[0] != '\0') std::remove(path);
+    }
+};
+} // namespace
 #endif
 
 // Column indices in the _atom_site loop (set to -1 if not present)
@@ -406,7 +480,17 @@ static int parse_cif_atom_site(
     printf("CIF: parsed %zu atoms from %s\n", cif_atoms.size(), cif_file);
 
     // Phase 3: Convert to PDB-style temp file and let read_pdb handle it.
-    // Uses mkstemp for a race-free unique filename (no random_device dependency).
+    // Create a unique opened file without a random_device dependency.
+#ifdef _WIN32
+    WindowsTempPdb temp_pdb("flexaid_cif_XXXXXX");
+    char* tmp_pdb = temp_pdb.path;
+    FILE* out = temp_pdb.stream;
+    if (!out) {
+        fprintf(stderr, "ERROR: Cannot create temp file for CIF conversion: %s\n",
+                strerror(errno));
+        return 0;
+    }
+#else
     char tmp_pdb[MAX_PATH__];
     strncpy(tmp_pdb, "/tmp/flexaid_cif_XXXXXX", MAX_PATH__ - 1);
     tmp_pdb[MAX_PATH__ - 1] = '\0';
@@ -423,6 +507,7 @@ static int parse_cif_atom_site(
         fprintf(stderr, "ERROR: fdopen failed for CIF temp file: %s\n", strerror(errno));
         return 0;
     }
+#endif
 
     for (const auto& a : cif_atoms) {
         // Format as PDB ATOM/HETATM record (fixed-width 80 chars)
@@ -466,7 +551,11 @@ static int parse_cif_atom_site(
                 a.element.c_str());
     }
     fprintf(out, "END\n");
+#ifdef _WIN32
+    temp_pdb.close();
+#else
     fclose(out);
+#endif
 
     // Now use the existing PDB reader on the temp file
     int result;
@@ -481,7 +570,9 @@ static int parse_cif_atom_site(
         result = (FA->atm_cnt > 0) ? 1 : 0;
     }
 
+#ifndef _WIN32
     remove(tmp_pdb);
+#endif
 
     // Phase 4: Restore formal charges that were lost in the PDB round-trip
     // The CIF file carried pdbx_formal_charge for metal ions and other charged
@@ -595,6 +686,16 @@ int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
 
     // Phase 2: Load first model via standard read_pdb for full topology
     // Create a temp PDB with only the first model's atoms
+#ifdef _WIN32
+    WindowsTempPdb temp_pdb("flexaid_mm_XXXXXX");
+    char* tmp_pdb = temp_pdb.path;
+    FILE* out = temp_pdb.stream;
+    if (!out) {
+        fprintf(stderr, "ERROR: Cannot create temp file for multi-model PDB: %s\n",
+                strerror(errno));
+        return 0;
+    }
+#else
     char tmp_pdb[MAX_PATH__];
     strncpy(tmp_pdb, "/tmp/flexaid_mm_XXXXXX", MAX_PATH__ - 1);
     tmp_pdb[MAX_PATH__ - 1] = '\0';
@@ -611,10 +712,16 @@ int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
         fprintf(stderr, "ERROR: fdopen failed for multi-model temp: %s\n", strerror(errno));
         return 0;
     }
+#endif
 
     // Re-read and write only the first model
     fp = fopen(pdb_file, "r");
-    if (!fp) { fclose(out); return 0; }
+    if (!fp) {
+#ifndef _WIN32
+        fclose(out);
+#endif
+        return 0;
+    }
 
     int write_model = -1;
     bool writing = !has_model_records;  // if no MODEL records, write everything
@@ -642,11 +749,17 @@ int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
     }
     fprintf(out, "END\n");
     fclose(fp);
+#ifdef _WIN32
+    temp_pdb.close();
+#else
     fclose(out);
+#endif
 
     // Load the first model with full FlexAID infrastructure
     read_pdb(FA, atoms, residue, tmp_pdb);
+#ifndef _WIN32
     remove(tmp_pdb);
+#endif
 
     // Phase 3: Build model_coords arrays
     int n_atoms_ref = static_cast<int>(models[0].coords.size());

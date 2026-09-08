@@ -17,6 +17,9 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <process.h>
+#endif
 
 void assign_radii_types(FA_Global* FA, atom* atoms, resid* residue);
 
@@ -25,10 +28,8 @@ void assign_radii_types(FA_Global* FA, atom* atoms, resid* residue);
 // ===========================================================================
 
 static void init_fa_for_reader(FA_Global* FA, atom** atoms, resid** residue) {
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wnontrivial-memcall"
-    std::memset(FA, 0, sizeof(FA_Global));
-    #pragma clang diagnostic pop
+    // Callers value-initialize FA_Global. Byte-zeroing its std::vector members
+    // violates their lifetime invariants (including the Windows debug CRT).
     FA->MIN_NUM_ATOM     = 100;
     FA->MIN_NUM_RESIDUE  = 10;
     FA->MIN_FLEX_BONDS   = 5;
@@ -157,7 +158,7 @@ TEST_F(Mol2ReaderTest, ReadsSimpleMolecule) {
         "2 1 3 1\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -226,7 +227,7 @@ TEST_F(Mol2ReaderTest, ReadsDrugLikeMolecule) {
         "4 1 5 1\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -250,7 +251,7 @@ TEST_F(Mol2ReaderTest, ReadsDrugLikeMolecule) {
 }
 
 TEST_F(Mol2ReaderTest, FailsOnMissingFile) {
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -274,7 +275,7 @@ TEST_F(Mol2ReaderTest, FailsOnEmptyAtomBlock) {
         "@<TRIPOS>BOND\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -299,7 +300,7 @@ TEST_F(Mol2ReaderTest, HandlesUnknownAtomType) {
         "1 X1   1.0  2.0  3.0 Du    1 UNK  0.0\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -328,7 +329,7 @@ TEST_F(Mol2ReaderTest, PDBNumbersStartAt90001) {
         "1 1 2 1\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -402,7 +403,7 @@ TEST_F(SdfReaderTest, ReadsSimpleMolecule) {
         "$$$$\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -457,7 +458,7 @@ TEST_F(SdfReaderTest, ReadsHalogens) {
         "M  END\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -520,7 +521,7 @@ TEST_F(SdfReaderTest, MapsBareSdfElementsToCanonicalTypes) {
         std::string sdf = write_sdf(std::string("bare_") + tc.elem + ".sdf",
                                     make_single_atom_sdf("bare", tc.elem));
 
-        FA_Global FA;
+        FA_Global FA{};
         atom* atoms = nullptr;
         resid* residue = nullptr;
         init_fa_for_reader(&FA, &atoms, &residue);
@@ -549,7 +550,7 @@ TEST_F(SdfReaderTest, BareNitrogenMapsToActiveScoringType) {
         "M  END\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -565,7 +566,7 @@ TEST_F(SdfReaderTest, BareNitrogenMapsToActiveScoringType) {
 }
 
 TEST_F(SdfReaderTest, FailsOnMissingFile) {
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -587,7 +588,7 @@ TEST_F(SdfReaderTest, FailsOnInvalidAtomCount) {
         "M  END\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -611,7 +612,7 @@ TEST_F(SdfReaderTest, MoleculeNameExtracted) {
         "M  END\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -640,7 +641,7 @@ TEST_F(SdfReaderTest, BondOutOfRangeIgnored) {
         "M  END\n"
     );
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -689,7 +690,7 @@ TEST_F(SdfReaderTest, TopologyDerivedFrameAndTorsionPreserveLocalGeometry) {
         " 11 12  1  0\n"
         "M  END\n$$$$\n");
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -803,7 +804,7 @@ TEST_F(SdfReaderTest, AlkylAmineCNRemainsRuntimeRotor) {
         "  4  5  1  0\n"
         "M  END\n$$$$\n");
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -857,7 +858,7 @@ TEST_F(SdfReaderTest, AmideBondNotRuntimeRotor) {
         "  4  5  1  0\n"
         "M  END\n$$$$\n");
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -910,7 +911,7 @@ TEST_F(SdfReaderTest, Real1M2Z_SdfReadBuildlistBuildccGeometryPreserved) {
         GTEST_SKIP() << "1M2Z_ligand.sdf not present in worktree";
     }
 
-    FA_Global FA;
+    FA_Global FA{};
     atom* atoms = nullptr;
     resid* residue = nullptr;
     init_fa_for_reader(&FA, &atoms, &residue);
@@ -971,6 +972,55 @@ TEST_F(SdfReaderTest, Real1M2Z_SdfReadBuildlistBuildccGeometryPreserved) {
 // CIF READER — Cartn must not silently become the origin
 // ===========================================================================
 
+#ifdef _WIN32
+// Keep conversion files in a private directory with spaces in its path. This
+// catches hardcoded /tmp use and lets us observe ownership cleanup directly.
+class WindowsReaderTempDirectory {
+public:
+    WindowsReaderTempDirectory() {
+        if (const char* value = std::getenv("TMP")) old_tmp_ = value;
+        if (const char* value = std::getenv("TEMP")) old_temp_ = value;
+        const auto parent = std::filesystem::temp_directory_path();
+        for (int attempt = 0; attempt < 100; ++attempt) {
+            directory_ = parent / ("flexaids reader temp " +
+                std::to_string(_getpid()) + " " + std::to_string(attempt));
+            std::error_code error;
+            if (std::filesystem::create_directory(directory_, error)) {
+                owns_directory_ = true;
+                break;
+            }
+            if (error) return;
+        }
+        if (!owns_directory_) return;
+        ready_ = _putenv_s("TMP", directory_.string().c_str()) == 0 &&
+                 _putenv_s("TEMP", directory_.string().c_str()) == 0;
+    }
+
+    WindowsReaderTempDirectory(const WindowsReaderTempDirectory&) = delete;
+    WindowsReaderTempDirectory& operator=(const WindowsReaderTempDirectory&) = delete;
+
+    ~WindowsReaderTempDirectory() {
+        _putenv_s("TMP", old_tmp_.c_str());
+        _putenv_s("TEMP", old_temp_.c_str());
+        if (owns_directory_) {
+            // Remove only an empty directory; retain leaked files as evidence.
+            std::error_code ignored;
+            std::filesystem::remove(directory_, ignored);
+        }
+    }
+
+    bool ready() const { return ready_; }
+    const std::filesystem::path& path() const { return directory_; }
+
+private:
+    std::filesystem::path directory_;
+    std::string old_tmp_;
+    std::string old_temp_;
+    bool owns_directory_ = false;
+    bool ready_ = false;
+};
+#endif
+
 static const char* kMinimalCifHeader =
     "data_test\n"
     "loop_\n"
@@ -1007,7 +1057,14 @@ TEST(CifReaderTest, ReadsFiniteCoordinates) {
     atom* atoms = nullptr;
     resid* residue = nullptr;
 
+#ifdef _WIN32
+    WindowsReaderTempDirectory conversion_directory;
+    ASSERT_TRUE(conversion_directory.ready());
+#endif
     EXPECT_EQ(read_cif_receptor(&FA, &atoms, &residue, path.c_str()), 1);
+#ifdef _WIN32
+    EXPECT_TRUE(std::filesystem::is_empty(conversion_directory.path()));
+#endif
     ASSERT_GE(FA.atm_cnt, 1);
     EXPECT_NEAR(atoms[1].coor[0], 1.0f, 1e-4f);
     EXPECT_NEAR(atoms[1].coor[1], 2.0f, 1e-4f);
@@ -1023,6 +1080,93 @@ TEST(CifReaderTest, ReadsFiniteCoordinates) {
     free(residue);
     std::filesystem::remove(path);
 }
+
+TEST(PdbMultiModelReaderTest, LoadsFirstModelTopologyAndAllCoordinates) {
+    const auto path = std::filesystem::temp_directory_path() / "flexaids_models.pdb";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.good());
+        out << "MODEL        1\n"
+            << "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 10.00           C  \n"
+            << "ENDMDL\n"
+            << "MODEL        2\n"
+            << "ATOM      1  CA  ALA A   1       4.000   5.000   6.000  1.00 10.00           C  \n"
+            << "ENDMDL\nEND\n";
+    }
+
+    FA_Global FA{};
+    FA.MIN_NUM_ATOM = 32;
+    FA.MIN_NUM_RESIDUE = 8;
+    FA.MIN_ROTAMER = 1;
+    FA.MIN_FLEX_BONDS = 5;
+    FA.ntypes = 40;
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+
+#ifdef _WIN32
+    WindowsReaderTempDirectory conversion_directory;
+    ASSERT_TRUE(conversion_directory.ready());
+#endif
+    EXPECT_EQ(read_multi_model_pdb(&FA, &atoms, &residue, path.string().c_str()), 2);
+#ifdef _WIN32
+    EXPECT_TRUE(std::filesystem::is_empty(conversion_directory.path()));
+#endif
+    ASSERT_EQ(FA.atm_cnt, 1);
+    EXPECT_FLOAT_EQ(atoms[1].coor[0], 1.0f);
+    EXPECT_FLOAT_EQ(atoms[1].coor[1], 2.0f);
+    EXPECT_FLOAT_EQ(atoms[1].coor[2], 3.0f);
+    EXPECT_EQ(FA.n_models, 2);
+    ASSERT_EQ(FA.model_coords.size(), 2u);
+    EXPECT_EQ(FA.model_coords[0], (std::vector<float>{1.0f, 2.0f, 3.0f}));
+    EXPECT_EQ(FA.model_coords[1], (std::vector<float>{4.0f, 5.0f, 6.0f}));
+    EXPECT_EQ(FA.model_strain, (std::vector<double>{0.0, 0.0}));
+
+    for (int r = 0; r <= FA.res_cnt; ++r) {
+        free(residue[r].fatm);
+        free(residue[r].latm);
+        free(residue[r].bond);
+    }
+    free(FA.num_atm);
+    free(atoms);
+    free(residue);
+    std::filesystem::remove(path);
+}
+
+#ifdef _WIN32
+TEST(CifReaderTest, UnavailableTemporaryDirectoryFailsWithoutAllocatingTopology) {
+    const auto parent = std::filesystem::temp_directory_path();
+    const auto cif = parent / "flexaids_unavailable_temp.cif";
+    const auto pdb = parent / "flexaids_unavailable_temp.pdb";
+    {
+        std::ofstream out(cif);
+        ASSERT_TRUE(out.good());
+        out << kMinimalCifHeader
+            << "ATOM 1 C CA . ALA A 1 1.000 2.000 3.000 1.00 20.00\n";
+    }
+    {
+        std::ofstream out(pdb);
+        ASSERT_TRUE(out.good());
+        out << "MODEL        1\n"
+            << "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 10.00           C  \n"
+            << "ENDMDL\nEND\n";
+    }
+
+    WindowsReaderTempDirectory conversion_directory;
+    ASSERT_TRUE(conversion_directory.ready());
+    ASSERT_TRUE(std::filesystem::remove(conversion_directory.path()));
+    FA_Global FA{};
+    atom* atoms = nullptr;
+    resid* residue = nullptr;
+    EXPECT_EQ(read_cif_receptor(&FA, &atoms, &residue, cif.string().c_str()), 0);
+    EXPECT_EQ(read_multi_model_pdb(&FA, &atoms, &residue, pdb.string().c_str()), 0);
+    EXPECT_EQ(atoms, nullptr);
+    EXPECT_EQ(residue, nullptr);
+    EXPECT_EQ(FA.num_atm, nullptr);
+    EXPECT_FALSE(std::filesystem::exists(conversion_directory.path()));
+    std::filesystem::remove(cif);
+    std::filesystem::remove(pdb);
+}
+#endif
 
 TEST(CifReaderTest, MissingCartnDoesNotOriginFill) {
     const std::string path =
