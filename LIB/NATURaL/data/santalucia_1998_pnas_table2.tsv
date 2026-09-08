@@ -1,0 +1,22 @@
+# SantaLucia Jr (1998) PNAS 95:1460–1465, doi:10.1073/pnas.95.4.1460 (PMC19045)
+# Table 2 — Unified oligonucleotide ΔH° and ΔS° NN parameters in 1 M NaCl
+# (Allawi & SantaLucia 1997 unified set as tabulated in the 1998 PNAS).
+# Units: ΔH kcal/mol ; ΔS cal/K·mol
+# Sequence notation: 5′→3′ / 3′→5′ (antiparallel). Copy of Table 2, not a mean.
+# Review: SantaLucia & Hicks (2004) Annu. Rev. Biophys. Biomol. Struct. 33:415
+#   doi:10.1146/annurev.biophys.32.110601.141800 — later reprint; this file is 1998 Table 2.
+# kind: WC = propagation stack; INIT = duplex initiation; SYM = self-complementary symmetry
+motif	kind	dH_kcal	dS_cal
+AA/TT	WC	-7.9	-22.2
+AT/TA	WC	-7.2	-20.4
+TA/AT	WC	-7.2	-21.3
+CA/GT	WC	-8.5	-22.7
+GT/CA	WC	-8.4	-22.4
+CT/GA	WC	-7.8	-21.0
+GA/CT	WC	-8.2	-22.2
+CG/GC	WC	-10.6	-27.2
+GC/CG	WC	-9.8	-24.4
+GG/CC	WC	-8.0	-19.9
+INIT_GC	INIT	0.1	-2.8
+INIT_AT	INIT	2.3	4.1
+SYM	SYM	0.0	-1.4

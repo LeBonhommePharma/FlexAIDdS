@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <utility>
 
 namespace natural {
@@ -93,6 +94,38 @@ ThermoIncrement lookup(const ThermoIncrementTable& table, ContactKind kind) noex
     return table.increments[static_cast<std::size_t>(i)];
 }
 
+ThermoIncrement from_motif(const MotifDeltaHS& m) noexcept
+{
+    return ThermoIncrement{m.dH_kcal, m.dS_cal_per_mol_K};
+}
+
+// Sequence-specific NN / loop terms override the class-table mean when the
+// contact carries a motif or unpaired-loop annotation. Unknown motifs skip.
+std::optional<ThermoIncrement> increment_for_contact(
+    const PoseContact& c,
+    const DecisionElement& el,
+    const PoseThermoRewriteConfig& cfg)
+{
+    ThermoIncrement inc = lookup(table_for_ss(cfg, el.ss), c.kind);
+    if (c.kind == ContactKind::RNA_STEM_STACK) {
+        const auto m = lookup_xia1998_rna(c.motif);
+        if (!m.has_value())
+            return std::nullopt;
+        inc = from_motif(*m);
+    } else if (c.kind == ContactKind::DNA_STEM_STACK) {
+        const auto m = lookup_santalucia1998_dna(c.motif);
+        if (!m.has_value())
+            return std::nullopt;
+        inc = from_motif(*m);
+    } else if (c.kind == ContactKind::RNA_LOOP_HBOND) {
+        const auto m = lookup_lu2006_rna_hairpin(c.loop_unpaired);
+        if (!m.has_value())
+            return std::nullopt;
+        inc = from_motif(*m);
+    }
+    return inc;
+}
+
 void set_inc(ThermoIncrementTable& table, ContactKind kind,
              double dH_kcal, double dS_cal_per_mol_K) noexcept
 {
@@ -159,7 +192,10 @@ bool accumulate_pose(const PoseView& pose,
         const DecisionElement* el = first_matching_element(c, elements);
         if (el == nullptr)
             continue;  // require_decision_element_only: unmatched contacts drop
-        const ThermoIncrement inc = lookup(table_for_ss(cfg, el->ss), c.kind);
+        const std::optional<ThermoIncrement> maybe = increment_for_contact(c, *el, cfg);
+        if (!maybe.has_value())
+            continue;
+        const ThermoIncrement inc = *maybe;
         if (el->ss == SSClass::PROTEIN_OTHER &&
             inc.dH_kcal == 0.0 && inc.dS_cal_per_mol_K == 0.0)
             continue;
@@ -245,25 +281,24 @@ PoseThermoRewriteConfig default_pose_thermo_rewrite_config()
 
     // RNA stem stack: Xia 1998 INN-HB mean of 10 unique WC propagation stacks.
     // doi:10.1021/bi9809425 ; Zuber 2022 NAR Table 1A "1998 Model"
-    // doi:10.1093/nar/gkac261. Sequence-specific NN lookup is future work.
+    // doi:10.1093/nar/gkac261. PoseContact::motif selects a published dimer.
     set_inc(cfg.rna, ContactKind::RNA_STEM_STACK,
             kXia1998RnaWcStackMean_dH_kcal, kXia1998RnaWcStackMean_dS_cal);
 
-    // TODO(burgundy): RNA ligand–loop H-bond ΔH/ΔS. Mathews, Sabina, Zuker,
-    // Turner, J. Mol. Biol. 288:911 (1999), doi:10.1006/jmbi.1999.2700 is
-    // hairpin/internal-loop *initiation* ΔG, not a ligand–loop H-bond increment.
-    // Leave unset until a calorimetric consensus is harvested.
+    // RNA loop: Lu, Turner, Mathews, NAR 34:4912 (2006), doi:10.1093/nar/gkl472
+    // Table 1 hairpin-loop *initiation* ΔH°(n). Default n=4. ΔS is not tabulated
+    // (extra length cost is treated as entropic). This is initiation enthalpy,
+    // not a ligand–loop H-bond increment. PoseContact::loop_unpaired selects n.
     set_inc(cfg.rna, ContactKind::RNA_LOOP_HBOND,
-            kExperimentalGapIncrement.dH_kcal,
-            kExperimentalGapIncrement.dS_cal_per_mol_K);
+            kLu2006DefaultHairpin.dH_kcal, kLu2006DefaultHairpin.dS_cal_per_mol_K);
 
-    // DNA stem stack: SantaLucia & Hicks 2004 Table 1 mean of 10 WC
-    // propagation stacks (1 M NaCl). doi:10.1146/annurev.biophys.32.110601.141800
-    // NEVER a copy of the RNA table — RNA mean ΔH (−10.756) ≠ DNA mean (−8.33).
+    // DNA stem stack: SantaLucia 1998 PNAS Table 2 mean of 10 WC propagation
+    // stacks (1 M NaCl). doi:10.1073/pnas.95.4.1460 (PMC19045).
+    // NEVER a copy of the RNA table. PoseContact::motif selects a Table 2 dimer.
     set_inc(cfg.dna, ContactKind::DNA_STEM_STACK,
-            kSantaLucia2004DnaNnMean_dH_kcal, kSantaLucia2004DnaNnMean_dS_cal);
+            kSantaLucia1998DnaWcStackMean_dH_kcal, kSantaLucia1998DnaWcStackMean_dS_cal);
 
-    // TODO(burgundy): DNA ligand–loop H-bond ΔH/ΔS. SantaLucia 2004 hairpin
+    // TODO(burgundy): DNA ligand–loop H-bond ΔH/ΔS. SantaLucia hairpin
     // initiation tables are loop-initiation ΔG, not this contact increment.
     set_inc(cfg.dna, ContactKind::DNA_LOOP_HBOND,
             kExperimentalGapIncrement.dH_kcal,
@@ -276,14 +311,13 @@ PoseThermoRewriteConfig default_pose_thermo_rewrite_config()
             kExperimentalGapIncrement.dH_kcal,
             kExperimentalGapIncrement.dS_cal_per_mol_K);
 
-    // Protein α-helix backbone H-bond: Scholtz 1991 PNAS calorimetric
-    // helix-formation ΔH. doi:10.1073/pnas.88.7.2854
-    // ΔS: experimental gap (helix–coil s is published in Scholtz 1991
-    // Biopolymers doi:10.1002/bip.360311304, but there is no calorimetric
-    // per-residue ΔS consensus independent of ΔCp assumptions).
+    // Protein α-helix backbone: Scholtz 1991 PNAS calorimetric helix-formation
+    // ΔH (doi:10.1073/pnas.88.7.2854) + Zavrtanik, Lah, Hadži, Biophys. J.
+    // 125:305 (2026) helix→coil ΔS_BB = 5.2 ± 0.3 e.u. → formation −5.2
+    // (doi:10.1016/j.bpj.2025.11.2689, PubMed 41318999).
     set_inc(cfg.protein_helix, ContactKind::PROTEIN_HELIX_BB_HBOND,
             kScholtz1991HelixFormation_dH_kcal,
-            kExperimentalGapIncrement.dS_cal_per_mol_K);
+            kZavrtanik2026HelixFormation_dS_cal);
 
     // TODO(burgundy): helix side-chain packing ΔH/ΔS — no calorimetric
     // per-contact consensus distinct from the backbone H-bond term above.
@@ -296,15 +330,15 @@ PoseThermoRewriteConfig default_pose_thermo_rewrite_config()
             kExperimentalGapIncrement.dH_kcal,
             kExperimentalGapIncrement.dS_cal_per_mol_K);
 
-    // Protein β-sheet: Maynard, Sharman, Searle, J. Am. Chem. Soc. 120:1996
-    // (1998), doi:10.1021/ja9726769 reports whole 16-residue β-hairpin folding
-    // as endothermic / entropy-driven in water (ΔH ≈ +7 kJ mol⁻¹ for the
-    // *peptide*). That is the wrong scale and often the opposite sign versus a
-    // per-bridge H-bond increment — do not reuse it here.
-    // TODO(burgundy): sheet bridge H-bond ΔH/ΔS (per-bridge calorimetry).
+    // Protein β-sheet bridge: labelled experimental midpoint from Meier &
+    // Seelig, J. Am. Chem. Soc. 130:1017 (2008), doi:10.1021/ja077231r
+    // (membrane coil⇄β, ΔH_fold ≈ −0.2 to −0.6 kcal mol⁻¹ residue⁻¹).
+    // Caveat: Deechongkit et al. Nature 430:101 (2004) doi:10.1038/nature02611
+    // — β H-bond energetics are context-dependent. Not a universal NN table.
+    // Maynard 1998 whole-hairpin folding is the wrong scale — do not reuse.
     set_inc(cfg.protein_sheet, ContactKind::PROTEIN_SHEET_BRIDGE_HBOND,
-            kExperimentalGapIncrement.dH_kcal,
-            kExperimentalGapIncrement.dS_cal_per_mol_K);
+            kMeierSeelig2008SheetFold_dH_kcal,
+            kMeierSeelig2008SheetFold_dS_cal);
     // TODO(burgundy): sheet hydrophobic packing ΔH/ΔS.
     set_inc(cfg.protein_sheet, ContactKind::PROTEIN_SHEET_HYDROPHOBIC_PACK,
             kExperimentalGapIncrement.dH_kcal,

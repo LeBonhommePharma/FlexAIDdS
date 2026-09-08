@@ -22,8 +22,8 @@ At the current stage, the following should be treated as experimental:
 - PoseLocalThermoRewrite (`LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}`): experimental
   docking-pose rewrite of local secondary-structure ΔH/ΔS. RNA, DNA, protein
   α-helix, and protein β-sheet share the same algebra and use **class-specific**
-  increment tables (Xia 1998 RNA NN mean ≠ SantaLucia 2004 DNA NN mean ≠
-  Scholtz 1991 helix ΔH ≠ sheet gaps). Default OFF
+  increment tables (Xia 1998 RNA NN ≠ SantaLucia 1998 PNAS Table 2 DNA ≠
+  Scholtz 1991 / Zavrtanik 2026 helix ≠ Meier–Seelig 2008 sheet midpoint). Default OFF
   (`DualAssemblyConfig::enable_pose_local_thermo_rewrite`,
   `FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE`). Motifs without a calorimetric
   consensus stay unset (`TODO(burgundy)` cite slots) — no invented placeholders.

@@ -1,13 +1,16 @@
 # Pose-local secondary-structure thermodynamic rewrite
 
 **Status: experimental. Not claim-ready. Default OFF.** Filled ΔH/ΔS increments
-are peer-reviewed NN / helix–coil means (cited below). Motifs without a
+are peer-reviewed NN / helix–coil values (cited below). Motifs without a
 calorimetric consensus stay `{0,0}` experimental gaps — they are **not**
 invented placeholders. This path must not be cited as Astex success, FlexADS
 claim-ready ranking, or a validated binding free energy.
 
 This document specifies the physics, class-specific tables, and API for
-`LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}`.
+`LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}` and `LIB/NATURaL/NnMotifTables.h`.
+It **generalizes** PR #471 `PoseHelixThermoRewrite` (RNA decision-helix, atom
+coords) to RNA/DNA/helix/sheet class tables. `#471` files stay; this module is
+the cited-table API.
 
 ## NATURAL lineage
 
@@ -73,10 +76,10 @@ for the Boltzmann mixture, not for converting ΔS.
 
 `SSClass` members:
 
-- `RNA_STEM_LOOP` — Xia 1998 INN-HB WC-stack **mean** (sequence-specific NN is future work)
-- `DNA_STEM_LOOP` — SantaLucia 2004 NN-stack **mean** — **never** an alias of the RNA table
-- `PROTEIN_HELIX` — Scholtz 1991 calorimetric helix-formation ΔH; packing/clash unset
-- `PROTEIN_SHEET` — all contact kinds unset until a per-bridge consensus exists
+- `RNA_STEM_LOOP` — Xia 1998 INN-HB WC stacks (mean default; `PoseContact::motif` selects a dimer)
+- `DNA_STEM_LOOP` — SantaLucia 1998 PNAS Table 2 — **never** an alias of the RNA table
+- `PROTEIN_HELIX` — Scholtz 1991 calorimetric helix-formation ΔH + Zavrtanik 2026 backbone ΔS
+- `PROTEIN_SHEET` — Meier–Seelig 2008 labelled experimental midpoint on the bridge H-bond only
 - `PROTEIN_OTHER` — no rewrite unless annotated **and** that table is filled
 
 Geometry weight `w` multiplies the increment. An RNA `ContactKind` never reads the
@@ -86,13 +89,13 @@ DNA or protein tables (and conversely). Shared algebra, separate numbers.
 
 | Class | Contact | ΔH (kcal mol⁻¹) | ΔS (cal mol⁻¹ K⁻¹) | Source |
 |-------|---------|-----------------|---------------------|--------|
-| RNA | stem stack | −10.756 w | −27.9026… w | Xia et al. *Biochemistry* **37**:14719 (1998), doi:10.1021/bi9809425. Unweighted mean of the 10 unique WC **propagation** stacks (GC/CG, CC/GG, GA/CU, CG/GC, AC/UG, CA/GU, AG/UC, UA/AU, AU/UA, AA/UU) as restated in Zuber et al. *Nucleic Acids Res.* **50**:5251 (2022) Table 1A “1998 Model”, doi:10.1093/nar/gkac261. Initiation, AU-end, and symmetry terms are excluded. ΔS is recovered from each stack’s published ΔH and ΔG°37 at 310.15 K: ΔS = (ΔH − ΔG)/T. |
-| DNA | stem stack | −8.33 w | −22.28 w | SantaLucia & Hicks, *Annu. Rev. Biophys. Biomol. Struct.* **33**:415 (2004), doi:10.1146/annurev.biophys.32.110601.141800, Table 1 (1 M NaCl). Unweighted mean of the 10 WC **propagation** stacks (AA/TT … GG/CC). Initiation, terminal AT, and symmetry are excluded. |
-| PROTEIN_HELIX | backbone H-bond | −1.3 w | *gap* (0) | Scholtz, Marqusee, Baldwin et al., *PNAS* **88**:2854 (1991), doi:10.1073/pnas.88.7.2854. Calorimetric helix **unfolding** ΔH ≈ +1.3 kcal mol⁻¹ residue⁻¹ (best estimate; lower limit 0.9 if ΔCp = 0). The formation increment is the negative. Companion helix–coil CD fit: Scholtz, Qian, Baldwin, *Biopolymers* **31**:1463 (1991), doi:10.1002/bip.360311304 (ΔH° ≈ −0.955 kcal mol⁻¹ residue⁻¹). Per-residue ΔS is **not** filled — there is no calorimetric consensus independent of ΔCp assumptions; do not invent ΔS from *s*. |
+| RNA | stem stack | Xia dimer, or −10.756 w mean | recovered ΔS, or −27.90… w mean | Xia et al. *Biochemistry* **37**:14719 (1998), doi:10.1021/bi9809425. Ten unique WC **propagation** stacks (GC/CG … AA/UU) as restated in Zuber et al. *Nucleic Acids Res.* **50**:5251 (2022) Table 1A “1998 Model”, doi:10.1093/nar/gkac261. Empty `motif` → unweighted mean. Named `motif` (e.g. `GC/CG`) → that row. TSV copy: `LIB/NATURaL/data/xia_1998_rna_wc_stacks.tsv`. |
+| RNA | loop (hairpin initiation) | Lu ΔH°(*n*) · w | *gap* (0) | Lu, Turner, Mathews, *Nucleic Acids Res.* **34**:4912 (2006), doi:10.1093/nar/gkl472, Table 1. Default *n*=4 → +4.8. `loop_unpaired` selects *n* (3:1.3; 4:4.8; 5:3.6; 6:−2.9; 7:1.3; 8:−2.9; ≥9:5.0). This is hairpin **initiation enthalpy**, not a ligand–loop H-bond. ΔS is not tabulated (extra length cost is treated as entropic). TSV: `LIB/NATURaL/data/lu_2006_rna_hairpin_initiation.tsv`. |
+| DNA | stem stack | Table 2 dimer, or −8.36 w mean | Table 2 dimer, or −22.37 w mean | SantaLucia Jr, *PNAS* **95**:1460 (1998), doi:10.1073/pnas.95.4.1460 (PMC19045), **Table 2** in 1 M NaCl. Ten WC propagation stacks (AA/TT … GG/CC); Init G·C / Init A·T / Symmetry are stored but are not the stem-stack default. Empty `motif` → WC-stack mean. Named `motif` (e.g. `AA/TT` = −7.9 / −22.2) → that row. 2004 review is a reprint, not the table source. TSV: `LIB/NATURaL/data/santalucia_1998_pnas_table2.tsv`. |
+| PROTEIN_HELIX | backbone H-bond | −1.3 w | −5.2 w | ΔH: Scholtz, Marqusee, Baldwin et al., *PNAS* **88**:2854 (1991), doi:10.1073/pnas.88.7.2854 (calorimetric helix **unfolding** +1.3 → formation −1.3). ΔS: Zavrtanik, Lah, Hadži, *Biophys. J.* **125**:305 (2026), doi:10.1016/j.bpj.2025.11.2689 (PubMed 41318999). Helix→coil ΔS_BB = 5.2 ± 0.3 cal mol⁻¹ K⁻¹ per peptide unit → formation −5.2. |
+| PROTEIN_SHEET | bridge H-bond | −0.4 w | −1.0 w | **Labelled experimental midpoint.** Meier & Seelig, *J. Am. Chem. Soc.* **130**:1017 (2008), doi:10.1021/ja077231r — membrane coil⇄β, ΔH_fold ≈ −0.2 to −0.6 kcal mol⁻¹ residue⁻¹, TΔS_fold ≈ −0.1 to −0.5; mid ΔH = −0.4, ΔS ≈ −1.0 e.u. at 298 K. Caveat: Deechongkit et al., *Nature* **430**:101 (2004), doi:10.1038/nature02611 — β H-bond energetics are context-dependent. Not a universal NN sheet table. |
 
-RNA mean ≠ DNA mean (required). Sequence-specific stack lookup is future work;
-the default is the unweighted propagation-stack mean, not a single invented
-“typical stack”.
+RNA mean ≠ DNA mean (required). `w` multiplies the matched published term. An RNA `ContactKind` never reads the DNA or protein tables (and conversely). Shared algebra, separate numbers.
 
 ### Experimental gaps (`TODO(burgundy)` cite slots)
 
@@ -102,14 +105,14 @@ align the harvested set here and in `LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}`
 
 | Class | Contact | Why unset | Canonical reference (wrong quantity or wrong scale — do not paste as the increment) |
 |-------|---------|-----------|-------------------------------------------------------------------------------------|
-| RNA | loop H-bond | No calorimetric consensus for a **ligand–loop** H-bond ΔH/ΔS | Mathews, Sabina, Zuker, Turner, *J. Mol. Biol.* **288**:911 (1999), doi:10.1006/jmbi.1999.2700 — hairpin/internal-loop **initiation** ΔG, not this contact |
-| DNA | loop H-bond | Same mismatch of physical quantity | SantaLucia 2004 hairpin initiation tables (doi:10.1146/annurev.biophys.32.110601.141800) |
+| DNA | loop H-bond | No calorimetric consensus for a **ligand–loop** H-bond ΔH/ΔS | SantaLucia 1998/2004 hairpin initiation tables are loop-initiation ΔG, not this contact |
 | DNA | intercalation | Ligand-specific; no generic calorimetric mean | Leave cite slot for a harvested intercalator review (e.g. Chaires) once a consensus increment exists |
 | PROTEIN_HELIX | packing | No per-contact calorimetric consensus distinct from the backbone H-bond term | `TODO(burgundy)` |
 | PROTEIN_HELIX | clash | No calorimetric consensus | `TODO(burgundy)` |
-| PROTEIN_SHEET | bridge H-bond | No per-bridge consensus | Maynard, Sharman, Searle, *J. Am. Chem. Soc.* **120**:1996 (1998), doi:10.1021/ja9726769 is **whole 16-residue β-hairpin** folding (endothermic / entropy-driven in water, ΔH ≈ +7 kJ mol⁻¹ for the peptide). Wrong scale and often opposite sign versus a per-bridge increment — **do not reuse** |
 | PROTEIN_SHEET | hydrophobic pack | No per-contact consensus | `TODO(burgundy)` |
 | PROTEIN_SHEET | shear | No calorimetric consensus | `TODO(burgundy)` |
+
+Maynard, Sharman, Searle, *J. Am. Chem. Soc.* **120**:1996 (1998), doi:10.1021/ja9726769 is **whole 16-residue β-hairpin** folding — wrong scale versus a per-bridge increment; **do not reuse**.
 
 ## API
 
@@ -152,8 +155,11 @@ See also `docs/DUAL_ASSEMBLY_COTRANSLATIONAL.md` §10 and
 
 - Xia, SantaLucia, Turner et al. (1998) *Biochemistry* **37**:14719, doi:10.1021/bi9809425
 - Zuber, Schroeder, Kennedy, Turner (2022) *Nucleic Acids Res.* **50**:5251, doi:10.1093/nar/gkac261
-- SantaLucia & Hicks (2004) *Annu. Rev. Biophys. Biomol. Struct.* **33**:415, doi:10.1146/annurev.biophys.32.110601.141800
+- Lu, Turner, Mathews (2006) *Nucleic Acids Res.* **34**:4912, doi:10.1093/nar/gkl472
+- SantaLucia Jr (1998) *PNAS* **95**:1460, doi:10.1073/pnas.95.4.1460 (PMC19045) — DNA Table 2
+- SantaLucia & Hicks (2004) *Annu. Rev. Biophys. Biomol. Struct.* **33**:415, doi:10.1146/annurev.biophys.32.110601.141800 — review reprint, not the DNA table source
 - Scholtz, Marqusee, Baldwin et al. (1991) *PNAS* **88**:2854, doi:10.1073/pnas.88.7.2854
-- Scholtz, Qian, Baldwin (1991) *Biopolymers* **31**:1463, doi:10.1002/bip.360311304
-- Mathews, Sabina, Zuker, Turner (1999) *J. Mol. Biol.* **288**:911, doi:10.1006/jmbi.1999.2700 — loop **initiation** (not a ligand–loop increment)
+- Zavrtanik, Lah, Hadži (2026) *Biophys. J.* **125**:305, doi:10.1016/j.bpj.2025.11.2689 (PubMed 41318999)
+- Meier & Seelig (2008) *J. Am. Chem. Soc.* **130**:1017, doi:10.1021/ja077231r — labelled experimental sheet midpoint
+- Deechongkit et al. (2004) *Nature* **430**:101, doi:10.1038/nature02611 — β H-bond context caveat
 - Maynard, Sharman, Searle (1998) *J. Am. Chem. Soc.* **120**:1996, doi:10.1021/ja9726769 — whole-hairpin folding (not a per-bridge increment)
