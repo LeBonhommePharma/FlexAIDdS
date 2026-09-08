@@ -44,10 +44,6 @@ protected:
 
     void SetUp() override {
         mock_fa = new FA_Global();
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wnontrivial-memcall"
-        std::memset(mock_fa, 0, sizeof(FA_Global));
-#pragma clang diagnostic pop
         mock_fa->temperature = static_cast<uint>(TEMP);
         mock_fa->multi_model = false;
         mock_fa->n_models = 1;
@@ -63,7 +59,7 @@ protected:
         mock_vc = new VC_Global();
         std::memset(mock_vc, 0, sizeof(VC_Global));
 
-        mock_chroms = new chromosome[N_CHROMS];
+        mock_chroms = new chromosome[N_CHROMS]();
         for (int i = 0; i < N_CHROMS; ++i) {
             mock_chroms[i].genes = new gene[N_GENES];
             std::memset(mock_chroms[i].genes, 0, sizeof(gene) * N_GENES);
@@ -120,6 +116,65 @@ protected:
 // ===========================================================================
 // POSE total_energy() TESTS
 // ===========================================================================
+
+TEST_F(CCBMTest, ProductionPoseConversionRetainsReceptorModelIdentity) {
+    mock_fa->multi_model = true;
+    mock_fa->n_models = 2;
+    mock_fa->model_gene_index = N_GENES - 1;
+    mock_fa->model_strain = {0.0, 3.0};
+    BindingMode mode(test_population);
+    for (int i = 0; i < 2; ++i) {
+        mock_chroms[i].genes[N_GENES - 1].to_ic = i;
+        // These evaluated scores already include any model strain.
+        mock_chroms[i].app_evalue = -10.0;
+        Pose p = Pose::from_chromosome(&mock_chroms[i], i, i, 0.5f,
+            static_cast<uint>(TEMP), {1.0f, 2.0f}, *mock_fa, N_GENES);
+        EXPECT_EQ(p.model_index, i);
+        EXPECT_EQ(p.chrom, &mock_chroms[i]);
+        EXPECT_EQ(p.chrom_index, i);
+        EXPECT_EQ(p.order, i);
+        EXPECT_EQ(p.vPose, (std::vector<float>{1.0f, 2.0f}));
+        EXPECT_DOUBLE_EQ(p.CF, -10.0);
+        EXPECT_DOUBLE_EQ(p.total_energy(), -10.0);
+        EXPECT_DOUBLE_EQ(p.receptor_strain, 0.0);
+        mode.add_Pose(p);
+    }
+    const auto populations = mode.conformer_populations();
+    ASSERT_EQ(populations.size(), 2u);
+    EXPECT_NEAR(populations[0], 0.5, EPS);
+    EXPECT_NEAR(populations[1], 0.5, EPS);
+    EXPECT_NEAR(mode.receptor_conformational_entropy(), kB * std::log(2.0), EPS);
+}
+
+TEST_F(CCBMTest, ProductionModelDecoderMatchesRoundedClampedEvaluatorGene) {
+    mock_fa->multi_model = true;
+    mock_fa->n_models = 3;
+    mock_fa->model_gene_index = N_GENES - 1;
+    for (const auto& sample : std::vector<std::pair<double, int>>{
+             {-1.0e30, 0}, {0.49, 0}, {0.5, 1}, {1.49, 1}, {1.5, 2}, {1.0e30, 2}}) {
+        mock_chroms[0].genes[N_GENES - 1].to_ic = sample.first;
+        EXPECT_EQ(chromosome_model_index(mock_chroms[0], *mock_fa, N_GENES), sample.second);
+    }
+    mock_chroms[0].genes[N_GENES - 1].to_ic = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(chromosome_model_index(mock_chroms[0], *mock_fa, N_GENES), std::invalid_argument);
+    mock_fa->model_gene_index = N_GENES;
+    EXPECT_THROW(chromosome_model_index(mock_chroms[0], *mock_fa, N_GENES), std::invalid_argument);
+    mock_fa->model_gene_index = -1;
+    EXPECT_THROW(chromosome_model_index(mock_chroms[0], *mock_fa, N_GENES), std::invalid_argument);
+}
+
+TEST_F(CCBMTest, ProductionPoseConversionPreservesSingleModelBehavior) {
+    mock_chroms[0].app_evalue = -7.5;
+    const Pose old_pose(&mock_chroms[0], 0, 2, 0.25f, static_cast<uint>(TEMP), {});
+    const Pose pose = Pose::from_chromosome(&mock_chroms[0], 0, 2, 0.25f,
+        static_cast<uint>(TEMP), {}, *mock_fa, N_GENES);
+    EXPECT_EQ(pose.model_index, 0);
+    EXPECT_DOUBLE_EQ(pose.CF, old_pose.CF);
+    EXPECT_DOUBLE_EQ(pose.boltzmann_weight, old_pose.boltzmann_weight);
+    EXPECT_DOUBLE_EQ(pose.total_energy(), old_pose.total_energy());
+    EXPECT_THROW(Pose::from_chromosome(nullptr, 0, 0, 0.0f,
+        static_cast<uint>(TEMP), {}, *mock_fa, N_GENES), std::invalid_argument);
+}
 
 TEST_F(CCBMTest, TotalEnergyIncludesStrain) {
     Pose p = make_ccbm_pose(-10.0, 1, 2.5, 0);

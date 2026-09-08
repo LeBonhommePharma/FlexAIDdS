@@ -1238,6 +1238,35 @@ Pose::Pose(chromosome* chrom, int index, int iorder, float dist, uint temperatur
 }
 
 
+int chromosome_model_index(const chromosome& chrom, const FA_Global& fa, int num_genes)
+{
+	if (!fa.multi_model) return 0;
+	if (fa.n_models < 1)
+		throw std::invalid_argument("multi-model pose requires a positive model count");
+	if (fa.n_models == 1) return 0;
+	if (!chrom.genes || fa.model_gene_index < 0 || fa.model_gene_index >= num_genes)
+		throw std::invalid_argument("multi-model pose has no valid model gene");
+	const double value = chrom.genes[fa.model_gene_index].to_ic;
+	if (!std::isfinite(value))
+		throw std::invalid_argument("multi-model pose has a non-finite model gene");
+	// Clamp before integer conversion, including for extreme finite genes.
+	return static_cast<int>(std::max(0.0, std::min(
+		static_cast<double>(fa.n_models - 1), std::round(value))));
+}
+
+Pose Pose::from_chromosome(chromosome* chrom, int index, int iorder, float dist,
+                          uint temperature, std::vector<float> coordinates,
+                          const FA_Global& fa, int num_genes)
+{
+	if (!chrom) throw std::invalid_argument("pose requires a chromosome");
+	const int model = chromosome_model_index(*chrom, fa, num_genes);
+	Pose pose(chrom, index, iorder, dist, temperature, std::move(coordinates));
+	pose.model_index = model;
+	// app_evalue already includes any evaluator-injected conformer strain.
+	// Preserve that score; adding model_strain here would count it twice.
+	return pose;
+}
+
 Pose::~Pose() {}
 
 
