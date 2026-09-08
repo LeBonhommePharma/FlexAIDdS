@@ -18,9 +18,17 @@ fi
 git -C "$ROOT" worktree add "$WORKTREE" origin/gh-pages
 
 # Product site only (served at /FlexAIDdS/ on the apex domain).
-rsync -a --delete \
+# --checksum: git worktree add stamps dest mtimes as "now", which is newer
+# than the just-patched source. rsync -a then skips equal-size files, so a
+# 4-digit commit count change (2553→2560) never reached Pages.
+rsync -a --delete --checksum \
   --exclude '.git' \
   "$SITE/FlexAIDdS/" "$WORKTREE/"
+
+if ! cmp -s "$SITE/FlexAIDdS/index.html" "$WORKTREE/index.html"; then
+  echo "gh-pages publish: site/FlexAIDdS/index.html was not copied" >&2
+  exit 1
+fi
 
 # Never claim the apex custom domain from this repo.
 rm -f "$WORKTREE/CNAME"
