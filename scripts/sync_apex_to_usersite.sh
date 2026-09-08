@@ -1,38 +1,50 @@
 #!/usr/bin/env bash
-# Sync full site/ to LeBonhommePharma/lebonhommepharma.github.io (thebonhomme.com CNAME).
-# User-site Pages serves the apex domain; gh-pages alone does not update /.
+# Surgically patch repo-stat markers on lebonhommepharma.github.io.
+#
+# The apex repo is a full brand site (rive, drugs, entropy, …). Never rsync
+# --delete site/ onto it: that would wipe unrelated routes. A FlexAIDdS
+# GITHUB_TOKEN also cannot push there (403), so the durable publisher is the
+# apex workflow `.github/workflows/update-flexaidds-stats.yml`, which pulls
+# GitHub API stats itself.
+#
+# This script is an optional same-day push when USER_SITE_TOKEN (a PAT / fine-
+# grained token with contents:write on the user-site repo) is set.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SITE="$ROOT/site"
 USER_REPO="${USER_SITE_REPO:-LeBonhommePharma/lebonhommepharma.github.io}"
 WORKDIR="/tmp/usersite-sync"
-TOKEN="${GITHUB_TOKEN:-}"
+TOKEN="${USER_SITE_TOKEN:-}"
+JSON="$ROOT/site/assets/repo-stats.json"
 
 if [ -z "$TOKEN" ]; then
-  echo "GITHUB_TOKEN is required to sync $USER_REPO" >&2
+  echo "usersite sync: skipped (no USER_SITE_TOKEN)."
+  echo "Apex stats are pulled by ${USER_REPO} workflow update-flexaidds-stats.yml."
+  exit 0
+fi
+
+if [ ! -f "$JSON" ]; then
+  echo "usersite sync: missing $JSON (run update_site_stats.py first)" >&2
   exit 1
 fi
 
 rm -rf "$WORKDIR"
-git clone "https://x-access-token:${TOKEN}@github.com/${USER_REPO}.git" "$WORKDIR"
+git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${USER_REPO}.git" "$WORKDIR"
 
-rsync -a --delete \
-  --exclude '.git' \
-  "$SITE/" "$WORKDIR/"
+python3 "$ROOT/scripts/update_site_stats.py" --from-json "$JSON" --patch-tree "$WORKDIR"
 
 cd "$WORKDIR"
-git add -A
+git add -- FlexAIDdS/index.html flexaid-ds/index.html assets/repo-stats.json
 
 if git diff --staged --quiet; then
   echo "user-site sync: no changes"
 else
   git -c user.name="github-actions[bot]" \
       -c user.email="github-actions[bot]@users.noreply.github.com" \
-      commit -m "Sync full site/ from FlexAIDdS (corporate homepage + product paths)"
+      commit -m "chore: refresh FlexAIDdS repo stats from engine snapshot"
   git push origin HEAD:main
-  echo "user-site sync: pushed"
+  echo "user-site sync: pushed stats-only patch"
 fi
 
 rm -rf "$WORKDIR"

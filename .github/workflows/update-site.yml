@@ -10,27 +10,33 @@ on:
       - 'scripts/update_site_stats.py'
       - 'scripts/sync_apex_to_ghpages.sh'
       - 'scripts/sync_apex_to_usersite.sh'
+      - 'scripts/verify_live_site_stats.py'
+      - 'tests/test_site_publish_scripts.py'
       - '.github/workflows/update-site.yml'
+      - '.github/workflows/pages.yml'
   schedule:
     - cron: '0 6 * * *'    # Daily 06:00 UTC
   workflow_dispatch:
 
 concurrency:
-  group: pages
+  group: update-site
   cancel-in-progress: true
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
   issues: write
+  actions: write
 
 jobs:
   deploy-site:
     runs-on: ubuntu-latest
-    # Pages source for this repo is the gh-pages branch (thebonhomme.com/FlexAIDdS/).
-    # Do not attach the github-pages environment: protection rules have been
-    # rejecting branch "main" before any step runs, so the live site froze.
+    # Do not attach environment: github-pages. That environment's deployment
+    # branch policy allows only `gh-pages` and `master`, so a job on `main`
+    # is rejected before any step runs. That is why PR #431 removed
+    # actions/deploy-pages and the live artifact froze at 2026-07-14.
+    # Pages build_type is still "workflow", so git-pushing gh-pages does
+    # not publish. This job snapshots gh-pages, then dispatches pages.yml
+    # with --ref gh-pages (the allowed branch) to run deploy-pages.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
@@ -40,22 +46,81 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Guard publish scripts
+        run: python3 tests/test_site_publish_scripts.py
+
       # Refresh stats in this job workspace only. Do not commit them to main:
       # the old git push origin HEAD:main advanced gated SHAs (dbd93169,
       # c30e7747, de92241a) and retriggered full ci.yml on non-science commits.
-      # Live numbers go to gh-pages / the user-site repo in the sync steps below.
       - name: Update site stats (workspace only)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/update_site_stats.py
 
-      - name: Publish site to gh-pages branch
+      - name: Verify stats landed in the Pages artifact
+        run: python3 scripts/verify_live_site_stats.py --local-only --json site/assets/repo-stats.json --html site/FlexAIDdS/index.html
+
+      - name: Publish snapshot to gh-pages branch
         run: bash scripts/sync_apex_to_ghpages.sh
 
-      - name: Sync full site to user-site repo (thebonhomme.com/)
+      - name: Dispatch Pages deploy from gh-pages (allowed environment branch)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/sync_apex_to_usersite.sh || echo "::warning::user-site sync failed (check repo permissions). gh-pages deploy still live."
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # GITHUB_TOKEN pushes do not start other workflows. Dispatch the
+          # Pages job on the allowed ref so github-pages branch policy accepts it.
+          dispatched=0
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if gh workflow run pages.yml --ref gh-pages -R "${GITHUB_REPOSITORY}"; then
+              dispatched=1
+              break
+            fi
+            echo "workflow dispatch attempt ${attempt} failed; retrying..."
+            sleep 5
+          done
+          if [ "$dispatched" -ne 1 ]; then
+            echo "::error::Could not dispatch pages.yml on gh-pages"
+            exit 1
+          fi
+          sha="$(git ls-remote origin refs/heads/gh-pages | awk '{print $1}')"
+          echo "Waiting for Deploy GitHub Pages run on gh-pages@${sha}..."
+          run_id=""
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            sleep 5
+            run_id="$(
+              gh run list --workflow=pages.yml --branch=gh-pages --limit 5 \
+                --json databaseId,headSha \
+                --jq ".[] | select(.headSha == \"${sha}\") | .databaseId" \
+                | head -n 1 | tr -d '[:space:]'
+            )"
+            if [ -n "$run_id" ]; then
+              break
+            fi
+            echo "no matching pages.yml run yet (attempt ${attempt})"
+          done
+          if [ -z "$run_id" ]; then
+            echo "::error::No pages.yml run found for gh-pages@${sha}"
+            exit 1
+          fi
+          echo "Watching run ${run_id}"
+          gh run watch "$run_id" --exit-status
+
+      - name: Patch apex user-site stats (optional; never rsync the tree)
+        env:
+          USER_SITE_TOKEN: ${{ secrets.USER_SITE_TOKEN }}
+        run: bash scripts/sync_apex_to_usersite.sh
+
+      - name: Verify live /FlexAIDdS/ markers
+        run: |
+          python3 scripts/verify_live_site_stats.py \
+            --url https://lebonhommepharma.github.io/FlexAIDdS/ \
+            --json site/assets/repo-stats.json \
+            --timeout 600 --interval 15
+          python3 scripts/verify_live_site_stats.py \
+            --url https://thebonhomme.com/FlexAIDdS/ \
+            --json site/assets/repo-stats.json \
+            --timeout 180 --interval 15
 
   check-cmake-deps:
     runs-on: ubuntu-latest

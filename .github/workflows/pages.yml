@@ -1,0 +1,60 @@
+# Publish the FlexAIDdS product tree to GitHub Pages.
+#
+# The github-pages environment only allows branches `gh-pages` and `master`
+# (not `main`). Calling actions/deploy-pages from Deploy Site on main is what
+# froze https://thebonhomme.com/FlexAIDdS/ at the 2026-07-14 artifact.
+#
+# This workflow must run with github.ref = refs/heads/gh-pages.
+# Deploy Site copies this file onto gh-pages and then:
+#   gh workflow run pages.yml --ref gh-pages
+# (GITHUB_TOKEN pushes do not start other workflows, so the push trigger
+# alone is not enough when the publisher is Actions.)
+
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [gh-pages]
+  workflow_dispatch:
+
+concurrency:
+  group: github-pages-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Require product index.html
+        run: test -f index.html
+
+      - name: Stage Pages artifact
+        run: |
+          mkdir -p "${RUNNER_TEMP}/pages-artifact"
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            ./ "${RUNNER_TEMP}/pages-artifact/"
+          touch "${RUNNER_TEMP}/pages-artifact/.nojekyll"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/pages-artifact
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
