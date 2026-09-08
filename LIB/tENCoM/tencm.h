@@ -135,6 +135,57 @@ public:
                            float cutoff = 7.0f,
                            float k0     = DEFAULT_K0);
 
+    // Build the ligand ENM Hessian in INTERNAL (dihedral) coordinates -- the same
+    // basis build()/build_from_ca() use for the protein.
+    //
+    // WHY THIS EXISTS. The thermodynamic cycle
+    //     dS_vib(bind) = S_vib(complex) - S_vib(apo receptor) - S_vib(free ligand)
+    // is only a differential if all three terms live in ONE basis. Until this
+    // function, the two protein terms were Torsional (dihedral DOFs, no rigid-body
+    // null space) while the ligand term came from build_from_ligand and was
+    // Cartesian 3N (six rigid-body modes stripped by a cutoff). Subtracting across
+    // bases is not a validity-preserving operation: the bases differ not only in
+    // dimension but in WHICH MODES EXIST. The same incoherence reached the
+    // objective, where ic2cf.cpp adds tencom_weight * cf.h_rep with h_rep taken
+    // from the Cartesian path.
+    //
+    // DOF DEFINITION, matching the GA's own. FlexAID already represents the ligand
+    // in internal coordinates: buildcc() reconstructs Cartesians from each atom's
+    // rec[0..2] frame plus dis/ang/dih, and a ligand dihedral gene sets
+    // atoms[FA->map_par[i].atm].dih directly (FOPTICS.cpp:563), with dependent
+    // atoms following via .shift (:571). So one torsional DOF is taken per DISTINCT
+    // rotatable bond rec[1]--rec[0] carried by a reconstruction-flagged
+    // (recs == 'm') ligand atom. That is deliberately the GA's own DOF set rather
+    // than an independent perception, so the entropy is computed over the same
+    // coordinates the search moves in. Callers should assert
+    // n_torsion_dofs() == FA->nflexbonds; a mismatch means the two perceptions have
+    // diverged and the number is not comparable to a search result.
+    //
+    // Hessian: H_kl = sum_contacts k_ij (u_ij . dJ_k)(u_ij . dJ_l), identical in
+    // form to the protein assembly, with the Jacobian J_k[a] = u_k x (r_a - r_pivot)
+    // for atoms downstream of DOF k's bond and 0 otherwise.
+    //
+    // DEGENERATE CASES ARE REAL PHYSICS, NOT FAILURES, and are reported rather than
+    // silently zeroed. Measured on Astex-84: torsional DOF count has median 4 and
+    // range 0-11, against 3N-6 median 63 for the Cartesian path. Four ligands
+    // (1GPK 1Q41 1U4D 1W1P) have ZERO rotatable bonds and five (1HNN 1P2Y 1XOZ
+    // 1YV3 2GBP) have exactly one. A rigid ligand genuinely has no internal
+    // vibrational entropy to lose, so the thermodynamic S_vib is 0 (an empty sum)
+    // and well-defined -- but a 32-bin SHANNON entropy of the log-frequency
+    // spectrum is UNDEFINED over an empty spectrum and identically 0 over a single
+    // mode. Those are different functionals and only the first is valid at low DOF
+    // count. is_built() is false when fewer than 2 DOFs exist, so a caller cannot
+    // mistake a degenerate spectrum for a computed one.
+    void build_from_ligand_torsional(const atom* atoms,
+                                     int   lig_start,
+                                     int   lig_end,
+                                     float cutoff = 7.0f,
+                                     float k0     = DEFAULT_K0);
+
+    /// Number of internal-coordinate DOFs the torsional ligand path found.
+    /// Zero on every other build path. Compare against FA->nflexbonds.
+    int n_torsion_dofs() const noexcept { return n_torsion_dofs_; }
+
     // Getters
     int n_residues()    const noexcept { return static_cast<int>(ca_.size()); }
     int n_protein_ca()  const noexcept { return n_protein_ca_; }
@@ -195,6 +246,11 @@ private:
     // set explicitly by EVERY builder, so a reused object cannot carry a stale
     // basis from a previous build of the other kind.
     Basis basis_ = Basis::Torsional;
+
+    // Number of internal-coordinate DOFs found by build_from_ligand_torsional.
+    // Left at 0 by every other builder so a caller reading it after the wrong
+    // build path gets 0 rather than a stale count from a previous object use.
+    int n_torsion_dofs_ = 0;
 
     // Internal node coordinate store:
     //   indices [0, n_protein_ca_)  → protein Cα atoms

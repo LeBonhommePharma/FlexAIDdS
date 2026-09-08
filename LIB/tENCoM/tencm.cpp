@@ -232,6 +232,187 @@ void TorsionalENM::build_from_ligand(const atom* atoms,
     built_ = true;
 }
 
+// ─── build_from_ligand_torsional (INTERNAL / dihedral basis) ────────────────
+//
+// Assembles the ligand ENM Hessian over DIHEDRAL DOFs, so the ligand term of
+//     dS_vib(bind) = S_vib(complex) - S_vib(apo) - S_vib(free ligand)
+// lives in the SAME basis as the two protein terms. build_from_ligand above is
+// Cartesian 3N; subtracting across bases is not a differential, and the same
+// incoherence reached the objective via ic2cf.cpp's tencom_weight * cf.h_rep.
+//
+// The DOF set is the GA's OWN: FlexAID already carries the ligand as internal
+// coordinates (buildcc() rebuilds Cartesians from each atom's rec[0..2] frame
+// plus dis/ang/dih) and a ligand dihedral gene sets atoms[map_par[i].atm].dih
+// directly (FOPTICS.cpp:563), dependants following by .shift (:571). Taking the
+// DOFs from that representation rather than re-perceiving them means the entropy
+// is computed over the coordinates the search actually moves in.
+void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
+                                               int   lig_start,
+                                               int   lig_end,
+                                               float cutoff,
+                                               float k0)
+{
+    cutoff_ = cutoff;
+    k0_     = k0;
+    built_  = false;
+    modes_.clear();
+    n_torsion_dofs_ = 0;
+
+    if (atoms == nullptr || lig_end <= lig_start) return;
+
+    auto is_h = [](const atom& a) noexcept {
+        const char* e = a.element;
+        while (*e == ' ') ++e;
+        return e[0] == 'H' && (e[1] == '\0' || e[1] == ' ');
+    };
+
+    const std::size_t span = static_cast<std::size_t>(lig_end - lig_start);
+
+    // Heavy-atom node set plus a global-index -> node-index map.
+    std::vector<int> node_of(span, -1);
+    std::vector<std::array<float,3>> xyz;
+    for (int ai = lig_start; ai < lig_end; ++ai) {
+        if (is_h(atoms[ai])) continue;
+        node_of[static_cast<std::size_t>(ai - lig_start)] = static_cast<int>(xyz.size());
+        xyz.push_back({ atoms[ai].coor[0], atoms[ai].coor[1], atoms[ai].coor[2] });
+    }
+    const int Na = static_cast<int>(xyz.size());
+    if (Na < 3) return;
+
+    // ── DOF enumeration: distinct rotated bonds rec[1]--rec[0] carried by
+    // reconstruction-flagged (recs == 'm') ligand atoms.
+    std::vector<std::pair<int,int>> axis;          // (pivot, distal), global indices
+    for (int ai = lig_start; ai < lig_end; ++ai) {
+        if (atoms[ai].recs != 'm') continue;
+        const int b0 = atoms[ai].rec[0];
+        const int b1 = atoms[ai].rec[1];
+        if (b0 < lig_start || b0 >= lig_end) continue;
+        if (b1 < lig_start || b1 >= lig_end) continue;
+        if (is_h(atoms[b0]) || is_h(atoms[b1])) continue;
+        const std::pair<int,int> key{ std::min(b0, b1), std::max(b0, b1) };
+        if (std::find(axis.begin(), axis.end(), key) == axis.end()) axis.push_back(key);
+    }
+    const int M = static_cast<int>(axis.size());
+    n_torsion_dofs_ = M;
+
+    // Fewer than 2 DOFs is a DEGENERATE spectrum, not a failed computation: a
+    // rigid ligand genuinely has no internal vibrational entropy. Thermodynamic
+    // S_vib would be 0 (an empty sum, well-defined), but the 32-bin Shannon
+    // entropy consumers use is UNDEFINED over an empty spectrum and identically 0
+    // over one mode. Refuse to build so a caller cannot read either as computed.
+    // Measured on Astex-84: 4 ligands have 0 rotatable bonds and 5 have exactly 1.
+    if (M < 2) return;
+
+    // ── Jacobian J[k][node] = u_k x (r_node - r_pivot) for nodes DOWNSTREAM of
+    // DOF k's bond, zero otherwise. Downstream = reachable from the distal atom
+    // over atom.bond[] without crossing the rotated bond, restricted to ligand.
+    std::vector<std::array<double,3>> J(static_cast<std::size_t>(M) * Na,
+                                        std::array<double,3>{0.0, 0.0, 0.0});
+    std::vector<char> seen(span);
+    std::vector<int>  stack;
+    for (int k = 0; k < M; ++k) {
+        const int p = axis[static_cast<std::size_t>(k)].first;
+        const int d = axis[static_cast<std::size_t>(k)].second;
+        double ux = static_cast<double>(atoms[d].coor[0]) - atoms[p].coor[0];
+        double uy = static_cast<double>(atoms[d].coor[1]) - atoms[p].coor[1];
+        double uz = static_cast<double>(atoms[d].coor[2]) - atoms[p].coor[2];
+        const double ul = std::sqrt(ux*ux + uy*uy + uz*uz);
+        if (!(ul > 1e-6)) continue;                 // coincident: no axis
+        ux /= ul; uy /= ul; uz /= ul;
+
+        std::fill(seen.begin(), seen.end(), char(0));
+        seen[static_cast<std::size_t>(p - lig_start)] = 1;   // never cross back
+        stack.clear();
+        stack.push_back(d);
+        seen[static_cast<std::size_t>(d - lig_start)] = 1;
+        while (!stack.empty()) {
+            const int cur = stack.back(); stack.pop_back();
+            const int nb  = atoms[cur].bond[0];
+            for (int t = 1; t <= nb && t < 7; ++t) {
+                const int nxt = atoms[cur].bond[t];
+                if (nxt < lig_start || nxt >= lig_end) continue;
+                char& s = seen[static_cast<std::size_t>(nxt - lig_start)];
+                if (s) continue;
+                s = 1;
+                stack.push_back(nxt);
+            }
+        }
+        for (int ai = lig_start; ai < lig_end; ++ai) {
+            if (ai == p) continue;                            // pivot is fixed
+            if (!seen[static_cast<std::size_t>(ai - lig_start)]) continue;
+            const int nd = node_of[static_cast<std::size_t>(ai - lig_start)];
+            if (nd < 0) continue;                             // hydrogen: not a node
+            const double rx = static_cast<double>(atoms[ai].coor[0]) - atoms[p].coor[0];
+            const double ry = static_cast<double>(atoms[ai].coor[1]) - atoms[p].coor[1];
+            const double rz = static_cast<double>(atoms[ai].coor[2]) - atoms[p].coor[2];
+            J[static_cast<std::size_t>(k) * Na + nd] =
+                { uy*rz - uz*ry, uz*rx - ux*rz, ux*ry - uy*rx };
+        }
+    }
+
+    // ── H_kl = sum_contacts k_ij (u_ij . dJ_k)(u_ij . dJ_l) -- the same
+    // functional form as the protein torsional assembly (tencm.cpp:741-762),
+    // with the same step-function spring k_ij = k0 * (cutoff/r0)^6 as
+    // build_from_ligand, so only the BASIS differs between the two ligand paths.
+    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(M, M);
+    const double rc2 = static_cast<double>(cutoff_) * cutoff_;
+    std::vector<double> proj(static_cast<std::size_t>(M));
+    for (int a = 0; a < Na; ++a) {
+        for (int b = a + 1; b < Na; ++b) {
+            const double dx = xyz[b][0] - xyz[a][0];
+            const double dy = xyz[b][1] - xyz[a][1];
+            const double dz = xyz[b][2] - xyz[a][2];
+            const double r2 = dx*dx + dy*dy + dz*dz;
+            if (r2 > rc2 || r2 < 1e-6) continue;
+
+            const double r0    = std::sqrt(r2);
+            const double ratio = static_cast<double>(cutoff_) / r0;
+            const double r3    = ratio * ratio * ratio;
+            const double kij   = static_cast<double>(k0_) * (r3 * r3);
+            const double ux = dx / r0, uy = dy / r0, uz = dz / r0;
+
+            for (int k = 0; k < M; ++k) {
+                const auto& ja = J[static_cast<std::size_t>(k) * Na + a];
+                const auto& jb = J[static_cast<std::size_t>(k) * Na + b];
+                proj[static_cast<std::size_t>(k)] =
+                    ux * (ja[0] - jb[0]) + uy * (ja[1] - jb[1]) + uz * (ja[2] - jb[2]);
+            }
+            for (int k = 0; k < M; ++k) {
+                const double pk = proj[static_cast<std::size_t>(k)];
+                if (pk == 0.0) continue;
+                for (int l = k; l < M; ++l) {
+                    const double h = kij * pk * proj[static_cast<std::size_t>(l)];
+                    H(k, l) += h;
+                    if (l != k) H(l, k) += h;
+                }
+            }
+        }
+    }
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(H);
+    if (solver.info() != Eigen::Success) {
+        std::cerr << "TENCM: ligand TORSIONAL diagonalisation failed; skipping.\n";
+        return;
+    }
+
+    const Eigen::VectorXd& vals = solver.eigenvalues();   // ascending
+    modes_.clear();
+    modes_.reserve(static_cast<std::size_t>(M));
+    for (int m = 0; m < M; ++m) {
+        NormalMode nm;
+        nm.eigenvalue = vals(m);
+        // eigenvector intentionally left empty (H(ω) needs eigenvalues only)
+        modes_.push_back(std::move(nm));
+    }
+
+    // Dihedral DOFs carry NO rigid-body null space, so vibrational_eigenvalues()
+    // must expect 0 rigid modes here rather than 6 -- it branches on basis_
+    // (tencm.cpp:243), so declaring the basis is what makes every downstream
+    // consumer correct without editing any of them.
+    basis_ = Basis::Torsional;
+    built_ = true;
+}
+
 // ─── vibrational_eigenvalues ────────────────────────────────────────────────
 //
 // See the header for the measurement that motivates this. Summary: a `> 0.0`
