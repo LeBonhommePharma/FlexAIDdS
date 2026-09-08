@@ -641,7 +641,9 @@ TEST(DualAssemblyRunner, PoseLocalThermoRewriteIsDiagnosticOnly)
         EXPECT_TRUE(std::isfinite(out.dG_A_kcal));
         EXPECT_TRUE(out.pose_local_thermo_applied);
         EXPECT_LT(out.pose_local_dH_kcal, 0.0);
-        EXPECT_NEAR(out.pose_local_dH_kcal, -1.2, 1e-12);
+        EXPECT_NEAR(out.pose_local_dH_kcal, natural::kXia1998RnaWcStackMean_dH_kcal, 1e-12);
+        EXPECT_NEAR(out.pose_local_dS_cal_per_mol_K,
+                    natural::kXia1998RnaWcStackMean_dS_cal, 1e-12);
         EXPECT_TRUE(std::isfinite(out.pose_local_dG_kcal));
         // Validated DualAssembly ΔG is the StatMech engine value, not the local SS patch.
         EXPECT_NE(out.dG_A_kcal, out.pose_local_dG_kcal);

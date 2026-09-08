@@ -22,9 +22,11 @@ At the current stage, the following should be treated as experimental:
 - PoseLocalThermoRewrite (`LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}`): experimental
   docking-pose rewrite of local secondary-structure ΔH/ΔS. RNA, DNA, protein
   α-helix, and protein β-sheet share the same algebra and use **class-specific**
-  increment tables (Turner-shaped RNA ≠ SantaLucia-shaped DNA ≠ helix ≠ sheet).
-  Default OFF (`DualAssemblyConfig::enable_pose_local_thermo_rewrite`,
-  `FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE`). Draft increments are not claim-ready.
+  increment tables (Xia 1998 RNA NN mean ≠ SantaLucia 2004 DNA NN mean ≠
+  Scholtz 1991 helix ΔH ≠ sheet gaps). Default OFF
+  (`DualAssemblyConfig::enable_pose_local_thermo_rewrite`,
+  `FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE`). Motifs without a calorimetric
+  consensus stay unset (`TODO(burgundy)` cite slots) — no invented placeholders.
   Does not feed `G_natural` / Astex / FlexADS claim contracts. See
   `docs/POSE_LOCAL_THERMO_REWRITE.md`.
 - backend-specific acceleration paths not required by the Core 1.0 support matrix

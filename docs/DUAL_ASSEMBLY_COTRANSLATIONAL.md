@@ -460,9 +460,11 @@ Pose→local secondary-structure ΔH/ΔS rewrite (`LIB/NATURaL/PoseLocalThermoRe
 is that 2014 ligand coupling generalized to RNA stem-loops, DNA stem-loops,
 protein α-helix, and protein β-sheet. The four classes share **algebra only**
 (ΔG = ΔH − TΔS, geometry-weighted contacts, Boltzmann mixture over top-k poses)
-and keep **class-specific increment tables**. Experimental, default OFF; see
-`docs/POSE_LOCAL_THERMO_REWRITE.md`. It is not `k_fold` in RibosomeElongation
-and does not mutate validated DualAssembly `dG_A` / `dG_B`.
+and keep **class-specific increment tables** (Xia 1998 RNA ≠ SantaLucia 2004
+DNA ≠ Scholtz 1991 helix; sheet and several contact kinds remain experimental
+gaps). Experimental, default OFF; see `docs/POSE_LOCAL_THERMO_REWRITE.md`.
+It is not `k_fold` in RibosomeElongation and does not mutate validated
+DualAssembly `dG_A` / `dG_B`.
 
 ---
 

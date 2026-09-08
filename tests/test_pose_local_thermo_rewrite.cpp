@@ -1,6 +1,6 @@
 // tests/test_pose_local_thermo_rewrite.cpp
 // Experimental PoseLocalThermoRewrite: class-specific ΔH/ΔS tables share algebra
-// only. RNA Turner-shaped ≠ DNA SantaLucia-shaped ≠ protein helix ≠ sheet.
+// only. Xia 1998 RNA ≠ SantaLucia 2004 DNA ≠ Scholtz 1991 helix ≠ sheet gaps.
 //
 // Copyright 2026 Le Bonhomme Pharma. SPDX-License-Identifier: Apache-2.0
 #include <gtest/gtest.h>
@@ -18,7 +18,13 @@ using natural::PoseView;
 using natural::SSClass;
 using natural::delta_G_kcal;
 using natural::kCalPerKcal;
+using natural::kExperimentalGapIncrement;
 using natural::kPoseRewrite_kB_kcal_mol_K;
+using natural::kSantaLucia2004DnaNnMean_dH_kcal;
+using natural::kSantaLucia2004DnaNnMean_dS_cal;
+using natural::kScholtz1991HelixFormation_dH_kcal;
+using natural::kXia1998RnaWcStackMean_dH_kcal;
+using natural::kXia1998RnaWcStackMean_dS_cal;
 using natural::rewrite_local_thermo_from_poses;
 using natural::ss_class_for_kind;
 using natural::ss_class_name;
@@ -94,21 +100,29 @@ TEST(PoseLocalThermoRewrite, TablesAreClassSpecific)
 
     const int rna_stack = static_cast<int>(ContactKind::RNA_STEM_STACK);
     const int dna_stack = static_cast<int>(ContactKind::DNA_STEM_STACK);
-    EXPECT_NEAR(rna.increments[rna_stack].dH_kcal, -1.2, 1e-12);
-    EXPECT_NEAR(dna.increments[dna_stack].dH_kcal, -1.0, 1e-12);
+    EXPECT_NEAR(rna.increments[rna_stack].dH_kcal, kXia1998RnaWcStackMean_dH_kcal, 1e-12);
+    EXPECT_NEAR(rna.increments[rna_stack].dS_cal_per_mol_K,
+                kXia1998RnaWcStackMean_dS_cal, 1e-12);
+    EXPECT_NEAR(dna.increments[dna_stack].dH_kcal, kSantaLucia2004DnaNnMean_dH_kcal, 1e-12);
+    EXPECT_NEAR(dna.increments[dna_stack].dS_cal_per_mol_K,
+                kSantaLucia2004DnaNnMean_dS_cal, 1e-12);
     EXPECT_NE(rna.increments[rna_stack].dH_kcal, dna.increments[dna_stack].dH_kcal);
+    EXPECT_NE(rna.increments[rna_stack].dS_cal_per_mol_K,
+              dna.increments[dna_stack].dS_cal_per_mol_K);
     EXPECT_NEAR(dna.increments[rna_stack].dH_kcal, 0.0, 1e-12);
     EXPECT_NEAR(rna.increments[dna_stack].dH_kcal, 0.0, 1e-12);
 
     const int hx_hb = static_cast<int>(ContactKind::PROTEIN_HELIX_BB_HBOND);
     const int sh_hb = static_cast<int>(ContactKind::PROTEIN_SHEET_BRIDGE_HBOND);
-    EXPECT_NEAR(hx.increments[hx_hb].dH_kcal, -1.5, 1e-12);
-    EXPECT_NEAR(sh.increments[sh_hb].dH_kcal, -1.8, 1e-12);
+    EXPECT_NEAR(hx.increments[hx_hb].dH_kcal, kScholtz1991HelixFormation_dH_kcal, 1e-12);
+    EXPECT_NEAR(hx.increments[hx_hb].dS_cal_per_mol_K, 0.0, 1e-12);
+    EXPECT_NEAR(sh.increments[sh_hb].dH_kcal, kExperimentalGapIncrement.dH_kcal, 1e-12);
+    EXPECT_NEAR(sh.increments[sh_hb].dS_cal_per_mol_K,
+                kExperimentalGapIncrement.dS_cal_per_mol_K, 1e-12);
     EXPECT_NE(hx.increments[hx_hb].dH_kcal, sh.increments[sh_hb].dH_kcal);
-    EXPECT_NE(hx.increments[hx_hb].dS_cal_per_mol_K, sh.increments[sh_hb].dS_cal_per_mol_K);
 }
 
-TEST(PoseLocalThermoRewrite, RnaStemStackDeltaHNegative)
+TEST(PoseLocalThermoRewrite, RnaStemStackUsesXia1998Mean)
 {
     const auto cfg = natural::default_pose_thermo_rewrite_config();
     const auto mix = rewrite_local_thermo_from_poses(
@@ -117,12 +131,13 @@ TEST(PoseLocalThermoRewrite, RnaStemStackDeltaHNegative)
         cfg);
     ASSERT_EQ(mix.n_poses_used, 1);
     EXPECT_LT(mix.dH_kcal, 0.0);
-    EXPECT_NEAR(mix.dH_kcal, -1.2, 1e-12);
-    EXPECT_NEAR(mix.dS_cal_per_mol_K, 0.0, 1e-12);
+    EXPECT_LT(mix.dS_cal_per_mol_K, 0.0);
+    EXPECT_NEAR(mix.dH_kcal, kXia1998RnaWcStackMean_dH_kcal, 1e-12);
+    EXPECT_NEAR(mix.dS_cal_per_mol_K, kXia1998RnaWcStackMean_dS_cal, 1e-12);
     EXPECT_EQ(ss_class_name(mix.per_element.at(0).ss), std::string("RNA_STEM_LOOP"));
 }
 
-TEST(PoseLocalThermoRewrite, RnaLoopHbondDeltaSNegative)
+TEST(PoseLocalThermoRewrite, RnaLoopHbondIsExperimentalGap)
 {
     const auto cfg = natural::default_pose_thermo_rewrite_config();
     const auto mix = rewrite_local_thermo_from_poses(
@@ -130,9 +145,8 @@ TEST(PoseLocalThermoRewrite, RnaLoopHbondDeltaSNegative)
         {rna_loop("hp", 0, 10)},
         cfg);
     ASSERT_EQ(mix.n_poses_used, 1);
-    EXPECT_LT(mix.dS_cal_per_mol_K, 0.0);
-    EXPECT_NEAR(mix.dS_cal_per_mol_K, -3.0, 1e-12);
-    EXPECT_NEAR(mix.dH_kcal, 0.0, 1e-12);
+    EXPECT_NEAR(mix.dH_kcal, kExperimentalGapIncrement.dH_kcal, 1e-12);
+    EXPECT_NEAR(mix.dS_cal_per_mol_K, kExperimentalGapIncrement.dS_cal_per_mol_K, 1e-12);
 }
 
 TEST(PoseLocalThermoRewrite, DnaStemStackUsesDnaTableNotRna)
@@ -148,9 +162,12 @@ TEST(PoseLocalThermoRewrite, DnaStemStackUsesDnaTableNotRna)
     ASSERT_EQ(dna.n_poses_used, 1);
     EXPECT_EQ(ss_class_name(dna.per_element.at(0).ss), std::string("DNA_STEM_LOOP"));
     EXPECT_LT(dna.dH_kcal, 0.0);
-    EXPECT_NEAR(dna.dH_kcal, -1.0, 1e-12);
-    EXPECT_NEAR(rna.dH_kcal, -1.2, 1e-12);
-    EXPECT_NE(std::fabs(dna.dH_kcal), std::fabs(rna.dH_kcal));
+    EXPECT_NEAR(dna.dH_kcal, kSantaLucia2004DnaNnMean_dH_kcal, 1e-12);
+    EXPECT_NEAR(dna.dS_cal_per_mol_K, kSantaLucia2004DnaNnMean_dS_cal, 1e-12);
+    EXPECT_NEAR(rna.dH_kcal, kXia1998RnaWcStackMean_dH_kcal, 1e-12);
+    EXPECT_NEAR(rna.dS_cal_per_mol_K, kXia1998RnaWcStackMean_dS_cal, 1e-12);
+    EXPECT_NE(dna.dH_kcal, rna.dH_kcal);
+    EXPECT_NE(dna.dS_cal_per_mol_K, rna.dS_cal_per_mol_K);
 }
 
 TEST(PoseLocalThermoRewrite, ProteinHelixUsesHelixTable)
@@ -162,8 +179,8 @@ TEST(PoseLocalThermoRewrite, ProteinHelixUsesHelixTable)
         cfg);
     ASSERT_EQ(mix.n_poses_used, 1);
     EXPECT_EQ(mix.per_element.at(0).ss, SSClass::PROTEIN_HELIX);
-    EXPECT_NEAR(mix.dH_kcal, -1.5, 1e-12);
-    EXPECT_NEAR(mix.dS_cal_per_mol_K, -1.0, 1e-12);
+    EXPECT_NEAR(mix.dH_kcal, kScholtz1991HelixFormation_dH_kcal, 1e-12);
+    EXPECT_NEAR(mix.dS_cal_per_mol_K, kExperimentalGapIncrement.dS_cal_per_mol_K, 1e-12);
     EXPECT_NE(ss_class_for_kind(ContactKind::PROTEIN_HELIX_BB_HBOND), SSClass::RNA_STEM_LOOP);
     EXPECT_NE(ss_class_for_kind(ContactKind::PROTEIN_HELIX_BB_HBOND), SSClass::DNA_STEM_LOOP);
 }
@@ -181,10 +198,10 @@ TEST(PoseLocalThermoRewrite, ProteinSheetBridgeDiffersFromHelix)
         cfg);
     ASSERT_EQ(sh.n_poses_used, 1);
     EXPECT_EQ(sh.per_element.at(0).ss, SSClass::PROTEIN_SHEET);
-    EXPECT_NEAR(sh.dH_kcal, -1.8, 1e-12);
-    EXPECT_NEAR(sh.dS_cal_per_mol_K, -1.5, 1e-12);
+    EXPECT_NEAR(sh.dH_kcal, kExperimentalGapIncrement.dH_kcal, 1e-12);
+    EXPECT_NEAR(sh.dS_cal_per_mol_K, kExperimentalGapIncrement.dS_cal_per_mol_K, 1e-12);
+    EXPECT_NEAR(hx.dH_kcal, kScholtz1991HelixFormation_dH_kcal, 1e-12);
     EXPECT_NE(sh.dH_kcal, hx.dH_kcal);
-    EXPECT_NE(sh.dS_cal_per_mol_K, hx.dS_cal_per_mol_K);
 }
 
 TEST(PoseLocalThermoRewrite, OutsideDecisionElementEmptyWhenRequired)
@@ -217,10 +234,12 @@ TEST(PoseLocalThermoRewrite, TwoPoseBoltzmannMixture)
     ASSERT_EQ(mix.n_poses_used, 2);
     ASSERT_EQ(mix.pose_weights.size(), 2u);
 
-    const double dH0 = -1.2;
-    const double dH1 = -2.4;
-    const double dG0 = delta_G_kcal(dH0, 0.0, cfg.temperature_K);
-    const double dG1 = delta_G_kcal(dH1, 0.0, cfg.temperature_K);
+    const double dH0 = kXia1998RnaWcStackMean_dH_kcal;
+    const double dS0 = kXia1998RnaWcStackMean_dS_cal;
+    const double dH1 = 2.0 * dH0;
+    const double dS1 = 2.0 * dS0;
+    const double dG0 = delta_G_kcal(dH0, dS0, cfg.temperature_K);
+    const double dG1 = delta_G_kcal(dH1, dS1, cfg.temperature_K);
     const double kT = kPoseRewrite_kB_kcal_mol_K * cfg.temperature_K;
     const double lw0 = -dG0 / kT;
     const double lw1 = -dG1 / kT;
@@ -231,6 +250,7 @@ TEST(PoseLocalThermoRewrite, TwoPoseBoltzmannMixture)
     EXPECT_NEAR(mix.pose_weights[0], p0, 1e-10);
     EXPECT_NEAR(mix.pose_weights[1], p1, 1e-10);
     EXPECT_NEAR(mix.dH_kcal, p0 * dH0 + p1 * dH1, 1e-10);
+    EXPECT_NEAR(mix.dS_cal_per_mol_K, p0 * dS0 + p1 * dS1, 1e-10);
     EXPECT_NEAR(mix.pose_weights[0] + mix.pose_weights[1], 1.0, 1e-12);
 }
 
@@ -279,6 +299,29 @@ TEST(PoseLocalThermoRewrite, ProteinOtherDoesNotRewriteByDefault)
     PoseView pose = one_contact(ContactKind::PROTEIN_HELIX_BB_HBOND, 1.0, -1, 10);
     const auto mix = rewrite_local_thermo_from_poses({pose}, {other}, cfg);
     EXPECT_TRUE(mix.empty());
+}
+
+TEST(PoseLocalThermoRewrite, ExperimentalGapsStayUnset)
+{
+    const auto cfg = natural::default_pose_thermo_rewrite_config();
+    const auto& rna = table_for_ss(cfg, SSClass::RNA_STEM_LOOP);
+    const auto& dna = table_for_ss(cfg, SSClass::DNA_STEM_LOOP);
+    const auto& hx  = table_for_ss(cfg, SSClass::PROTEIN_HELIX);
+    const auto& sh  = table_for_ss(cfg, SSClass::PROTEIN_SHEET);
+
+    const auto zero = [](const natural::ThermoIncrementTable& t, ContactKind kind) {
+        const auto& inc = t.increments[static_cast<int>(kind)];
+        EXPECT_NEAR(inc.dH_kcal, 0.0, 1e-12);
+        EXPECT_NEAR(inc.dS_cal_per_mol_K, 0.0, 1e-12);
+    };
+    zero(rna, ContactKind::RNA_LOOP_HBOND);
+    zero(dna, ContactKind::DNA_LOOP_HBOND);
+    zero(dna, ContactKind::DNA_INTERCALATION);
+    zero(hx, ContactKind::PROTEIN_HELIX_PACKING);
+    zero(hx, ContactKind::PROTEIN_HELIX_CLASH);
+    zero(sh, ContactKind::PROTEIN_SHEET_BRIDGE_HBOND);
+    zero(sh, ContactKind::PROTEIN_SHEET_HYDROPHOBIC_PACK);
+    zero(sh, ContactKind::PROTEIN_SHEET_SHEAR);
 }
 
 TEST(PoseLocalThermoRewrite, RnaKindOnDnaElementIsIgnored)

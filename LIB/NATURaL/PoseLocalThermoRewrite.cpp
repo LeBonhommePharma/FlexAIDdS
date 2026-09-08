@@ -242,22 +242,78 @@ SSClass ss_class_for_kind(ContactKind kind) noexcept
 PoseThermoRewriteConfig default_pose_thermo_rewrite_config()
 {
     PoseThermoRewriteConfig cfg;
-    // Draft experimental increments (tunable; not claim-ready).
-    // RNA (Turner-shaped): stem stack ΔH = −1.2 w; loop H-bond ΔS = −3.0 w
-    set_inc(cfg.rna, ContactKind::RNA_STEM_STACK, -1.2, 0.0);
-    set_inc(cfg.rna, ContactKind::RNA_LOOP_HBOND, 0.0, -3.0);
-    // DNA (SantaLucia-shaped): NEVER a copy of the RNA table.
-    set_inc(cfg.dna, ContactKind::DNA_STEM_STACK, -1.0, 0.0);
-    set_inc(cfg.dna, ContactKind::DNA_LOOP_HBOND, 0.0, -2.5);
-    set_inc(cfg.dna, ContactKind::DNA_INTERCALATION, -1.5, -1.0);
-    // Protein α-helix
-    set_inc(cfg.protein_helix, ContactKind::PROTEIN_HELIX_BB_HBOND, -1.5, -1.0);
-    set_inc(cfg.protein_helix, ContactKind::PROTEIN_HELIX_PACKING, -0.8, -2.0);
-    set_inc(cfg.protein_helix, ContactKind::PROTEIN_HELIX_CLASH, 2.0, 0.0);
-    // Protein β-sheet
-    set_inc(cfg.protein_sheet, ContactKind::PROTEIN_SHEET_BRIDGE_HBOND, -1.8, -1.5);
-    set_inc(cfg.protein_sheet, ContactKind::PROTEIN_SHEET_HYDROPHOBIC_PACK, -1.0, -2.5);
-    set_inc(cfg.protein_sheet, ContactKind::PROTEIN_SHEET_SHEAR, 2.5, 1.0);
+
+    // RNA stem stack: Xia 1998 INN-HB mean of 10 unique WC propagation stacks.
+    // doi:10.1021/bi9809425 ; Zuber 2022 NAR Table 1A "1998 Model"
+    // doi:10.1093/nar/gkac261. Sequence-specific NN lookup is future work.
+    set_inc(cfg.rna, ContactKind::RNA_STEM_STACK,
+            kXia1998RnaWcStackMean_dH_kcal, kXia1998RnaWcStackMean_dS_cal);
+
+    // TODO(burgundy): RNA ligand–loop H-bond ΔH/ΔS. Mathews, Sabina, Zuker,
+    // Turner, J. Mol. Biol. 288:911 (1999), doi:10.1006/jmbi.1999.2700 is
+    // hairpin/internal-loop *initiation* ΔG, not a ligand–loop H-bond increment.
+    // Leave unset until a calorimetric consensus is harvested.
+    set_inc(cfg.rna, ContactKind::RNA_LOOP_HBOND,
+            kExperimentalGapIncrement.dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+
+    // DNA stem stack: SantaLucia & Hicks 2004 Table 1 mean of 10 WC
+    // propagation stacks (1 M NaCl). doi:10.1146/annurev.biophys.32.110601.141800
+    // NEVER a copy of the RNA table — RNA mean ΔH (−10.756) ≠ DNA mean (−8.33).
+    set_inc(cfg.dna, ContactKind::DNA_STEM_STACK,
+            kSantaLucia2004DnaNnMean_dH_kcal, kSantaLucia2004DnaNnMean_dS_cal);
+
+    // TODO(burgundy): DNA ligand–loop H-bond ΔH/ΔS. SantaLucia 2004 hairpin
+    // initiation tables are loop-initiation ΔG, not this contact increment.
+    set_inc(cfg.dna, ContactKind::DNA_LOOP_HBOND,
+            kExperimentalGapIncrement.dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+
+    // TODO(burgundy): DNA intercalation ΔH/ΔS. Ligand-specific (e.g. Chaires
+    // reviews); no generic calorimetric consensus for a geometry-weighted
+    // increment. Leave unset — do not invent a mean intercalator.
+    set_inc(cfg.dna, ContactKind::DNA_INTERCALATION,
+            kExperimentalGapIncrement.dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+
+    // Protein α-helix backbone H-bond: Scholtz 1991 PNAS calorimetric
+    // helix-formation ΔH. doi:10.1073/pnas.88.7.2854
+    // ΔS: experimental gap (helix–coil s is published in Scholtz 1991
+    // Biopolymers doi:10.1002/bip.360311304, but there is no calorimetric
+    // per-residue ΔS consensus independent of ΔCp assumptions).
+    set_inc(cfg.protein_helix, ContactKind::PROTEIN_HELIX_BB_HBOND,
+            kScholtz1991HelixFormation_dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+
+    // TODO(burgundy): helix side-chain packing ΔH/ΔS — no calorimetric
+    // per-contact consensus distinct from the backbone H-bond term above.
+    set_inc(cfg.protein_helix, ContactKind::PROTEIN_HELIX_PACKING,
+            kExperimentalGapIncrement.dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+
+    // TODO(burgundy): helix steric clash ΔH/ΔS — no calorimetric consensus.
+    set_inc(cfg.protein_helix, ContactKind::PROTEIN_HELIX_CLASH,
+            kExperimentalGapIncrement.dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+
+    // Protein β-sheet: Maynard, Sharman, Searle, J. Am. Chem. Soc. 120:1996
+    // (1998), doi:10.1021/ja9726769 reports whole 16-residue β-hairpin folding
+    // as endothermic / entropy-driven in water (ΔH ≈ +7 kJ mol⁻¹ for the
+    // *peptide*). That is the wrong scale and often the opposite sign versus a
+    // per-bridge H-bond increment — do not reuse it here.
+    // TODO(burgundy): sheet bridge H-bond ΔH/ΔS (per-bridge calorimetry).
+    set_inc(cfg.protein_sheet, ContactKind::PROTEIN_SHEET_BRIDGE_HBOND,
+            kExperimentalGapIncrement.dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+    // TODO(burgundy): sheet hydrophobic packing ΔH/ΔS.
+    set_inc(cfg.protein_sheet, ContactKind::PROTEIN_SHEET_HYDROPHOBIC_PACK,
+            kExperimentalGapIncrement.dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+    // TODO(burgundy): sheet shear / mismatch ΔH/ΔS.
+    set_inc(cfg.protein_sheet, ContactKind::PROTEIN_SHEET_SHEAR,
+            kExperimentalGapIncrement.dH_kcal,
+            kExperimentalGapIncrement.dS_cal_per_mol_K);
+
     return cfg;
 }
 
