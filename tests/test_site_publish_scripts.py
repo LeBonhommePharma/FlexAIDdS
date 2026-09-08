@@ -83,6 +83,28 @@ class TestGhpagesPublish(unittest.TestCase):
         self.assertIn(".github/workflows/pages.yml", GHPAGES)
         self.assertIn("pages.yml", GHPAGES)
 
+    def test_rsync_uses_checksum_not_mtime(self) -> None:
+        self.assertIn("rsync -a --delete --checksum", GHPAGES)
+        self.assertIn("cmp -s", GHPAGES)
+
+
+class TestSelectCommitCount(unittest.TestCase):
+    def test_prefers_full_local_history_over_inflated_link_header(self) -> None:
+        self.assertEqual(
+            stats.select_commit_count(
+                remote=2560, local=2553, shallow=False, cached=1744
+            ),
+            2553,
+        )
+
+    def test_uses_remote_when_checkout_is_shallow(self) -> None:
+        self.assertEqual(
+            stats.select_commit_count(
+                remote=2560, local=1, shallow=True, cached=1744
+            ),
+            2560,
+        )
+
 
 class TestPatchHtmlMarkers(unittest.TestCase):
     SAMPLE = (

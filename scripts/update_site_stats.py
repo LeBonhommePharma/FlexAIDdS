@@ -78,12 +78,22 @@ def fetch_commit_count(repo: str) -> int | None:
     return None
 
 
-def get_commit_count(repo: str) -> int:
-    """Return total commit count from GitHub, falling back to local git."""
-    remote_count = fetch_commit_count(repo)
-    if remote_count is not None and remote_count > 0:
-        return remote_count
+def git_is_shallow() -> bool:
+    """Return True when this checkout cannot see full history."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip() == "true"
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return True
 
+
+def git_rev_list_count() -> int:
+    """Return commits reachable from HEAD, or 0 if git is unavailable."""
     try:
         result = subprocess.run(
             ["git", "rev-list", "--count", "HEAD"],
@@ -92,8 +102,41 @@ def get_commit_count(repo: str) -> int:
             check=True,
         )
         return int(result.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
         return 0
+
+
+def select_commit_count(
+    *,
+    remote: int | None,
+    local: int,
+    shallow: bool,
+    cached: int | None,
+) -> int:
+    """Prefer a full local rev-list over the commits API Link last-page.
+
+    That Link header over-counted (2560 vs 2553 on 2026-09-08) and made
+    live marker verify fail against the HTML GitHub Pages actually served.
+    """
+    if local > 0 and not shallow:
+        return local
+    if remote is not None and remote > 0:
+        return remote
+    if cached is not None and cached > 0:
+        return int(cached)
+    return local if local > 0 else 0
+
+
+def get_commit_count(repo: str) -> int:
+    """Return total commit count from local git (full clone) or GitHub."""
+    cached = load_cached_stats()
+    cached_commits = cached.get("commits") if cached else None
+    return select_commit_count(
+        remote=fetch_commit_count(repo),
+        local=git_rev_list_count(),
+        shallow=git_is_shallow(),
+        cached=cached_commits if isinstance(cached_commits, int) else None,
+    )
 
 
 def _github_api_get(path: str) -> dict | list | None:
@@ -545,23 +588,22 @@ def main() -> int:
 
     cached = load_cached_stats()
     remote_commits = fetch_commit_count(args.repo)
-    local_commits = 0
-    try:
-        result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        local_commits = int(result.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-
-    commit_count = remote_commits or (cached or {}).get("commits") or local_commits
+    local_commits = git_rev_list_count()
+    shallow = git_is_shallow()
+    cached_commits = (cached or {}).get("commits")
+    commit_count = select_commit_count(
+        remote=remote_commits,
+        local=local_commits,
+        shallow=shallow,
+        cached=cached_commits if isinstance(cached_commits, int) else None,
+    )
     if commit_count <= 0:
         print("Error getting commit count", file=sys.stderr)
         return 1
-    print(f"Commit count: {commit_count}")
+    print(
+        f"Commit count: {commit_count} "
+        f"(local={local_commits} shallow={shallow} remote={remote_commits})"
+    )
 
     languages = fetch_languages(args.repo)
     language_count: int | None = None
