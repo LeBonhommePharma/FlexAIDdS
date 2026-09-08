@@ -2952,6 +2952,116 @@ int main(int argc, char **argv){
 	
 	if (FA->htpmode == false) {write_pdb(FA,atoms,residue,tmp_end_strfile,remark);}
 
+	// ---------------------------------------------------------------------
+	// LIGAND TOPOLOGY SIDECAR.  One small file per run, beside <name>_INI.pdb.
+	//
+	// WHY.  build_from_ligand_torsional needs the ligand's internal-coordinate
+	// DOF set and bond tree.  Both live in FA->map_par and atoms[].bond[] INSIDE
+	// this process and do not survive into a pose PDB.  Every existing consumer
+	// of the ligand ENM -- DatasetRunner::compute_pose_eigenvalues and the
+	// ligand_tencom_pose CLI -- is a post-hoc pose reader that populates its atom
+	// array with coordinates and element ONLY (measured: both set exactly coor[]
+	// and element[]).  Handing the torsional builder such an array returns ZERO
+	// DOFs and a refusal for every ligand, which is indistinguishable from "all
+	// ligands are rigid": a clean, plausible, entirely false null.  This sidecar
+	// is what makes post-hoc torsional entropy computable at all.
+	//
+	// THE DOF SET IS THE ENGINE'S OWN, not a re-perception.  map_par entries with
+	// typ==2 are the ligand dihedral genes the GA actually drives
+	// (add2_optimiz_vec.cpp:192,204,231 -- THREE separate paths, hence a scan and
+	// not an assumption), and .atm is the atom whose .dih that gene sets.  A
+	// reader consuming this list computes the entropy over exactly the coordinates
+	// the search moved in; a reader re-perceiving rotatable bonds from CONECT
+	// computes a different quantity wearing the same name.
+	//
+	// ADDITIVE AND INERT: a new file only.  No existing output changes; no effect
+	// on CF, poses, election or RMSD.  Written with C stdio to match this file and
+	// to avoid adding <fstream>/<set> to a heavily-included TU.  bond[] holds
+	// INTERNAL indices (flexaid.h:289), so BOTH the internal index and the PDB
+	// serial are emitted -- a post-hoc reader aligns on the serial, which is what
+	// actually appears in the pose file.
+	{
+		char topo_path[MAX_PATH__];
+		snprintf(topo_path, MAX_PATH__, "%s_ligtopo.json", end_strfile);
+		FILE* tp = fopen(topo_path, "w");
+		if (tp != NULL) {
+			// DOF SELECTION -- corrected after the first smoke test caught this.
+			// Scanning for typ==2 is WRONG: typ 2 is set at three sites in
+			// add2_optimiz_vec.cpp and only ONE of them is a rotatable bond.
+			// Sites :192 and :204 set typ=2 with .bnd = -1 on residue[at].gpa[1..2]
+			// -- the grid positioning atoms -- and use delta_dihedral. Those are the
+			// ligand's RIGID-BODY PLACEMENT pseudo-dihedrals, not torsions: there is
+			// no bond to rotate about (rec[1] is 0). Only site :231 sets a real .bnd,
+			// uses delta_flexible, and increments nflexbonds.
+			// Measured on 1JD0: typ==2 gave 3 genes against nflexbonds=1.
+			// The engine's own delimiter is the contiguous flexbond range, used the
+			// same way gaboom.cpp:2466-2467 uses it. top.cpp:2558 inits the index to
+			// -1, which means "no flexible bonds" and must not be read as an offset.
+			const int fb0   = FA->map_par_flexbond_first_index;
+			const int ndof  = (fb0 >= 0) ? FA->nflexbonds : 0;
+			// Ligand residue test, done by linear scan rather than a container:
+			// an atom is ligand if its residue owns a typ==2 DOF atom. When the
+			// ligand has NO rotatable bond (measured: 4 of 84 Astex ligands) that
+			// set is empty, so fall back to reconstruction-flagged atoms -- a rigid
+			// ligand then still emits a verifiable atom list instead of an empty
+			// file indistinguishable from a failed write.
+			const char* rule = (ndof > 0) ? "map_par_typ2" : "recs_m_fallback";
+			fprintf(tp, "{\n  \"schema\": \"flexaidds_ligand_topology_v1\",\n");
+			fprintf(tp, "  \"n_flexbonds\": %d,\n", FA->nflexbonds);
+			fprintf(tp, "  \"n_dihedral_genes\": %d,\n", ndof);
+			fprintf(tp, "  \"ligand_residue_rule\": \"%s\",\n", rule);
+			fprintf(tp, "  \"dofs\": [");
+			int first = 1;
+			for (int p = fb0; fb0 >= 0 && p < fb0 + FA->nflexbonds; ++p) {
+				// Secondary discriminator, asserted rather than assumed: a real
+				// flexible bond carries .bnd >= 0, a placement pseudo-dihedral -1.
+				// If this ever fires, the contiguous-range assumption has broken.
+				if (FA->map_par[p].typ != 2 || FA->map_par[p].bnd < 0) {
+					fprintf(stderr, "  [LIGTOPO] gene %d in the flexbond range is not a "
+					                "rotatable bond (typ=%d bnd=%d); range assumption broken\n",
+					        p, FA->map_par[p].typ, FA->map_par[p].bnd);
+					continue;
+				}
+				const int a  = FA->map_par[p].atm;
+				const int r0 = atoms[a].rec[0];
+				const int r1 = atoms[a].rec[1];
+				fprintf(tp, "%s\n    {\"gene\": %d, \"atm_idx\": %d, \"atm_number\": %d,"
+				            " \"rec0_idx\": %d, \"rec1_idx\": %d,"
+				            " \"rec0_number\": %d, \"rec1_number\": %d, \"bnd\": %d}",
+				        first ? "" : ",", p, a, atoms[a].number, r0, r1,
+				        (r0 > 0) ? atoms[r0].number : -1,
+				        (r1 > 0) ? atoms[r1].number : -1,
+				        FA->map_par[p].bnd);
+				first = 0;
+			}
+			fprintf(tp, "\n  ],\n  \"atoms\": [");
+			first = 1;
+			for (int a = 1; a <= FA->atm_cnt_real; ++a) {
+				int is_lig = 0;
+				if (ndof > 0) {
+					for (int p = fb0; p < fb0 + FA->nflexbonds && !is_lig; ++p)
+						if (atoms[FA->map_par[p].atm].ofres == atoms[a].ofres) is_lig = 1;
+				} else {
+					if (atoms[a].recs == 'm') is_lig = 1;
+				}
+				if (!is_lig) continue;
+				fprintf(tp, "%s\n    {\"idx\": %d, \"number\": %d, \"element\": \"%s\","
+				            " \"recs\": \"%c\", \"bond\": [",
+				        first ? "" : ",", a, atoms[a].number, atoms[a].element,
+				        atoms[a].recs);
+				for (int t = 1; t <= atoms[a].bond[0] && t < 7; ++t)
+					fprintf(tp, "%s%d", (t > 1) ? ", " : "",
+					        atoms[atoms[a].bond[t]].number);
+				fprintf(tp, "]}");
+				first = 0;
+			}
+			fprintf(tp, "\n  ]\n}\n");
+			fclose(tp);
+			printf("wrote ligand topology sidecar: %s (n_flexbonds=%d, dihedral_genes=%d, rule=%s)\n",
+			       topo_path, FA->nflexbonds, ndof, rule);
+		}
+	}
+
 	//printf("wrote initial PDB structure on %s\n",tmp_end_strfile);
 	//-----------------------------------------------------------------------------------
 

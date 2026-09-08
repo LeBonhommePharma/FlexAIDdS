@@ -252,12 +252,9 @@ void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
                                                float cutoff,
                                                float k0)
 {
-    cutoff_ = cutoff;
-    k0_     = k0;
-    built_  = false;
+    built_ = false;
     modes_.clear();
     n_torsion_dofs_ = 0;
-
     if (atoms == nullptr || lig_end <= lig_start) return;
 
     auto is_h = [](const atom& a) noexcept {
@@ -268,7 +265,7 @@ void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
 
     const std::size_t span = static_cast<std::size_t>(lig_end - lig_start);
 
-    // Heavy-atom node set plus a global-index -> node-index map.
+    // Heavy-atom nodes, plus a global-index -> node-index map.
     std::vector<int> node_of(span, -1);
     std::vector<std::array<float,3>> xyz;
     for (int ai = lig_start; ai < lig_end; ++ai) {
@@ -279,81 +276,125 @@ void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
     const int Na = static_cast<int>(xyz.size());
     if (Na < 3) return;
 
-    // ── DOF enumeration: distinct rotated bonds rec[1]--rec[0] carried by
-    // reconstruction-flagged (recs == 'm') ligand atoms.
-    std::vector<std::pair<int,int>> axis;          // (pivot, distal), global indices
+    // Topology in node space. NOTE the DOF rule here is a PROXY for the engine's
+    // own flexbond list: distinct rec[1]--rec[0] bonds over reconstruction-flagged
+    // atoms. It is not guaranteed to equal FA->nflexbonds, which is why
+    // n_torsion_dofs() exists and why callers must cross-check it. A caller that
+    // HAS the engine's list (via the <name>_ligtopo.json sidecar) should prefer
+    // the explicit overload below, which needs no proxy at all.
+    LigandTopology topo;
+    topo.adjacency.assign(static_cast<std::size_t>(Na), {});
+    for (int ai = lig_start; ai < lig_end; ++ai) {
+        const int na = node_of[static_cast<std::size_t>(ai - lig_start)];
+        if (na < 0) continue;
+        for (int t = 1; t <= atoms[ai].bond[0] && t < 7; ++t) {
+            const int nb = atoms[ai].bond[t];
+            if (nb < lig_start || nb >= lig_end) continue;
+            const int nn = node_of[static_cast<std::size_t>(nb - lig_start)];
+            if (nn >= 0) topo.adjacency[static_cast<std::size_t>(na)].push_back(nn);
+        }
+    }
     for (int ai = lig_start; ai < lig_end; ++ai) {
         if (atoms[ai].recs != 'm') continue;
         const int b0 = atoms[ai].rec[0];
         const int b1 = atoms[ai].rec[1];
         if (b0 < lig_start || b0 >= lig_end) continue;
         if (b1 < lig_start || b1 >= lig_end) continue;
-        if (is_h(atoms[b0]) || is_h(atoms[b1])) continue;
-        const std::pair<int,int> key{ std::min(b0, b1), std::max(b0, b1) };
-        if (std::find(axis.begin(), axis.end(), key) == axis.end()) axis.push_back(key);
+        const int n0 = node_of[static_cast<std::size_t>(b0 - lig_start)];
+        const int n1 = node_of[static_cast<std::size_t>(b1 - lig_start)];
+        if (n0 < 0 || n1 < 0) continue;
+        const std::pair<int,int> key{ std::min(n0,n1), std::max(n0,n1) };
+        if (std::find(topo.rot_bonds.begin(), topo.rot_bonds.end(), key)
+            == topo.rot_bonds.end()) topo.rot_bonds.push_back(key);
     }
-    const int M = static_cast<int>(axis.size());
+
+    assemble_torsional_(xyz.data(), Na, topo, cutoff, k0);
+}
+
+// Explicit-topology entry point. Used by post-hoc consumers that read a pose file
+// and load the engine's own DOF list from the <name>_ligtopo.json sidecar.
+void TorsionalENM::build_from_ligand_torsional(const std::array<float,3>* xyz,
+                                               int   n_nodes,
+                                               const LigandTopology& topo,
+                                               float cutoff,
+                                               float k0)
+{
+    built_ = false;
+    modes_.clear();
+    n_torsion_dofs_ = 0;
+    if (xyz == nullptr || n_nodes < 3) return;
+    assemble_torsional_(xyz, n_nodes, topo, cutoff, k0);
+}
+
+// ─── shared core ────────────────────────────────────────────────────────────
+// Both overloads land here, so the two entry points cannot drift into different
+// physics. Same Hessian form as the protein assembly and the same spring as
+// build_from_ligand -- only the BASIS differs from the Cartesian ligand path.
+void TorsionalENM::assemble_torsional_(const std::array<float,3>* xyz,
+                                       int n_nodes,
+                                       const LigandTopology& topo,
+                                       float cutoff,
+                                       float k0)
+{
+    cutoff_ = cutoff;
+    k0_     = k0;
+
+    const int Na = n_nodes;
+    const int M  = static_cast<int>(topo.rot_bonds.size());
     n_torsion_dofs_ = M;
 
     // Fewer than 2 DOFs is a DEGENERATE spectrum, not a failed computation: a
-    // rigid ligand genuinely has no internal vibrational entropy. Thermodynamic
-    // S_vib would be 0 (an empty sum, well-defined), but the 32-bin Shannon
-    // entropy consumers use is UNDEFINED over an empty spectrum and identically 0
-    // over one mode. Refuse to build so a caller cannot read either as computed.
-    // Measured on Astex-84: 4 ligands have 0 rotatable bonds and 5 have exactly 1.
+    // rigid ligand has no internal vibrational entropy. Thermodynamic S_vib would
+    // be 0 (an empty sum, well-defined), but the 32-bin Shannon entropy consumers
+    // use is UNDEFINED over an empty spectrum and identically 0 over one mode.
+    // Refuse so neither can be read as a measurement. Measured on Astex-84: 4
+    // ligands have 0 rotatable bonds and 5 have exactly 1.
     if (M < 2) return;
 
-    // ── Jacobian J[k][node] = u_k x (r_node - r_pivot) for nodes DOWNSTREAM of
-    // DOF k's bond, zero otherwise. Downstream = reachable from the distal atom
-    // over atom.bond[] without crossing the rotated bond, restricted to ligand.
+    // Jacobian J[k][node] = u_k x (r_node - r_pivot) for nodes DOWNSTREAM of DOF
+    // k's bond, zero otherwise. Downstream = reachable from the distal node over
+    // the adjacency without crossing the rotated bond.
     std::vector<std::array<double,3>> J(static_cast<std::size_t>(M) * Na,
                                         std::array<double,3>{0.0, 0.0, 0.0});
-    std::vector<char> seen(span);
+    std::vector<char> seen(static_cast<std::size_t>(Na));
     std::vector<int>  stack;
     for (int k = 0; k < M; ++k) {
-        const int p = axis[static_cast<std::size_t>(k)].first;
-        const int d = axis[static_cast<std::size_t>(k)].second;
-        double ux = static_cast<double>(atoms[d].coor[0]) - atoms[p].coor[0];
-        double uy = static_cast<double>(atoms[d].coor[1]) - atoms[p].coor[1];
-        double uz = static_cast<double>(atoms[d].coor[2]) - atoms[p].coor[2];
+        const int p = topo.rot_bonds[static_cast<std::size_t>(k)].first;
+        const int d = topo.rot_bonds[static_cast<std::size_t>(k)].second;
+        if (p < 0 || p >= Na || d < 0 || d >= Na) continue;
+        double ux = xyz[d][0] - xyz[p][0];
+        double uy = xyz[d][1] - xyz[p][1];
+        double uz = xyz[d][2] - xyz[p][2];
         const double ul = std::sqrt(ux*ux + uy*uy + uz*uz);
-        if (!(ul > 1e-6)) continue;                 // coincident: no axis
+        if (!(ul > 1e-6)) continue;
         ux /= ul; uy /= ul; uz /= ul;
 
         std::fill(seen.begin(), seen.end(), char(0));
-        seen[static_cast<std::size_t>(p - lig_start)] = 1;   // never cross back
+        seen[static_cast<std::size_t>(p)] = 1;      // never cross back over the bond
         stack.clear();
         stack.push_back(d);
-        seen[static_cast<std::size_t>(d - lig_start)] = 1;
+        seen[static_cast<std::size_t>(d)] = 1;
         while (!stack.empty()) {
             const int cur = stack.back(); stack.pop_back();
-            const int nb  = atoms[cur].bond[0];
-            for (int t = 1; t <= nb && t < 7; ++t) {
-                const int nxt = atoms[cur].bond[t];
-                if (nxt < lig_start || nxt >= lig_end) continue;
-                char& s = seen[static_cast<std::size_t>(nxt - lig_start)];
-                if (s) continue;
-                s = 1;
+            if (cur < 0 || cur >= static_cast<int>(topo.adjacency.size())) continue;
+            for (int nxt : topo.adjacency[static_cast<std::size_t>(cur)]) {
+                if (nxt < 0 || nxt >= Na) continue;
+                char& sflag = seen[static_cast<std::size_t>(nxt)];
+                if (sflag) continue;
+                sflag = 1;
                 stack.push_back(nxt);
             }
         }
-        for (int ai = lig_start; ai < lig_end; ++ai) {
-            if (ai == p) continue;                            // pivot is fixed
-            if (!seen[static_cast<std::size_t>(ai - lig_start)]) continue;
-            const int nd = node_of[static_cast<std::size_t>(ai - lig_start)];
-            if (nd < 0) continue;                             // hydrogen: not a node
-            const double rx = static_cast<double>(atoms[ai].coor[0]) - atoms[p].coor[0];
-            const double ry = static_cast<double>(atoms[ai].coor[1]) - atoms[p].coor[1];
-            const double rz = static_cast<double>(atoms[ai].coor[2]) - atoms[p].coor[2];
-            J[static_cast<std::size_t>(k) * Na + nd] =
+        for (int a = 0; a < Na; ++a) {
+            if (a == p || !seen[static_cast<std::size_t>(a)]) continue;
+            const double rx = xyz[a][0] - xyz[p][0];
+            const double ry = xyz[a][1] - xyz[p][1];
+            const double rz = xyz[a][2] - xyz[p][2];
+            J[static_cast<std::size_t>(k) * Na + a] =
                 { uy*rz - uz*ry, uz*rx - ux*rz, ux*ry - uy*rx };
         }
     }
 
-    // ── H_kl = sum_contacts k_ij (u_ij . dJ_k)(u_ij . dJ_l) -- the same
-    // functional form as the protein torsional assembly (tencm.cpp:741-762),
-    // with the same step-function spring k_ij = k0 * (cutoff/r0)^6 as
-    // build_from_ligand, so only the BASIS differs between the two ligand paths.
     Eigen::MatrixXd H = Eigen::MatrixXd::Zero(M, M);
     const double rc2 = static_cast<double>(cutoff_) * cutoff_;
     std::vector<double> proj(static_cast<std::size_t>(M));
@@ -381,9 +422,9 @@ void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
                 const double pk = proj[static_cast<std::size_t>(k)];
                 if (pk == 0.0) continue;
                 for (int l = k; l < M; ++l) {
-                    const double h = kij * pk * proj[static_cast<std::size_t>(l)];
-                    H(k, l) += h;
-                    if (l != k) H(l, k) += h;
+                    const double hh = kij * pk * proj[static_cast<std::size_t>(l)];
+                    H(k, l) += hh;
+                    if (l != k) H(l, k) += hh;
                 }
             }
         }
@@ -401,14 +442,13 @@ void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
     for (int m = 0; m < M; ++m) {
         NormalMode nm;
         nm.eigenvalue = vals(m);
-        // eigenvector intentionally left empty (H(ω) needs eigenvalues only)
         modes_.push_back(std::move(nm));
     }
 
     // Dihedral DOFs carry NO rigid-body null space, so vibrational_eigenvalues()
-    // must expect 0 rigid modes here rather than 6 -- it branches on basis_
-    // (tencm.cpp:243), so declaring the basis is what makes every downstream
-    // consumer correct without editing any of them.
+    // must expect 0 rigid modes here rather than 6 -- it branches on basis_, so
+    // declaring the basis is what makes every downstream consumer correct without
+    // editing any of them.
     basis_ = Basis::Torsional;
     built_ = true;
 }

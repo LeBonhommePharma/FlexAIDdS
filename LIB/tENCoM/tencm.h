@@ -24,6 +24,7 @@
 
 #include <vector>
 #include <array>
+#include <utility>   // std::pair, used by LigandTopology below
 #include <span>
 #include <concepts>
 #include <cmath>
@@ -181,6 +182,51 @@ public:
                                      int   lig_end,
                                      float cutoff = 7.0f,
                                      float k0     = DEFAULT_K0);
+
+    /// Ligand topology in NODE-INDEX space (0..n-1 over the coordinate array
+    /// passed alongside it), so a caller that has no FlexAID atom[] can still
+    /// build the torsional model.
+    ///
+    /// WHY THIS FORM EXISTS. Every post-hoc consumer of the ligand ENM reads a
+    /// finished pose file and has coordinates and elements only -- recs, rec[0..2]
+    /// and bond[] do not survive into a PDB. Handing the atom[] overload such an
+    /// array yields ZERO DOFs and a refusal for every ligand, indistinguishable
+    /// from "all ligands are rigid". The engine therefore emits its own DOF list
+    /// as a sidecar at dock time (top.cpp, <name>_ligtopo.json) and this overload
+    /// consumes it, so the entropy is computed over the SEARCH's coordinates
+    /// rather than a re-perception of the bond graph.
+    struct LigandTopology {
+        /// Rotatable bonds as (pivot_node, distal_node). Must come from the
+        /// engine's flexbond range, NOT from map_par typ==2: typ==2 also covers
+        /// the ligand's rigid-body placement pseudo-dihedrals, which carry
+        /// bnd = -1 and no second reference atom. Measured on 1JD0: typ==2 gives
+        /// 3 where nflexbonds is 1.
+        std::vector<std::pair<int,int>> rot_bonds;
+        /// Undirected adjacency over node indices, used to find the atoms
+        /// downstream of each rotated bond.
+        std::vector<std::vector<int>>   adjacency;
+    };
+
+    /// Same Hessian, same spring, same basis as the atom[] overload -- only the
+    /// source of the topology differs. Refuses below 2 DOFs for the same reason.
+    void build_from_ligand_torsional(const std::array<float,3>* xyz,
+                                     int   n_nodes,
+                                     const LigandTopology& topo,
+                                     float cutoff = 7.0f,
+                                     float k0     = DEFAULT_K0);
+
+private:
+    /// Shared core: assembles and diagonalises the torsional Hessian from a node
+    /// coordinate array plus explicit topology. BOTH public overloads delegate
+    /// here, so the two entry points cannot drift into different physics -- the
+    /// same consolidation this file already applied to the rigid-mode cutoff
+    /// after the CLI and the objective disagreed by 56% on one ligand.
+    void assemble_torsional_(const std::array<float,3>* xyz,
+                             int n_nodes,
+                             const LigandTopology& topo,
+                             float cutoff,
+                             float k0);
+public:
 
     /// Number of internal-coordinate DOFs the torsional ligand path found.
     /// Zero on every other build path. Compare against FA->nflexbonds.

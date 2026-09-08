@@ -15,6 +15,7 @@
 
 #include "TuiColor.h"
 #include "DatasetRunner.h"
+#include "json_value.h"   // ligand-topology sidecar reader
 #include "DatasetRunnerStats.h"  // PoseRmsdOutcome / hungarian_rmsd declarations
 #include "DatasetThermoLog.h"
 #include "AsyncPipeline.h"
@@ -789,14 +790,20 @@ PoseRmsdOutcome compute_pose_ligand_rmsd(
 // docked poses can be compared to each other (no crystal reference).  Atoms are
 // sorted by serial for a deterministic order.  Returns true if ≥1 heavy atom was
 // loaded.
+// out_serial, when non-null, receives each retained atom's PDB serial in the same
+// order as out_xyz. Needed to join a pose to the engine's <name>_ligtopo.json
+// sidecar: bond[] holds INTERNAL indices that do not appear in a pose file, so the
+// serial is the only key the two representations share.
 static bool load_pose_ligand_coords(
     const std::string& pose_pdb,
     std::vector<std::array<float,3>>& out_xyz,
     std::vector<std::string>& out_elem,
-    bool require_conect = false)
+    bool require_conect = false,
+    std::vector<long>* out_serial = nullptr)
 {
     out_xyz.clear();
     out_elem.clear();
+    if (out_serial) out_serial->clear();
 
     auto get_elem_token = [](const std::string& line) -> std::string {
         size_t end = line.find_last_not_of(" \t\r\n");
@@ -872,6 +879,7 @@ static bool load_pose_ligand_coords(
     for (auto& d : docked) {
         out_xyz.push_back(std::get<1>(d));
         out_elem.push_back(std::get<2>(d));
+        if (out_serial) out_serial->push_back(std::get<0>(d));
     }
     return !out_xyz.empty();
 }
@@ -941,6 +949,85 @@ struct PoseHvibColumns {
     std::string error;
 };
 
+// ─── ligand-topology sidecar ────────────────────────────────────────────────
+// The engine writes <CODE>_ligtopo.json beside <CODE>_INI.pdb at dock time
+// (top.cpp), carrying its OWN flexbond DOF list and the ligand bond graph keyed by
+// PDB serial. Without it a post-hoc reader cannot build the torsional model at
+// all: recs, rec[0..2] and bond[] do not survive into a pose PDB, so the torsional
+// builder would see zero DOFs and refuse for every ligand -- a false "all ligands
+// are rigid" null.
+//
+// Poses live at <target>/<CODE>_<N>.pdb and <target>/rN/<CODE>_<N>.pdb, so look in
+// the pose's own directory and then its parent.
+static std::string find_ligtopo_sidecar(const std::string& pose_path)
+{
+    std::error_code ec;
+    fs::path dir = fs::path(pose_path).parent_path();
+    for (int up = 0; up < 2 && !dir.empty(); ++up) {
+        for (const auto& e : fs::directory_iterator(dir, ec)) {
+            if (ec) break;
+            const std::string fn = e.path().filename().string();
+            if (fn.size() > 13 &&
+                fn.compare(fn.size() - 13, 13, "_ligtopo.json") == 0)
+                return e.path().string();
+        }
+        dir = dir.parent_path();
+    }
+    return std::string();
+}
+
+// Build node-space topology by joining the sidecar's PDB serials to the pose's
+// retained heavy atoms. Returns false and leaves topo empty when the join is not
+// exact -- a partial join would silently drop DOFs and produce a smaller spectrum
+// that still looks like a measurement.
+static bool load_ligtopo(const std::string& sidecar_path,
+                         const std::vector<long>& serials,
+                         tencm::TorsionalENM::LigandTopology& topo,
+                         int* n_flexbonds_out,
+                         std::string* err)
+{
+    topo.rot_bonds.clear();
+    topo.adjacency.clear();
+    std::ifstream f(sidecar_path);
+    if (!f) { if (err) *err = "sidecar unreadable"; return false; }
+    std::stringstream ss; ss << f.rdbuf();
+    json::Value root = json::parse(ss.str());
+    if (root.is_null()) { if (err) *err = "sidecar not parseable"; return false; }
+
+    if (n_flexbonds_out) *n_flexbonds_out = root["n_flexbonds"].as_int(-1);
+
+    std::map<long,int> node_of;
+    for (std::size_t i = 0; i < serials.size(); ++i)
+        node_of[serials[i]] = static_cast<int>(i);
+    topo.adjacency.assign(serials.size(), {});
+
+    const json::Value& atoms_j = root["atoms"];
+    for (std::size_t i = 0; i < atoms_j.size(); ++i) {
+        const long sn = static_cast<long>(atoms_j[i]["number"].as_int(-1));
+        auto it = node_of.find(sn);
+        if (it == node_of.end()) continue;          // hydrogen or not retained
+        const json::Value& bl = atoms_j[i]["bond"];
+        for (std::size_t b = 0; b < bl.size(); ++b) {
+            auto jt = node_of.find(static_cast<long>(bl[b].as_int(-1)));
+            if (jt != node_of.end())
+                topo.adjacency[static_cast<std::size_t>(it->second)].push_back(jt->second);
+        }
+    }
+
+    const json::Value& dofs = root["dofs"];
+    for (std::size_t i = 0; i < dofs.size(); ++i) {
+        auto p = node_of.find(static_cast<long>(dofs[i]["rec0_number"].as_int(-1)));
+        auto d = node_of.find(static_cast<long>(dofs[i]["rec1_number"].as_int(-1)));
+        if (p == node_of.end() || d == node_of.end()) {
+            if (err) *err = "sidecar DOF references an atom absent from the pose";
+            topo.rot_bonds.clear();
+            return false;                            // exact join or nothing
+        }
+        topo.rot_bonds.push_back({p->second, d->second});
+    }
+    return true;
+}
+
 // basis_out, when non-null, receives the coordinate basis the ligand ENM was
 // actually assembled in, READ BACK from the model via TorsionalENM::basis().
 // Deliberately not a named constant: two builders exist with non-interchangeable
@@ -953,7 +1040,8 @@ static std::vector<double> compute_pose_eigenvalues(
 {
     std::vector<std::array<float,3>> xyz;
     std::vector<std::string> elem;
-    if (!load_pose_ligand_coords(pose_path, xyz, elem, true)) {
+    std::vector<long> serial;
+    if (!load_pose_ligand_coords(pose_path, xyz, elem, true, &serial)) {
         if (error) *error = "no CONECT-defined ligand heavy atoms in elected pose";
         return {};
     }
@@ -974,10 +1062,65 @@ static std::vector<double> compute_pose_eigenvalues(
 
     try {
         tencm::TorsionalENM ligand_enm;
-        ligand_enm.build_from_ligand(latoms.data(), 0,
-                                     static_cast<int>(latoms.size()));
+
+        // BASIS SELECTION. Default is the Cartesian ligand ANM, unchanged, so
+        // every stored result reproduces. FLEXAIDDS_TENCOM_BASIS=torsional opts
+        // into the internal-coordinate model, which requires the engine's DOF list
+        // from the <CODE>_ligtopo.json sidecar -- the atom array built below holds
+        // coordinates and element only, and the torsional builder handed such an
+        // array would find zero DOFs and refuse for every ligand, which reads as
+        // "all ligands are rigid" rather than as a missing input. So a requested
+        // torsional build with no sidecar is a hard ERROR, never a silent
+        // fallback to Cartesian: falling back would emit a Cartesian number under
+        // a run the operator believes is torsional.
+        const char* basis_env = std::getenv("FLEXAIDDS_TENCOM_BASIS");
+        const bool want_torsional =
+            (basis_env != nullptr && std::strcmp(basis_env, "torsional") == 0);
+        const char* expected_basis = want_torsional ? "torsional" : "cartesian";
+
+        if (want_torsional) {
+            const std::string sc = find_ligtopo_sidecar(pose_path);
+            if (sc.empty()) {
+                if (error) *error = "FLEXAIDDS_TENCOM_BASIS=torsional but no "
+                                    "<CODE>_ligtopo.json sidecar beside the pose";
+                return {};
+            }
+            tencm::TorsionalENM::LigandTopology topo;
+            int n_flexbonds = -1;
+            std::string terr;
+            if (!load_ligtopo(sc, serial, topo, &n_flexbonds, &terr)) {
+                if (error) *error = "ligand topology sidecar unusable: " + terr;
+                return {};
+            }
+            ligand_enm.build_from_ligand_torsional(
+                xyz.data(), static_cast<int>(xyz.size()), topo);
+            // Cross-check the two independent DOF counts. n_flexbonds is the
+            // engine's own count written at dock time; n_torsion_dofs() is what
+            // the builder actually assembled. Disagreement means the sidecar and
+            // the model perceive different coordinates, so the entropy would not
+            // be comparable to the search that produced the pose.
+            if (n_flexbonds >= 0 && ligand_enm.n_torsion_dofs() != n_flexbonds) {
+                std::cerr << "  [LIGTOPO-MISMATCH] " << pose_path
+                          << ": sidecar n_flexbonds=" << n_flexbonds
+                          << " but builder assembled "
+                          << ligand_enm.n_torsion_dofs() << " DOFs\n";
+                if (error) *error = "ligand DOF count mismatch (sidecar vs builder)";
+                return {};
+            }
+        } else {
+            ligand_enm.build_from_ligand(latoms.data(), 0,
+                                         static_cast<int>(latoms.size()));
+        }
+
         if (!ligand_enm.is_built()) {
-            if (error) *error = "ligand tENCoM model did not build";
+            // For the torsional path this is the DEGENERATE case, not a failure:
+            // the builder refuses below 2 rotatable bonds because a 32-bin Shannon
+            // entropy is undefined over an empty spectrum and identically 0 over
+            // one mode. Reported distinctly so it cannot be read as a broken model.
+            if (error) *error = want_torsional
+                ? "ligand has fewer than 2 rotatable bonds; torsional spectrum "
+                  "is degenerate and was refused"
+                : "ligand tENCoM model did not build";
             return {};
         }
         // CHOICE 1 (LP, 2026-09-08): write the expectation down AND ask the model,
@@ -988,7 +1131,6 @@ static std::vector<double> compute_pose_eigenvalues(
         // the declaration, this says so instead of emitting a confident wrong label.
         // That is the whole failure mode this column exists to prevent, applied to
         // the column itself.
-        const char* expected_basis = "cartesian";      // build_from_ligand, above
         const char* actual_basis   =
             (ligand_enm.basis() == tencm::TorsionalENM::Basis::Torsional)
             ? "torsional" : "cartesian";
