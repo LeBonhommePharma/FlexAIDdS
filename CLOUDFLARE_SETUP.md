@@ -45,9 +45,18 @@ A second repo (`FlexAIDdS` `gh-pages`) must **not** also claim `thebonhomme.com`
 
 **Why:** The FlexAIDdS repo was also claiming `thebonhomme.com`. GitHub then served **this repo’s root `index.html`** (corporate homepage) for the URL `/FlexAIDdS/` instead of the product page in the user-site repo.
 
-### A3. Full site sync (already automated)
+### A3. How `/FlexAIDdS/` is published (do not rsync the apex repo)
 
-CI runs `scripts/sync_apex_to_usersite.sh` after each deploy. It copies the entire `site/` folder to `lebonhommepharma.github.io`. That repo is what visitors get at `/`, `/FlexAIDdS/`, `/entropy-driven/`, etc.
+`https://thebonhomme.com/FlexAIDdS/` is the FlexAIDdS **project Pages** site (`build_type: workflow`). The daily `update-site.yml` job:
+
+1. Refreshes stats in the runner workspace (does **not** commit them to `main`).
+2. Snapshots `site/FlexAIDdS/` to the `gh-pages` branch (plus `.nojekyll` and a copy of `.github/workflows/pages.yml`).
+3. Dispatches **Deploy GitHub Pages** with `--ref gh-pages`. That is required because the `github-pages` environment only allows `gh-pages` and `master` — `actions/deploy-pages` from `main` is rejected, which is why the live artifact froze at 2026-07-14. Pushing `gh-pages` alone does **not** publish while Pages is in workflow mode. `GITHUB_TOKEN` pushes also do not start other workflows, so the dispatch is the actual publish step.
+4. Optionally patches **only** `FlexAIDdS/index.html`, `flexaid-ds/index.html`, and `assets/repo-stats.json` on `lebonhommepharma.github.io` when `USER_SITE_TOKEN` is set.
+
+Never copy the whole FlexAIDdS `site/` tree onto `lebonhommepharma.github.io`. That repo is a full brand site (rive, drugs, entropy, …). A `GITHUB_TOKEN` from FlexAIDdS cannot push there anyway (403). The apex repo pulls stats itself with `.github/workflows/update-flexaidds-stats.yml`.
+
+GitHub still mounts this repo’s Pages at `/FlexAIDdS/`, which **overlays** the folder of the same name in the user-site repo. `/flexaid-ds/` is served from the user-site. To make the user-site `FlexAIDdS/` folder the live URL, disable Pages on this repo (settings; the API rejects the default Actions token).
 
 ---
 
@@ -215,9 +224,10 @@ The Mol* viewer lives on the **legacy apex** bundle (`site/app.js` + `#molstar-v
 
 | Symptom | Fix |
 |---------|-----|
-| Stub “site update in progress” | User-site out of date → re-run deploy or `GITHUB_TOKEN=$(gh auth token) bash scripts/sync_apex_to_usersite.sh` |
+| Stub “site update in progress” | User-site out of date → re-run **Deploy GitHub Pages** on `lebonhommepharma.github.io`, or `USER_SITE_TOKEN=… bash scripts/sync_apex_to_usersite.sh` (stats-only; never a full-tree rsync) |
+| `/FlexAIDdS/` shows stale stats while Deploy Site is green | Pages `build_type` is workflow; Deploy Site must dispatch `pages.yml --ref gh-pages` so `actions/deploy-pages` runs on an allowed branch. Re-run **Deploy Site**. |
 | `/FlexAIDdS/` shows corporate homepage | Delete `CNAME` on FlexAIDdS `gh-pages`; purge Cloudflare cache |
-| CI deploy fails on “stats commit” | Non-fatal now; deploy still continues. Re-run workflow if needed. |
+| CI deploy fails on “stats commit” | Stats are no longer committed to `main`. Re-run **Deploy Site**. |
 | Old paths like `/FlexAIDdS/periodic` | Use `/periodic/` instead |
 
 ---

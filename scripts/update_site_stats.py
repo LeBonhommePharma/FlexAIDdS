@@ -213,6 +213,7 @@ def patch_html_markers(
     *,
     stars: int | None = None,
     release: str | None = None,
+    last_updated: str | None = None,
 ) -> str:
     """Patch shared semantic stat markers in an HTML file."""
     content = re.sub(
@@ -238,10 +239,10 @@ def patch_html_markers(
             count=1,
         )
 
-    today = datetime.date.today().isoformat()
+    stamp = last_updated or datetime.date.today().isoformat()
     content = re.sub(
         r'(<span[^>]*id="last-updated"[^>]*>)[^<]*(</span>)',
-        rf"\g<1>{today}\g<2>",
+        rf"\g<1>{stamp}\g<2>",
         content,
         count=1,
     )
@@ -302,12 +303,13 @@ def write_stats_json(
     *,
     stars: int | None = None,
     release: str | None = None,
+    last_updated: str | None = None,
 ) -> None:
     """Write the shared JSON snapshot consumed by both pages."""
     payload = {
         "commits": commit_count,
         "languageCount": language_count,
-        "lastUpdated": datetime.date.today().isoformat(),
+        "lastUpdated": last_updated or datetime.date.today().isoformat(),
         "languages": [
             {
                 "id": css_suffix,
@@ -400,6 +402,105 @@ def update_all(
     return changed
 
 
+USER_SITE_HTML_RELPATHS = (
+    "FlexAIDdS/index.html",
+    "flexaid-ds/index.html",
+)
+USER_SITE_STATS_JSON_RELPATH = "assets/repo-stats.json"
+
+
+def snapshot_from_json_file(path: str) -> dict:
+    """Load a repo-stats.json snapshot. Raises on missing/invalid files."""
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or not data.get("commits"):
+        raise ValueError(f"{path} is not a valid repo-stats snapshot")
+    return data
+
+
+def apply_snapshot_to_tree(
+    tree: str,
+    snapshot: dict,
+    *,
+    html_relpaths: tuple[str, ...] = USER_SITE_HTML_RELPATHS,
+    json_relpath: str = USER_SITE_STATS_JSON_RELPATH,
+) -> list[str]:
+    """Patch existing HTML markers and write repo-stats.json under *tree*.
+
+    Never deletes unrelated files. Missing optional HTML targets are skipped.
+    """
+    commit_count = int(snapshot["commits"])
+    language_count = snapshot.get("languageCount")
+    if language_count is not None:
+        language_count = int(language_count)
+    stars = snapshot.get("stars")
+    if stars is not None:
+        stars = int(stars)
+    release = snapshot.get("latestRelease")
+    last_updated = snapshot.get("lastUpdated")
+    changed: list[str] = []
+
+    for relpath in html_relpaths:
+        html_path = os.path.join(tree, relpath)
+        if not os.path.isfile(html_path):
+            print(f"Warning: {html_path} not found, skipping", file=sys.stderr)
+            continue
+        with open(html_path, "r", encoding="utf-8") as f:
+            original = f.read()
+        updated = patch_html_markers(
+            original,
+            commit_count,
+            language_count,
+            stars=stars,
+            release=release,
+            last_updated=last_updated,
+        )
+        if updated != original:
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(updated)
+            changed.append(html_path)
+
+    lang_entries = [
+        (
+            str(item["id"]),
+            str(item["name"]),
+            str(item.get("color") or "#555555"),
+            float(item["percent"]),
+        )
+        for item in snapshot.get("languages") or []
+        if isinstance(item, dict) and "id" in item and "name" in item and "percent" in item
+    ]
+    if language_count is None:
+        language_count = len(lang_entries)
+
+    json_path = os.path.join(tree, json_relpath)
+    json_original = None
+    if os.path.isfile(json_path):
+        with open(json_path, "r", encoding="utf-8") as f:
+            json_original = f.read()
+    if lang_entries:
+        write_stats_json(
+            json_path,
+            commit_count,
+            language_count,
+            lang_entries,
+            stars=stars,
+            release=release,
+            last_updated=last_updated,
+        )
+        with open(json_path, "r", encoding="utf-8") as f:
+            json_updated = f.read()
+        if json_updated != json_original:
+            changed.append(json_path)
+    elif os.path.isfile(json_path):
+        print(
+            f"Warning: snapshot has no languages; leaving {json_path} unchanged",
+            file=sys.stderr,
+        )
+
+    return changed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Update site stats across apex + FlexAIDdS pages"
@@ -407,7 +508,40 @@ def main() -> int:
     parser.add_argument(
         "--repo", default="LeBonhommePharma/FlexAIDdS", help="GitHub repo (owner/name)"
     )
+    parser.add_argument(
+        "--from-json",
+        dest="from_json",
+        help="Use an existing repo-stats.json snapshot instead of calling GitHub",
+    )
+    parser.add_argument(
+        "--patch-tree",
+        dest="patch_tree",
+        help=(
+            "Surgically patch FlexAIDdS/index.html, flexaid-ds/index.html, and "
+            "assets/repo-stats.json under this directory. Does not rsync or delete."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.patch_tree:
+        if args.from_json:
+            snapshot = snapshot_from_json_file(args.from_json)
+        else:
+            cached = load_cached_stats()
+            if not cached:
+                print(
+                    "Error: --patch-tree requires --from-json or a local snapshot",
+                    file=sys.stderr,
+                )
+                return 1
+            snapshot = cached
+        changed = apply_snapshot_to_tree(args.patch_tree, snapshot)
+        if changed:
+            for path in changed:
+                print(f"Updated {path}")
+        else:
+            print("No changes needed")
+        return 0
 
     cached = load_cached_stats()
     remote_commits = fetch_commit_count(args.repo)

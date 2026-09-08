@@ -24,6 +24,12 @@ rsync -a --delete \
 
 # Never claim the apex custom domain from this repo.
 rm -f "$WORKTREE/CNAME"
+# Branch-deploy fallback: GitHub's Jekyll builder must not mangle the product tree.
+touch "$WORKTREE/.nojekyll"
+# Install the Pages deploy workflow onto this branch so it can be dispatched
+# with --ref gh-pages (environment policy allows gh-pages + master, not main).
+mkdir -p "$WORKTREE/.github/workflows"
+cp "$ROOT/.github/workflows/pages.yml" "$WORKTREE/.github/workflows/pages.yml"
 
 cd "$WORKTREE"
 git add -A
