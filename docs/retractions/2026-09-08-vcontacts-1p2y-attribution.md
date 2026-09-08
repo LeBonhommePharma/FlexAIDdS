@@ -20,14 +20,37 @@ local-copy on 1P2Y with identical settings:
 produces 0.8939 A, so on this engine the guard changes nothing on 1P2Y and the
 improvement cannot be attributed to it.
 
-## Why the original claim was wrong
+## Why the original claim reads as wrong today -- and what is NOT wrong about it
 
-The 4.1597 A "failure" baseline was measured on a **pre-rebase engine** and was
-never accompanied by a gates-off control on the same engine. A before/after
-across two different engines with no control does not isolate the guard. The
-`e19e6e5562661333` hash belongs to that older engine and is not reproducible on
-the current one -- it is not a target any present-day run should be checked
-against.
+**CORRECTION (second pass, external audit).** An earlier version of this note
+said the 4.1597 A baseline "was never accompanied by a gates-off control on the
+same engine." **That was false, and it unfairly impugned `2f5365ac`'s
+methodology.** The original experiment was properly controlled: a single build,
+engine `2bbd841ca4f192af`, ran an env-gated three-arm test on 1P2Y --
+
+| arm | poses | pose hash | bestCF | rmsd |
+|---|---|---|---|---|
+| guard off | 128 | `866b89c0d2ea86ed` | -254.86286 | 4.1597 |
+| guard on | 128 | `e19e6e5562661333` | -231.46644 | 0.8939 |
+| guard on + diag | 128 | `e19e6e5562661333` | -231.46644 | 0.8939 |
+
+Same build, same target, same settings, gate toggled. On **that** engine the
+guard genuinely produced 4.1597 A -> 0.8939 A, and `2f5365ac` was entitled to
+say so.
+
+**What is actually retracted is the generalisation, not the measurement.** The
+effect is ENGINE-DEPENDENT. On the post-rebase engine the defect no longer
+manifests -- gates-off already succeeds -- so the guard is a no-op there and
+nothing on the current engine can be credited to it. The cause of the change
+came in from upstream, not from either fix.
+
+Two operational consequences:
+
+* Do not cite 4.1597 -> 0.8939 as evidence for the guard **on the current
+  engine**. It is evidence about `2bbd841ca4f192af` only.
+* `e19e6e5562661333` is not reproducible today and must not be used as a
+  regression target; the current engine's value for that configuration is
+  `83e4146955d66105`.
 
 ## What still stands
 
