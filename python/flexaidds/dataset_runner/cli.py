@@ -170,6 +170,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Simulation temperature in Kelvin (default: 300).",
     )
     p.add_argument(
+        "--ranking-objective", choices=("cf_minus_ts", "legacy_cf_minus_s"),
+        default="cf_minus_ts",
+        help="Python reranking proxy: CF-T*S using emitted T (default), or legacy dimensionally incorrect CF-S for diagnostics. Generator election is reported separately.",
+    )
+    p.add_argument(
         "--entry-timeout-seconds",
         type=int,
         default=None,
@@ -381,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
         command_line=full_command,
         default_conc_M=getattr(args, 'default_conc_M', 1.0),
         entry_timeout_seconds=getattr(args, 'entry_timeout_seconds', None),
+        ranking_objective=args.ranking_objective,
     )
     if args.datasets_dir is not None:
         runner_kwargs["datasets_dir"] = args.datasets_dir

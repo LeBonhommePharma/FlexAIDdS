@@ -28,6 +28,7 @@ PDB_BODY = (
     "REMARK CF=-5.08119\n"
     "REMARK enthalpy = -5.079114\n"
     "REMARK entropy = 0.00000780\n"
+    "REMARK temperature = 300.00\n"
     "ATOM      1  C   LIG A   1       0.000   0.000   0.000  1.00  0.00\n"
     "END\n"
 )

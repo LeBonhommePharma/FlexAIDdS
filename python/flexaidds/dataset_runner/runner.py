@@ -128,7 +128,10 @@ DRY_RUN_METRICS_NOTE: str = (
 
 def _is_docking_power_metric(name: str) -> bool:
     """True for docking_power_* keys (including bootstrap CI suffixes)."""
-    return name.startswith("docking_power_")
+    return "docking_power_" in name
+
+
+RANKING_OBJECTIVES = ("cf_minus_ts", "legacy_cf_minus_s")
 
 
 def _strip_docking_power_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -687,6 +690,7 @@ class DatasetResult:
     # a legitimate resume (skip gates 2-3) from a run that scheduled nothing at
     # all (newly==0 AND resumed==0 → still INCONCLUSIVE, not a silent pass).
     resumed: int = 0
+    ranking_objective: str = "cf_minus_ts"
 
     def check_regressions(self) -> Dict[str, bool]:
         """Flag metrics that regressed below baseline − tolerance.
@@ -776,6 +780,7 @@ class DatasetResult:
             "inconclusive_metrics": self.inconclusive_metrics,
             "newly_executed": self.newly_executed,
             "resumed": self.resumed,
+            "ranking_objective": self.ranking_objective,
         }
         if self.metrics_note:
             payload["metrics_note"] = self.metrics_note
@@ -1484,6 +1489,7 @@ class DatasetRunner:
         command_line: Optional[str] = None,
         default_conc_M: float = 1.0,  # P3
         entry_timeout_seconds: Optional[int] = None,
+        ranking_objective: str = "cf_minus_ts",
     ) -> None:
         _default_datasets = Path(__file__).resolve().parent / "datasets"
         self.datasets_dir = Path(datasets_dir) if datasets_dir is not None else _default_datasets
@@ -1498,6 +1504,9 @@ class DatasetRunner:
         # raises and the liveness gate counts it.
         self.binary = self._resolve_binary()
         self.temperature = temperature
+        if ranking_objective not in RANKING_OBJECTIVES:
+            raise ValueError(f"Unknown ranking objective: {ranking_objective}")
+        self.ranking_objective = ranking_objective
         self.n_workers = max(1, int(n_workers))
         # OMP threads per worker: explicit > env > auto (aim for 2 on M3 Pro's 5 P-cores).
         if omp_threads is None:
@@ -1695,7 +1704,7 @@ class DatasetRunner:
             List of :class:`PoseScore` objects.
         """
         if self.dry_run:
-            return self._synthetic_poses(target_id, ligand_paths, structural_state)
+            return self._synthetic_poses(target_id, ligand_paths, structural_state, self.ranking_objective)
 
         try:
             return self._run_flexaid(
@@ -1846,6 +1855,7 @@ class DatasetRunner:
                     structural_state,
                     reference_ligand=ligand_path,
                     mismatches=self._element_mismatches,
+                    ranking_objective=self.ranking_objective,
                 )
                 # Copy the coordinates out BEFORE the with-block closes and
                 # takes them.  Deliberately after the parse, so a preservation
@@ -1976,6 +1986,7 @@ class DatasetRunner:
         structural_state: str,
         reference_ligand: Optional[Path] = None,
         mismatches: Optional[List[str]] = None,
+        ranking_objective: str = "cf_minus_ts",
     ) -> List[PoseScore]:
         """Parse FlexAIDdS result PDB files from a completed docking run.
 
@@ -1983,6 +1994,8 @@ class DatasetRunner:
         ``REMARK CF=`` / ``REMARK <rmsd> RMSD to ref. structure`` output.
         Computes post-hoc RMSD vs the reference ligand when REMARK omits it.
         """
+        if ranking_objective not in RANKING_OBJECTIVES:
+            raise ValueError(f"Unknown ranking objective: {ranking_objective}")
         poses: List[PoseScore] = []
         pdb_files = sorted(
             p for p in work_dir.glob("*.pdb")
@@ -1993,6 +2006,17 @@ class DatasetRunner:
             pdb_files = sorted(
                 p for p in work_dir.glob("*.pdb") if not _is_initial_pose_file(p)
             )
+        # The final numeric filename suffix is the emitted election index.
+        # binding_mode is the original cluster ID in DensityPeak output and
+        # can disagree with the CF-sorted order used to write these files.
+        def output_index(path: Path) -> Optional[int]:
+            match = re.search(r"_(\d+)\.pdb$", path.name, re.IGNORECASE)
+            return int(match.group(1)) if match else None
+
+        pdb_files.sort(key=lambda path: (
+            output_index(path) if output_index(path) is not None else math.inf,
+            path.name,
+        ))
 
         # A contaminated reference is a refusal, not a docking failure, and it
         # must not reach the caller's broad `except Exception` looking like one.
@@ -2017,7 +2041,16 @@ class DatasetRunner:
             rmsd = -1.0
             enthalpy_score = 0.0
             entropy_correction = 0.0
-            total_score = 0.0
+            entropy: Optional[float] = None
+            temperature: Optional[float] = None
+            ensemble_mean_energy: Optional[float] = None
+            ensemble_free_energy: Optional[float] = None
+            generator_score: Optional[float] = None
+            emitted_total_score: Optional[float] = None
+            grand_log_z: Optional[float] = None
+            emitted_index = output_index(pdb_path)
+            generator_rank = emitted_index + 1 if emitted_index is not None else rank
+            binding_mode_id: Optional[int] = None
             is_active = False
             exp_affinity: Optional[float] = None
 
@@ -2031,13 +2064,15 @@ class DatasetRunner:
                     elif "CF_SCORE:" in line:
                         enthalpy_score = _parse_remark_float(line, "CF_SCORE:")
                     elif "ENTROPY:" in line:
-                        entropy_correction = _parse_remark_float(line, "ENTROPY:")
+                        entropy = _parse_remark_float(line, "ENTROPY:")
                     elif "TOTAL_SCORE:" in line:
-                        total_score = _parse_remark_float(line, "TOTAL_SCORE:")
+                        emitted_total_score = _parse_remark_float(line, "TOTAL_SCORE:")
                     elif "EXP_AFFINITY:" in line:
                         exp_affinity = _parse_remark_float(line, "EXP_AFFINITY:")
                     elif "ACTIVE:1" in line:
                         is_active = True
+                    elif re.match(r"REMARK\s+binding_mode\s*=", line):
+                        binding_mode_id = int(line.split("=", 1)[1].strip())
                     elif "ENSEMBLE_LOG_Z:" in line or "GRAND_LOG_Z:" in line:
                         try:
                             grand_log_z = float( line.split(":")[-1].strip() )
@@ -2054,25 +2089,50 @@ class DatasetRunner:
                         if m and enthalpy_score == 0.0:
                             enthalpy_score = float(m.group(1))
                         m = _ENTROPY_REMARK_RE.search(line)
-                        if m and entropy_correction == 0.0:
-                            entropy_correction = float(m.group(1))
+                        if m and entropy is None:
+                            entropy = float(m.group(1))
+                        for label in ("entropy", "temperature", "enthalpy", "proxy_free_energy", "free_energy", "soft_beta_G"):
+                            match = re.match(rf"REMARK\s+{label}\s*=\s*(\S+)", line)
+                            if match:
+                                value = float(match.group(1))
+                                if label == "entropy":
+                                    entropy = value
+                                elif label == "temperature":
+                                    temperature = value
+                                elif label == "enthalpy":
+                                    ensemble_mean_energy = value
+                                elif label in {"free_energy", "proxy_free_energy"}:
+                                    ensemble_free_energy = value
+                                else:
+                                    generator_score = value
 
                 if rmsd < 0.0 and ref_coords is not None:
                     rmsd = _pose_rmsd_vs_reference(
                         pdb_path, ref_coords, ref_elements, mismatches)
 
             except Exception as exc:
-                logger.debug("Error parsing %s: %s", pdb_path, exc)
-                continue
+                raise ValueError(f"Invalid pose metadata in {pdb_path}: {exc}") from exc
 
-            if total_score == 0.0 and enthalpy_score != 0.0:
-                total_score = enthalpy_score - entropy_correction
+            # S is emitted in score units / K. A nonzero S without its own
+            # emitted T has no dimensionally valid correction; never borrow
+            # the CLI default or silently drop that pose from the election.
+            if entropy is not None and not math.isfinite(entropy):
+                raise ValueError(f"Nonfinite entropy in {pdb_path}")
+            if temperature is not None and (not math.isfinite(temperature) or temperature <= 0):
+                raise ValueError(f"Invalid emitted temperature in {pdb_path}")
+            if entropy and temperature is None:
+                raise ValueError(f"Nonzero entropy without emitted temperature in {pdb_path}")
+            entropy_correction = (entropy or 0.0) * (temperature or 0.0)
+            subtraction = (entropy or 0.0) if ranking_objective == "legacy_cf_minus_s" else entropy_correction
+            total_score = enthalpy_score - subtraction
+            if not math.isfinite(total_score):
+                raise ValueError(f"Nonfinite reranking score in {pdb_path}")
 
             poses.append(
                 PoseScore(
                     target_id=target_id,
                     ligand_id=ligand_id,
-                    pose_rank=rank,
+                    pose_rank=generator_rank,
                     rmsd=rmsd,
                     enthalpy_score=enthalpy_score,
                     entropy_correction=entropy_correction,
@@ -2080,6 +2140,15 @@ class DatasetRunner:
                     is_active=is_active,
                     exp_affinity=exp_affinity,
                     structural_state=structural_state,
+                    entropy=entropy,
+                    temperature=temperature,
+                    ensemble_mean_energy=ensemble_mean_energy,
+                    ensemble_free_energy=ensemble_free_energy,
+                    generator_score=generator_score,
+                    emitted_total_score=emitted_total_score,
+                    ensemble_log_Z=grand_log_z,
+                    ranking_objective=ranking_objective,
+                    binding_mode_id=binding_mode_id,
                 )
             )
 
@@ -2090,6 +2159,7 @@ class DatasetRunner:
         target_id: str,
         ligand_paths: List[Path],
         structural_state: str,
+        ranking_objective: str = "cf_minus_ts",
     ) -> List[PoseScore]:
         """Generate synthetic poses for dry-run / framework testing."""
         import random
@@ -2100,7 +2170,7 @@ class DatasetRunner:
             for rank in range(1, 6):
                 enthalpy = rng.uniform(-12, -4)
                 entropy = rng.uniform(0.5, 3.0)
-                total = enthalpy - entropy
+                total = enthalpy - (entropy / 300.0 if ranking_objective == "legacy_cf_minus_s" else entropy)
                 # Synthetic near-native pose at rank 2 sometimes
                 rmsd = rng.uniform(0.5, 1.5) if rank == 2 else rng.uniform(1.0, 5.0)
                 poses.append(
@@ -2116,6 +2186,9 @@ class DatasetRunner:
                         exp_affinity=rng.uniform(-12, -6),
                         ensemble_log_Z = rng.uniform(5, 15),  # synthetic for grand test
                         structural_state=structural_state,
+                        entropy=entropy / 300.0,
+                        temperature=300.0,
+                        ranking_objective=ranking_objective,
                     )
                 )
         return poses
@@ -2191,6 +2264,7 @@ class DatasetRunner:
             full_command=getattr(self, "command_line", None) or " ".join(sys.argv),
             dry_run=bool(self.dry_run),
             metrics_note=DRY_RUN_METRICS_NOTE if self.dry_run else "",
+            ranking_objective=self.ranking_objective,
         )
 
         if not targets:

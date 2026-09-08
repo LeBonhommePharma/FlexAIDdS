@@ -43,7 +43,7 @@ class PoseScore:
         enthalpy_score:     Contact-function score *without* entropy correction (kcal/mol).
                             Lower = better binding.
         entropy_correction: TΔS contribution (kcal/mol, positive = entropy-favoured).
-        total_score:        enthalpy_score − entropy_correction (final ranking score).
+        total_score:        Declared reranking proxy; never a binding free energy.
         is_active:          Whether the compound is a known binder / true positive.
         exp_affinity:       Experimental ΔG (kcal/mol); None if unavailable.
         structural_state:   Receptor source: ``"holo"``, ``"apo"``, or ``"af2"``.
@@ -60,6 +60,14 @@ class PoseScore:
     exp_affinity: Optional[float] = None
     structural_state: str = "holo"
     ensemble_log_Z: Optional[float] = None  # P3 grand canonical: real log_Z from ensemble (for conc-weighted Xi)
+    entropy: Optional[float] = None  # emitted S, score units / K
+    temperature: Optional[float] = None  # emitted temperature, K
+    ensemble_mean_energy: Optional[float] = None
+    ensemble_free_energy: Optional[float] = None
+    generator_score: Optional[float] = None  # emitted soft_beta_G, independent ledger
+    ranking_objective: str = "cf_minus_ts"
+    emitted_total_score: Optional[float] = None
+    binding_mode_id: Optional[int] = None  # cluster identity; not output rank
 
 
 def rmsd_is_success(rmsd: float, threshold: float = 2.0) -> bool:
@@ -306,6 +314,7 @@ def docking_power(
     rmsd_threshold: float = 2.0,
     top_n: int = 1,
     n_targets: Optional[int] = None,
+    ranking: str = "reranked",
 ) -> float:
     """Fraction of targets where the top-N poses contain a near-native pose.
 
@@ -339,7 +348,13 @@ def docking_power(
     for target_poses in by_target.values():
         # Rank over every emitted pose. Filtering the sentinels out first would
         # promote a worse-scoring pose into the top-N and inflate the rate.
-        ranked = sorted(target_poses, key=lambda p: p.total_score)[:top_n]
+        if ranking not in {"reranked", "generator"}:
+            raise ValueError(f"Unknown docking ranking: {ranking}")
+        if ranking == "generator":
+            # A missing elected output is a miss; do not promote a later rank.
+            ranked = [p for p in target_poses if 1 <= p.pose_rank <= top_n]
+        else:
+            ranked = sorted(target_poses, key=lambda p: p.total_score)[:top_n]
         if any(rmsd_is_success(p.rmsd, rmsd_threshold) for p in ranked):
             n_success += 1
 
@@ -491,6 +506,8 @@ def compute_all_metrics(
         "entropy_rescue_rate",
         "docking_power_top1",
         "docking_power_top3",
+        "generator_docking_power_top1",
+        "entropy_reranked_docking_power_top1",
         "mean_rmsd",
         "median_rmsd",
         "ef_1pct",
@@ -515,6 +532,14 @@ def compute_all_metrics(
     if "docking_power_top3" in to_compute:
         results["docking_power_top3"] = docking_power(
             poses, top_n=3, n_targets=n_targets)
+
+    # Keep the emitted election separate from Python's declared proxy objective.
+    if "generator_docking_power_top1" in to_compute or "docking_power_top1" in to_compute:
+        results["generator_docking_power_top1"] = docking_power(
+            poses, top_n=1, n_targets=n_targets, ranking="generator")
+    if "entropy_reranked_docking_power_top1" in to_compute or "docking_power_top1" in to_compute:
+        results["entropy_reranked_docking_power_top1"] = docking_power(
+            poses, top_n=1, n_targets=n_targets)
 
     # Pose-accuracy aggregates: per-target best-pose RMSD, then mean/median
     # across targets — mirrors benchmark.BenchmarkSummary's median-of-best-pose
