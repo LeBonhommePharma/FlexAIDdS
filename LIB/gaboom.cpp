@@ -3378,6 +3378,16 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		}();
 #ifdef _OPENMP
 		const int eval_threads = deterministic_eval ? 1 : n_thr;
+#else
+		// Scalar build: exactly one evaluation thread by construction.
+		// DECLARED IN BOTH BRANCHES DELIBERATELY. The selective-reset invariant
+		// checker below reads eval_threads unconditionally (std::min against
+		// tl_atoms.size()), so confining the declaration to the _OPENMP branch
+		// made an OpenMP-OFF build fail to COMPILE. The checker's runtime env
+		// gate cannot prevent that: a flag guards execution, not translation.
+		// The Eigen compile failure in test_cf_aggregator masked this on every
+		// CI lane. Found by external audit (CORE-1).
+		const int eval_threads = 1;
 #endif
 		const bool record_initial_workers = flexaids::ga_population_observation_active();
 		std::vector<flexaids::GaPopulationWorkerReceipt> initial_workers(
