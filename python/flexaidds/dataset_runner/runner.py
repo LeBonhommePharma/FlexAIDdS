@@ -35,6 +35,7 @@ MPI distributed run::
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import csv
 import logging
@@ -51,7 +52,7 @@ import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, fields, asdict, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -128,7 +129,22 @@ DRY_RUN_METRICS_NOTE: str = (
 
 def _is_docking_power_metric(name: str) -> bool:
     """True for docking_power_* keys (including bootstrap CI suffixes)."""
-    return name.startswith("docking_power_")
+    return "docking_power_" in name
+
+
+RANKING_OBJECTIVES = ("cf_minus_ts", "legacy_cf_minus_s")
+CHECKPOINT_SCHEMA_VERSION = 2
+
+
+def _file_sha256(path: Path) -> Optional[str]:
+    """Bounded-memory identity for checkpoint inputs and the engine binary."""
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _strip_docking_power_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -564,6 +580,9 @@ class TargetResult:
     # generation budget is indistinguishable in the artifact from a full one.
     early_termination: Dict[str, Any] = field(default_factory=dict)
     early_exit_params: Dict[str, Any] = field(default_factory=dict)
+    entry_exit_codes: Dict[str, Optional[int]] = field(default_factory=dict)
+    entry_timeouts: Dict[str, int] = field(default_factory=dict)
+    provenance: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:
@@ -626,7 +645,7 @@ class DatasetResult:
         metrics:            ``{metric_name: scalar_value}`` computed across all targets.
         ci_95:              ``{metric_name: (lower, upper)}`` bootstrap CIs.
         regression_flags:   ``{metric_name: True}`` when metric regressed vs baseline.
-        targets_attempted:  All target IDs that were scheduled.
+        targets_attempted:  Declared target roster, including expected targets absent from execution.
         targets_completed:  Target IDs that produced at least one pose.
         targets_failed:     Target IDs where docking failed or produced no poses.
         duration_seconds:   Total wall-clock time for this dataset.
@@ -679,14 +698,18 @@ class DatasetResult:
     # they are process-level and identical across entries of a run).
     early_exit_params: Dict[str, Any] = field(default_factory=dict)
     inconclusive_metrics: List[str] = field(default_factory=list)
-    # Targets actually executed this run (excludes --resume checkpoints, whose
-    # poses are not reloaded into all_poses). Gates 2-3 only judge a run that
-    # did fresh work — a pure resume/package-regen run must not false-fail.
+    # Freshly executed observations; resumed observations are restored and
+    # judged by the same quality and completeness gates as fresh observations.
     newly_executed: int = 0
-    # Targets loaded from --resume checkpoints (not re-executed). Distinguishes
-    # a legitimate resume (skip gates 2-3) from a run that scheduled nothing at
-    # all (newly==0 AND resumed==0 → still INCONCLUSIVE, not a silent pass).
+    # Observations loaded from verified --resume checkpoints (not re-executed).
     resumed: int = 0
+    observation_roster: List[Tuple[str, str]] = field(default_factory=list)
+    observations_completed: List[Tuple[str, str]] = field(default_factory=list)
+    observations_failed: List[Tuple[str, str]] = field(default_factory=list)
+    ranking_objective: str = "cf_minus_ts"
+    checkpoint_provenance: Dict[str, Any] = field(default_factory=dict)
+    scheduled_observation_roster: List[Tuple[str, str]] = field(default_factory=list)
+    expected_target_manifest: Dict[str, Any] = field(default_factory=dict)
 
     def check_regressions(self) -> Dict[str, bool]:
         """Flag metrics that regressed below baseline − tolerance.
@@ -698,7 +721,7 @@ class DatasetResult:
         tol = self.config.baseline_tolerance
         for metric, baseline in self.config.expected_baselines.items():
             measured = self.metrics.get(metric)
-            if measured is None or np.isnan(measured):
+            if measured is None or not math.isfinite(measured):
                 # Completeness gate (#326): a metric that was never measured is
                 # NOT "no regression" — it is an inconclusive run. Record it so
                 # cli.main can fail the run rather than silently pass it.
@@ -776,6 +799,14 @@ class DatasetResult:
             "inconclusive_metrics": self.inconclusive_metrics,
             "newly_executed": self.newly_executed,
             "resumed": self.resumed,
+            "observation_roster": self.observation_roster,
+            "observations_completed": self.observations_completed,
+            "observations_failed": self.observations_failed,
+            "docking_power_denominator": len(self.targets_attempted),
+            "ranking_objective": self.ranking_objective,
+            "checkpoint_provenance": self.checkpoint_provenance,
+            "scheduled_observation_roster": self.scheduled_observation_roster,
+            "expected_target_manifest": self.expected_target_manifest,
         }
         if self.metrics_note:
             payload["metrics_note"] = self.metrics_note
@@ -1484,6 +1515,8 @@ class DatasetRunner:
         command_line: Optional[str] = None,
         default_conc_M: float = 1.0,  # P3
         entry_timeout_seconds: Optional[int] = None,
+        ranking_objective: str = "cf_minus_ts",
+        expected_target_manifest: Optional[Union[str, Path]] = None,
     ) -> None:
         _default_datasets = Path(__file__).resolve().parent / "datasets"
         self.datasets_dir = Path(datasets_dir) if datasets_dir is not None else _default_datasets
@@ -1498,6 +1531,10 @@ class DatasetRunner:
         # raises and the liveness gate counts it.
         self.binary = self._resolve_binary()
         self.temperature = temperature
+        if ranking_objective not in RANKING_OBJECTIVES:
+            raise ValueError(f"Unknown ranking objective: {ranking_objective}")
+        self.ranking_objective = ranking_objective
+        self.expected_target_manifest = Path(expected_target_manifest).resolve() if expected_target_manifest else None
         self.n_workers = max(1, int(n_workers))
         # OMP threads per worker: explicit > env > auto (aim for 2 on M3 Pro's 5 P-cores).
         if omp_threads is None:
@@ -1695,7 +1732,7 @@ class DatasetRunner:
             List of :class:`PoseScore` objects.
         """
         if self.dry_run:
-            return self._synthetic_poses(target_id, ligand_paths, structural_state)
+            return self._synthetic_poses(target_id, ligand_paths, structural_state, self.ranking_objective)
 
         try:
             return self._run_flexaid(
@@ -1846,6 +1883,7 @@ class DatasetRunner:
                     structural_state,
                     reference_ligand=ligand_path,
                     mismatches=self._element_mismatches,
+                    ranking_objective=self.ranking_objective,
                 )
                 # Copy the coordinates out BEFORE the with-block closes and
                 # takes them.  Deliberately after the parse, so a preservation
@@ -1976,6 +2014,7 @@ class DatasetRunner:
         structural_state: str,
         reference_ligand: Optional[Path] = None,
         mismatches: Optional[List[str]] = None,
+        ranking_objective: str = "cf_minus_ts",
     ) -> List[PoseScore]:
         """Parse FlexAIDdS result PDB files from a completed docking run.
 
@@ -1983,6 +2022,8 @@ class DatasetRunner:
         ``REMARK CF=`` / ``REMARK <rmsd> RMSD to ref. structure`` output.
         Computes post-hoc RMSD vs the reference ligand when REMARK omits it.
         """
+        if ranking_objective not in RANKING_OBJECTIVES:
+            raise ValueError(f"Unknown ranking objective: {ranking_objective}")
         poses: List[PoseScore] = []
         pdb_files = sorted(
             p for p in work_dir.glob("*.pdb")
@@ -1993,6 +2034,17 @@ class DatasetRunner:
             pdb_files = sorted(
                 p for p in work_dir.glob("*.pdb") if not _is_initial_pose_file(p)
             )
+        # The final numeric filename suffix is the emitted election index.
+        # binding_mode is the original cluster ID in DensityPeak output and
+        # can disagree with the CF-sorted order used to write these files.
+        def output_index(path: Path) -> Optional[int]:
+            match = re.search(r"_(\d+)\.pdb$", path.name, re.IGNORECASE)
+            return int(match.group(1)) if match else None
+
+        pdb_files.sort(key=lambda path: (
+            output_index(path) if output_index(path) is not None else math.inf,
+            path.name,
+        ))
 
         # A contaminated reference is a refusal, not a docking failure, and it
         # must not reach the caller's broad `except Exception` looking like one.
@@ -2017,7 +2069,16 @@ class DatasetRunner:
             rmsd = -1.0
             enthalpy_score = 0.0
             entropy_correction = 0.0
-            total_score = 0.0
+            entropy: Optional[float] = None
+            temperature: Optional[float] = None
+            ensemble_mean_energy: Optional[float] = None
+            ensemble_free_energy: Optional[float] = None
+            generator_score: Optional[float] = None
+            emitted_total_score: Optional[float] = None
+            grand_log_z: Optional[float] = None
+            emitted_index = output_index(pdb_path)
+            generator_rank = emitted_index + 1 if emitted_index is not None else rank
+            binding_mode_id: Optional[int] = None
             is_active = False
             exp_affinity: Optional[float] = None
 
@@ -2031,13 +2092,15 @@ class DatasetRunner:
                     elif "CF_SCORE:" in line:
                         enthalpy_score = _parse_remark_float(line, "CF_SCORE:")
                     elif "ENTROPY:" in line:
-                        entropy_correction = _parse_remark_float(line, "ENTROPY:")
+                        entropy = _parse_remark_float(line, "ENTROPY:")
                     elif "TOTAL_SCORE:" in line:
-                        total_score = _parse_remark_float(line, "TOTAL_SCORE:")
+                        emitted_total_score = _parse_remark_float(line, "TOTAL_SCORE:")
                     elif "EXP_AFFINITY:" in line:
                         exp_affinity = _parse_remark_float(line, "EXP_AFFINITY:")
                     elif "ACTIVE:1" in line:
                         is_active = True
+                    elif re.match(r"REMARK\s+binding_mode\s*=", line):
+                        binding_mode_id = int(line.split("=", 1)[1].strip())
                     elif "ENSEMBLE_LOG_Z:" in line or "GRAND_LOG_Z:" in line:
                         try:
                             grand_log_z = float( line.split(":")[-1].strip() )
@@ -2054,25 +2117,50 @@ class DatasetRunner:
                         if m and enthalpy_score == 0.0:
                             enthalpy_score = float(m.group(1))
                         m = _ENTROPY_REMARK_RE.search(line)
-                        if m and entropy_correction == 0.0:
-                            entropy_correction = float(m.group(1))
+                        if m and entropy is None:
+                            entropy = float(m.group(1))
+                        for label in ("entropy", "temperature", "enthalpy", "proxy_free_energy", "free_energy", "soft_beta_G"):
+                            match = re.match(rf"REMARK\s+{label}\s*=\s*(\S+)", line)
+                            if match:
+                                value = float(match.group(1))
+                                if label == "entropy":
+                                    entropy = value
+                                elif label == "temperature":
+                                    temperature = value
+                                elif label == "enthalpy":
+                                    ensemble_mean_energy = value
+                                elif label in {"free_energy", "proxy_free_energy"}:
+                                    ensemble_free_energy = value
+                                else:
+                                    generator_score = value
 
                 if rmsd < 0.0 and ref_coords is not None:
                     rmsd = _pose_rmsd_vs_reference(
                         pdb_path, ref_coords, ref_elements, mismatches)
 
             except Exception as exc:
-                logger.debug("Error parsing %s: %s", pdb_path, exc)
-                continue
+                raise ValueError(f"Invalid pose metadata in {pdb_path}: {exc}") from exc
 
-            if total_score == 0.0 and enthalpy_score != 0.0:
-                total_score = enthalpy_score - entropy_correction
+            # S is emitted in score units / K. A nonzero S without its own
+            # emitted T has no dimensionally valid correction; never borrow
+            # the CLI default or silently drop that pose from the election.
+            if entropy is not None and not math.isfinite(entropy):
+                raise ValueError(f"Nonfinite entropy in {pdb_path}")
+            if temperature is not None and (not math.isfinite(temperature) or temperature <= 0):
+                raise ValueError(f"Invalid emitted temperature in {pdb_path}")
+            if entropy and temperature is None:
+                raise ValueError(f"Nonzero entropy without emitted temperature in {pdb_path}")
+            entropy_correction = (entropy or 0.0) * (temperature or 0.0)
+            subtraction = (entropy or 0.0) if ranking_objective == "legacy_cf_minus_s" else entropy_correction
+            total_score = enthalpy_score - subtraction
+            if not math.isfinite(total_score):
+                raise ValueError(f"Nonfinite reranking score in {pdb_path}")
 
             poses.append(
                 PoseScore(
                     target_id=target_id,
                     ligand_id=ligand_id,
-                    pose_rank=rank,
+                    pose_rank=generator_rank,
                     rmsd=rmsd,
                     enthalpy_score=enthalpy_score,
                     entropy_correction=entropy_correction,
@@ -2080,6 +2168,15 @@ class DatasetRunner:
                     is_active=is_active,
                     exp_affinity=exp_affinity,
                     structural_state=structural_state,
+                    entropy=entropy,
+                    temperature=temperature,
+                    ensemble_mean_energy=ensemble_mean_energy,
+                    ensemble_free_energy=ensemble_free_energy,
+                    generator_score=generator_score,
+                    emitted_total_score=emitted_total_score,
+                    ensemble_log_Z=grand_log_z,
+                    ranking_objective=ranking_objective,
+                    binding_mode_id=binding_mode_id,
                 )
             )
 
@@ -2090,6 +2187,7 @@ class DatasetRunner:
         target_id: str,
         ligand_paths: List[Path],
         structural_state: str,
+        ranking_objective: str = "cf_minus_ts",
     ) -> List[PoseScore]:
         """Generate synthetic poses for dry-run / framework testing."""
         import random
@@ -2100,7 +2198,7 @@ class DatasetRunner:
             for rank in range(1, 6):
                 enthalpy = rng.uniform(-12, -4)
                 entropy = rng.uniform(0.5, 3.0)
-                total = enthalpy - entropy
+                total = enthalpy - (entropy / 300.0 if ranking_objective == "legacy_cf_minus_s" else entropy)
                 # Synthetic near-native pose at rank 2 sometimes
                 rmsd = rng.uniform(0.5, 1.5) if rank == 2 else rng.uniform(1.0, 5.0)
                 poses.append(
@@ -2116,6 +2214,9 @@ class DatasetRunner:
                         exp_affinity=rng.uniform(-12, -6),
                         ensemble_log_Z = rng.uniform(5, 15),  # synthetic for grand test
                         structural_state=structural_state,
+                        entropy=entropy / 300.0,
+                        temperature=300.0,
+                        ranking_objective=ranking_objective,
                     )
                 )
         return poses
@@ -2141,9 +2242,22 @@ class DatasetRunner:
         A lightweight EntryTaskManager (see below) coordinates the work items.
         """
         t0 = time.monotonic()
-        targets = config.scheduled_targets(tier)
         states = structural_states or config.structural_states
         scheduled_items = config.scheduled_work_items(tier)
+        if not config._uses_crossdock_catalog(tier):
+            scheduled_items = [(tid, st) for tid in config.scheduled_targets(tier) for st in states]
+        if len(set(scheduled_items)) != len(scheduled_items):
+            raise ValueError("Duplicate scheduled observation identities")
+        scheduled_targets = list(dict.fromkeys(tid for tid, _ in scheduled_items))
+        if len(scheduled_items) != len(scheduled_targets):
+            raise ValueError(
+                "Mixed structural states would pool distinct observations in target-level metrics; "
+                "run one structural state at a time via structural_states=[state]"
+            )
+        targets, manifest_identity = self._expected_targets(config, scheduled_targets)
+        canonical_ids = {target.casefold(): target for target in targets}
+        declared_roster = ([(target, states[0]) for target in targets]
+                           if manifest_identity else list(scheduled_items))
         slug = config.slug
         eff_temp = self._effective_temperature(slug)
         if slug in THERMO_DATASETS and eff_temp != self.temperature:
@@ -2191,6 +2305,10 @@ class DatasetRunner:
             full_command=getattr(self, "command_line", None) or " ".join(sys.argv),
             dry_run=bool(self.dry_run),
             metrics_note=DRY_RUN_METRICS_NOTE if self.dry_run else "",
+            observation_roster=declared_roster,
+            ranking_objective=self.ranking_objective,
+            scheduled_observation_roster=list(scheduled_items),
+            expected_target_manifest=manifest_identity,
         )
 
         if not targets:
@@ -2199,19 +2317,25 @@ class DatasetRunner:
             return dr
 
         # --- NEW: Per-entry resume + individual processing automation ---
-        already_completed: set[str] = set()
+        self._checkpoint_protocol = self._protocol_provenance(config, tier)
+        self._checkpoint_protocol["observation_roster"] = [list(item) for item in scheduled_items]
+        self._checkpoint_protocol["expected_target_manifest"] = manifest_identity
+        cached_results: Dict[Tuple[str, str], TargetResult] = {}
         if self.resume:
-            already_completed = self._discover_completed_targets(config, tier)
-            if already_completed:
+            for tid, st in scheduled_items:
+                cached = self._load_target_result(config, tier, tid, st)
+                if cached is not None:
+                    cached_results[(tid, st)] = cached
+            if cached_results:
                 logger.info(
-                    "Resume mode: %d/%d targets already have complete per-entry results — skipping them",
-                    len(already_completed), len(targets)
+                    "Resume mode: restoring %d/%d observations and their provenance",
+                    len(cached_results), len(scheduled_items)
                 )
 
         # Build work items from catalog (large-N tier-2) or targets × states
         all_work_items: List[Tuple[str, str]] = []
         for tid, st in scheduled_items:
-            if tid in already_completed:
+            if (tid, st) in cached_results:
                 continue
             all_work_items.append((tid, st))
 
@@ -2259,8 +2383,11 @@ class DatasetRunner:
             cost_hints=cost_hints,
         )
 
+        # Only root contributes cached observations to MPI aggregation. The
+        # cache is shared, so adding it on every rank would multiply evidence.
+        restored = cached_results if self._mpi_root else {}
         all_poses: List[PoseScore] = []
-        completed_targets: set[str] = set(already_completed)
+        completed_targets: set[str] = set()
         failed_targets: set[str] = set()
 
         # #326: reset per-dataset FlexAID crash tally before this run's entries.
@@ -2271,6 +2398,15 @@ class DatasetRunner:
             self._entry_early_termination = {}
             self._entry_early_exit_params = {}
             self._element_mismatches = []
+
+        for (tid, st), cached in restored.items():
+            self._entry_exit_codes.update(cached.entry_exit_codes)
+            self._entry_timeouts.update(cached.entry_timeouts)
+            if cached.early_termination:
+                self._entry_early_termination[f"{tid}/{st}"] = cached.early_termination
+            if cached.early_exit_params:
+                self._entry_early_exit_params[f"{tid}/{st}"] = cached.early_exit_params
+        self._flexaid_crashes = len(self._entry_exit_codes)
 
         def _process_one_item(item: Tuple[str, str]) -> Tuple[str, str, List[PoseScore], float, str]:
             """Process a single (target_id, structural_state) entry.
@@ -2289,11 +2425,9 @@ class DatasetRunner:
                 if config.data_dir and not self.dry_run:
                     receptor, ligands = self._resolve_entry_paths(config, target_id, state)
                     if receptor is None:
-                        error = f"No receptor found for {target_id}/{state}"
-                        return target_id, state, [], time.monotonic() - t_start, error
+                        raise ValueError(f"No receptor found for {target_id}/{state}")
                     if not ligands:
-                        error = f"No ligand found for {target_id}/{state}"
-                        return target_id, state, [], time.monotonic() - t_start, error
+                        raise ValueError(f"No ligand found for {target_id}/{state}")
 
                 # P3: per-ligand conc from config.ligand_concs if present (from yaml)
                 eff_conc = getattr(config, 'default_conc_M', self.default_conc_M)
@@ -2310,6 +2444,8 @@ class DatasetRunner:
 
                 elapsed = time.monotonic() - t_start
                 cost_cpu = elapsed * max(1, self.omp_threads)
+                if not poses:
+                    error = "No poses produced"
 
                 tr = TargetResult(
                     target_id=target_id,
@@ -2347,14 +2483,29 @@ class DatasetRunner:
                     "Unhandled exception for %s/%s: %s", target_id, state, exc,
                     exc_info=True,
                 )
-                return target_id, state, [], elapsed, f"EXCEPTION: {exc}"
+                error = f"EXCEPTION: {exc}"
+                try:
+                    self._save_target_result(TargetResult(
+                        target_id=target_id, structural_state=state, poses=[],
+                        duration_seconds=elapsed, error=error,
+                        **self._early_termination_for(target_id, state),
+                    ), config, tier, cost_cpu=elapsed * max(1, self.omp_threads))
+                except Exception as save_exc:
+                    logger.warning("Could not persist failed observation %s/%s: %s", target_id, state, save_exc)
+                return target_id, state, [], elapsed, error
 
         # Dispatch via the EntryTaskManager (local ThreadPool or sequential)
         results = entry_manager.run(_process_one_item)
+        newly = len(results)
+        fresh_results = list(results)
+        results = list(results) + [
+            (tid, st, tr.poses, tr.duration_seconds, tr.error)
+            for (tid, st), tr in restored.items()
+        ]
 
         for target_id, state, poses, elapsed, error in results:
             all_poses.extend(poses)
-            if error:
+            if error or not poses:
                 failed_targets.add(target_id)
                 logger.warning("Failed %s/%s: %s", target_id, state, error)
             else:
@@ -2390,7 +2541,7 @@ class DatasetRunner:
             dr.grand_summary = grand_summary
             logger.info("P3: emitted grand summary for %d ligands", len(grand_summary))
 
-        completed = sorted(completed_targets)
+        completed = sorted(completed_targets - failed_targets)
         failed = sorted(failed_targets)
 
         # #326: snapshot this rank's FlexAID crash tally + count of targets
@@ -2408,8 +2559,7 @@ class DatasetRunner:
             early_params = next(
                 (dict(v) for v in self._entry_early_exit_params.values()), {}
             )
-        newly = len(results)
-        resumed = len(already_completed)
+        resumed = len(cached_results)
 
         # Element-order refusals are scored as misses, so they must be visible
         # or a correspondence bug reads as bad docking.
@@ -2486,6 +2636,11 @@ class DatasetRunner:
 
         # Root finalizes
         if self._mpi_root:
+            all_poses = [replace(pose, target_id=canonical_ids[pose.target_id.casefold()])
+                         for pose in all_poses]
+            completed = [canonical_ids[target.casefold()] for target in completed]
+            failed = [canonical_ids[target.casefold()] for target in failed]
+            failed.extend(target for target in targets if target.casefold() not in {tid.casefold() for tid in scheduled_targets})
             dr.targets_completed = completed
             dr.targets_failed = failed
             dr.flexaid_crashes = crashes
@@ -2496,16 +2651,25 @@ class DatasetRunner:
             dr.total_poses = len(all_poses)
             dr.newly_executed = newly
             dr.resumed = resumed
+            observed = {(p.target_id, p.structural_state) for p in all_poses}
+            if not observed.issubset(set(declared_roster)):
+                raise ValueError("Observed poses outside the declared observation roster")
+            dr.observations_completed = [item for item in declared_roster if item in observed]
+            dr.observations_failed = [item for item in declared_roster if item not in observed]
+            dr.checkpoint_provenance = dict(self._checkpoint_protocol)
+            dr.targets_completed = sorted(set(completed) - set(failed))
+            dr.targets_failed = sorted(set(failed))
 
-            if all_poses:
-                metrics = compute_all_metrics(all_poses, requested=requested_metrics)
+            if declared_roster:
+                metrics = compute_all_metrics(
+                    all_poses, requested=requested_metrics, n_targets=len(targets))
                 if self.dry_run:
                     # Safety net: never surface docking_power_* from synthetic poses.
                     metrics = _strip_docking_power_metrics(metrics)
                 dr.metrics = metrics
 
                 if self.do_bootstrap:
-                    cis = self._compute_bootstrap_cis(all_poses, requested_metrics)
+                    cis = self._compute_bootstrap_cis(all_poses, requested_metrics, declared_roster)
                     if self.dry_run:
                         cis = _strip_docking_power_metrics(cis)
                     dr.ci_95 = cis
@@ -2519,13 +2683,15 @@ class DatasetRunner:
                 )
 
             # Also write a small per-dataset manifest of individual entry status (for audit + reproducibility)
-            self._write_entry_manifest(config, tier, completed, failed)
+            self._write_entry_manifest(config, tier, dr.targets_completed, dr.targets_failed,
+                                       observation_roster=declared_roster,
+                                       scheduled_observation_roster=scheduled_items)
 
             # Update persistent cost history (CostHistory + EMA)
             if cost_history is not None:
                 try:
                     observed_costs = {}
-                    for target_id, state, poses, elapsed, error in results:
+                    for target_id, state, poses, elapsed, error in fresh_results:
                         if not error and elapsed > 0:
                             key = f"{target_id}_{state}"
                             observed_costs[key] = elapsed * max(1, self.omp_threads)
@@ -2542,15 +2708,31 @@ class DatasetRunner:
         self,
         poses: List[PoseScore],
         requested: Optional[List[str]],
+        observation_roster: Optional[List[Tuple[str, str]]] = None,
     ) -> Dict[str, Tuple[float, float]]:
-        """Compute bootstrap CIs for scalar pose-level metrics."""
+        """Resample declared targets, including missing-output targets.
+
+        Each draw gets a distinct ID so repeated draws are not collapsed by
+        metric grouping. Resampling poses would change both election and N.
+        """
         cis: Dict[str, Tuple[float, float]] = {}
+        roster = observation_roster or list(dict.fromkeys((p.target_id, p.structural_state) for p in poses))
+        if not roster:
+            return cis
+        grouped = {item: [] for item in roster}
+        for pose in poses:
+            grouped[(pose.target_id, pose.structural_state)].append(pose)
+        observations = list(grouped.values())
+
+        def _flatten(sample):
+            return [replace(pose, target_id=f"draw_{index}")
+                    for index, bucket in enumerate(sample) for pose in bucket]
 
         def _rescue_fn(sample):
-            return entropy_rescue_rate(sample)
+            return entropy_rescue_rate(_flatten(sample))
 
         def _dock_fn(sample):
-            return docking_power(sample, top_n=1)
+            return docking_power(_flatten(sample), top_n=1, n_targets=len(sample))
 
         fns = {
             "entropy_rescue_rate": _rescue_fn,
@@ -2561,7 +2743,7 @@ class DatasetRunner:
             if self.dry_run and _is_docking_power_metric(name):
                 continue
             if requested is None or name in requested:
-                lo, hi = bootstrap_ci(fn, poses, n_resamples=self.n_bootstrap)
+                lo, hi = bootstrap_ci(fn, observations, n_resamples=self.n_bootstrap)
                 cis[name] = (lo, hi)
 
         return cis
@@ -2678,11 +2860,86 @@ class DatasetRunner:
         safe_id = target_id.replace("/", "_")
         return self._entry_results_dir(config, tier) / f"{safe_id}_{structural_state}.json"
 
+    def _protocol_provenance(self, config: DatasetConfig, tier: int) -> Dict[str, Any]:
+        """Identity of the observation/scorer protocol, separate from verdicts.
+
+        Baselines may be re-evaluated without redocking. Changed inputs, engine,
+        scoring objective or runtime knobs require a new result namespace.
+        """
+        spec = asdict(config)
+        for key in ("expected_baselines", "published_baselines", "published_source", "baseline_tolerance", "metrics"):
+            spec.pop(key, None)
+        environment = {key: value for key, value in os.environ.items()
+                       if key.startswith(("FLEXAID", "OMP_", "CUDA_"))}
+        return {
+            "schema_version": CHECKPOINT_SCHEMA_VERSION,
+            "dataset": config.slug,
+            "tier": tier,
+            "observation_roster": [list(item) for item in config.scheduled_work_items(tier)],
+            "dataset_spec_sha256": hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest(),
+            "runtime_environment_sha256": hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest(),
+            "git_sha": _git_sha(self.repo_root),
+            "binary": self._resolve_binary(),
+            "binary_sha256": _file_sha256(Path(self._resolve_binary())),
+            "temperature": self._effective_temperature(config.slug),
+            "ranking_objective": self.ranking_objective,
+            "omp_threads": self.omp_threads,
+            "scorer_source_sha256": {
+                name: _file_sha256(Path(__file__).with_name(name))
+                for name in ("runner.py", "metrics.py", "data_paths.py")
+            },
+            "entry_timeout_seconds": self.entry_timeout_seconds,
+            "dry_run": self.dry_run,
+            "expected_target_manifest": self._expected_targets(config, config.scheduled_targets(tier))[1],
+        }
+
+    def _expected_targets(self, config: DatasetConfig, scheduled: List[str]) -> Tuple[List[str], Dict[str, Any]]:
+        """Use an explicitly pinned manifest as N even if execution omitted rows."""
+        path = self.expected_target_manifest
+        if path is None:
+            return list(scheduled), {}
+        data = json.loads(path.read_text())
+        targets = data.get("targets")
+        if data.get("dataset") != config.slug or not isinstance(targets, list) or not targets:
+            raise ValueError("Expected-target manifest has the wrong dataset or no target roster")
+        if any(not isinstance(target, str) or not target.strip() for target in targets):
+            raise ValueError("Expected-target manifest contains invalid target identities")
+        normalized = {target.casefold() for target in targets}
+        if len(normalized) != len(targets) or data.get("N") != len(targets):
+            raise ValueError("Expected-target manifest has duplicate identities or inconsistent N")
+        if len({target.casefold() for target in scheduled}) != len(scheduled):
+            raise ValueError("Scheduled target identities are not unique")
+        if not {target.casefold() for target in scheduled}.issubset(normalized):
+            raise ValueError("Scheduled targets are outside the expected-target manifest")
+        if len(config.structural_states) != 1:
+            raise ValueError("A pinned target manifest requires a single declared structural state")
+        codes_digest = hashlib.sha256(",".join(sorted(targets)).encode("utf-8")).hexdigest()
+        if data.get("sha256_of_sorted_codes") is not None and data["sha256_of_sorted_codes"] != codes_digest:
+            raise ValueError("Expected-target manifest sorted-code digest mismatch")
+        return list(targets), {"path": str(path), "sha256": _file_sha256(path),
+                               "sha256_of_sorted_codes": codes_digest,
+                               "schema": data.get("schema"), "dataset": config.slug, "N": len(targets)}
+
+    def _input_provenance(self, config: DatasetConfig, target_id: str, state: str) -> List[Dict[str, Any]]:
+        if self.dry_run or not config.data_dir:
+            return []
+        receptor, ligands = self._resolve_entry_paths(config, target_id, state)
+        paths = ([receptor] if receptor else []) + list(ligands)
+        return [{"path": str(path.resolve()), "sha256": _file_sha256(path)} for path in paths]
+
     def _save_target_result(self, tr: TargetResult, config: DatasetConfig, tier: int, cost_cpu: float = 0.0) -> Path:
         """Atomic write of one TargetResult (crash-safe). Includes simple cost tracking."""
         path = self._target_result_path(config, tier, tr.target_id, tr.structural_state)
         tmp = path.with_suffix(".json.tmp")
+        with self._crash_lock:
+            exit_codes = {k: v for k, v in self._entry_exit_codes.items() if k.startswith(f"{tr.target_id}/")}
+            timeouts = {k: v for k, v in self._entry_timeouts.items() if k.startswith(f"{tr.target_id}/")}
         payload = {
+            "schema_version": CHECKPOINT_SCHEMA_VERSION,
+            "provenance": {
+                "protocol": getattr(self, "_checkpoint_protocol", None) or self._protocol_provenance(config, tier),
+                "inputs": self._input_provenance(config, tr.target_id, tr.structural_state),
+            },
             "target_id": tr.target_id,
             "structural_state": tr.structural_state,
             "duration_seconds": tr.duration_seconds,
@@ -2697,6 +2954,8 @@ class DatasetRunner:
             # truncated run cannot be mistaken for a complete one.
             "early_termination": getattr(tr, 'early_termination', {}) or {},
             "early_exit_params": getattr(tr, 'early_exit_params', {}) or {},
+            "entry_exit_codes": exit_codes,
+            "entry_timeouts": timeouts,
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         }
         tmp.write_text(json.dumps(payload, indent=2))
@@ -2711,16 +2970,48 @@ class DatasetRunner:
             return None
         try:
             data = json.loads(path.read_text())
-            poses = []
-            for p in data.get("poses", []):
-                if isinstance(p, dict):
-                    # Best-effort reconstruction; fall back to storing raw dict if fields mismatch
-                    try:
-                        poses.append(PoseScore(**p))  # type: ignore[call-arg]
-                    except Exception:
-                        poses.append(p)  # type: ignore[arg-type]
-                else:
-                    poses.append(p)
+            expected = {
+                "protocol": getattr(self, "_checkpoint_protocol", None) or self._protocol_provenance(config, tier),
+                "inputs": self._input_provenance(config, target_id, structural_state),
+            }
+            if data.get("schema_version") != CHECKPOINT_SCHEMA_VERSION or data.get("provenance") != expected:
+                raise ValueError("checkpoint schema or input/scorer protocol differs; use a new results directory")
+            if (data.get("target_id"), data.get("structural_state")) != (target_id, structural_state):
+                raise ValueError("checkpoint observation identity differs from its scheduled identity")
+            if not isinstance(data.get("poses"), list) or not isinstance(data.get("error"), str):
+                raise ValueError("checkpoint lacks a typed observation result")
+            pose_fields = {entry.name for entry in fields(PoseScore)}
+            if any(not isinstance(p, dict) or set(p) != pose_fields for p in data["poses"]):
+                raise ValueError("checkpoint pose schema is incomplete or incompatible")
+            poses = [PoseScore(**p) for p in data["poses"]]
+            identities = set()
+            for pose in poses:
+                if (pose.target_id, pose.structural_state) != (target_id, structural_state):
+                    raise ValueError("cached pose belongs to a different observation")
+                if pose.ranking_objective != self.ranking_objective:
+                    raise ValueError("cached pose uses a different scoring objective")
+                if not isinstance(pose.pose_rank, int) or pose.pose_rank < 1:
+                    raise ValueError("invalid cached generator rank")
+                identity = (pose.ligand_id, pose.pose_rank)
+                if identity in identities:
+                    raise ValueError("duplicate cached pose identity")
+                identities.add(identity)
+                if not all(math.isfinite(value) for value in (pose.rmsd, pose.enthalpy_score, pose.entropy_correction, pose.total_score)):
+                    raise ValueError("cached pose contains a nonfinite score or RMSD")
+                if pose.entropy is not None:
+                    if not math.isfinite(pose.entropy) or (pose.entropy and pose.temperature is None):
+                        raise ValueError("cached entropy lacks valid temperature provenance")
+                    if pose.temperature is not None and (not math.isfinite(pose.temperature) or pose.temperature <= 0):
+                        raise ValueError("cached pose has invalid temperature")
+                    correction = pose.entropy * (pose.temperature or 0.0)
+                    if not math.isclose(pose.entropy_correction, correction, rel_tol=1e-12, abs_tol=1e-12):
+                        raise ValueError("cached T*S disagrees with emitted S and T")
+                subtraction = (pose.entropy or 0.0) if self.ranking_objective == "legacy_cf_minus_s" else pose.entropy_correction
+                if not math.isclose(pose.total_score, pose.enthalpy_score - subtraction, rel_tol=1e-12, abs_tol=1e-12):
+                    raise ValueError("cached score disagrees with declared ranking objective")
+            for evidence_key in ("early_termination", "early_exit_params", "entry_exit_codes", "entry_timeouts"):
+                if not isinstance(data.get(evidence_key), dict):
+                    raise ValueError(f"checkpoint lacks {evidence_key} provenance")
             return TargetResult(
                 target_id=data["target_id"],
                 structural_state=data["structural_state"],
@@ -2736,16 +3027,18 @@ class DatasetRunner:
                 # to prevent.
                 early_termination=data.get("early_termination") or {},
                 early_exit_params=data.get("early_exit_params") or {},
+                entry_exit_codes=data["entry_exit_codes"],
+                entry_timeouts=data["entry_timeouts"],
+                provenance=data["provenance"],
             )
         except Exception as e:
-            logger.warning("Corrupt target result %s — will re-run: %s", path, e)
-            return None
+            raise ValueError(f"Refusing unverified resume checkpoint {path}: {e}") from e
 
     def _discover_completed_targets(self, config: DatasetConfig, tier: int) -> set[str]:
         """Return set of target_ids that have at least one successful result for every requested state."""
         states = config.structural_states
         completed = set()
-        for target_id in config.targets:
+        for target_id in config.scheduled_targets(tier):
             all_states_ok = True
             for st in states:
                 tr = self._load_target_result(config, tier, target_id, st)
@@ -2763,6 +3056,8 @@ class DatasetRunner:
         completed: List[str],
         failed: List[str],
         raw_results: Optional[List[Tuple[str, str, List[PoseScore], float, str]]] = None,
+        observation_roster: Optional[List[Tuple[str, str]]] = None,
+        scheduled_observation_roster: Optional[List[Tuple[str, str]]] = None,
     ) -> None:
         """Write rich per-entry manifest with timing and cost tracking.
 
@@ -2777,13 +3072,22 @@ class DatasetRunner:
         per_entry: Dict[str, float] = {}
         per_entry_cost: Dict[str, float] = {}
         durations: List[float] = []
+        checkpoint_files: Dict[str, str] = {}
 
-        for jf in sorted(entry_dir.glob("*_*.json")):
-            if jf.name.startswith("_"):
+        roster = observation_roster if observation_roster is not None else config.scheduled_work_items(tier)
+        scheduled = scheduled_observation_roster if scheduled_observation_roster is not None else config.scheduled_work_items(tier)
+        checkpoint_ids = {(tid.casefold(), st): tid for tid, st in scheduled}
+        for tid, st in roster:
+            checkpoint_id = checkpoint_ids.get((tid.casefold(), st))
+            if checkpoint_id is None:
+                continue
+            jf = self._target_result_path(config, tier, checkpoint_id, st)
+            if not jf.is_file():
                 continue
             try:
                 data = json.loads(jf.read_text())
-                key = f"{data.get('target_id')}_{data.get('structural_state')}"
+                key = f"{tid}_{st}"
+                checkpoint_files[key] = jf.name
                 dur = float(data.get("duration_seconds", 0.0))
                 cost = float(data.get("cost_cpu_seconds", dur * max(1, self.omp_threads)))
                 per_entry[key] = round(dur, 2)
@@ -2809,7 +3113,9 @@ class DatasetRunner:
             "n_workers_used": self.n_workers,
             "completed": completed,
             "failed": failed,
-            "total_attempted": len(completed) + len(failed),
+            "total_attempted": len({tid for tid, _ in roster}),
+            "observation_roster": roster,
+            "checkpoint_files": checkpoint_files,
             # --- NEW: per-target timing + cost tracking (user priority #2 first) ---
             "timings": {
                 "per_entry_wall_seconds": per_entry,

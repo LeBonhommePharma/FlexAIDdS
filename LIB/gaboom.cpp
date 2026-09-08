@@ -1,5 +1,7 @@
 #include "gaboom.h"
 #include "GaPopulationReceipt.h"
+#include "GaEliteBuffer.h"
+#include "GaEvaluationPolicy.h"
 #include "Vcontacts.h"
 #include "fileio.h"
 #include "coarse_init.h"
@@ -696,9 +698,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	const int n_elite = (GB->n_elite > 0)
 	                    ? std::min(GB->n_elite, GB->num_chrom)
 	                    : 0;
-	std::vector<gene>   elite_genes_buf(static_cast<size_t>(n_elite) * GB->num_genes);
-	std::vector<cfstr>  elite_cf_buf(n_elite);
-	std::vector<double> elite_eval_buf(n_elite), elite_app_buf(n_elite);
+	flexaids::GaEliteBuffer elite_buffer(n_elite, GB->num_genes);
 	if (n_elite > 0)
 		fprintf(stderr, "[ELITE] GA-internal elitism active: protecting %d "
 		        "lowest-CF individual(s) per generation\n", n_elite);
@@ -1144,27 +1144,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		// the global best survives both.  Restored over the worst of the new
 		// population right after reproduce() below.  evalue is the (non-apparent)
 		// CF; lower = better pose.
-		if (n_elite > 0) {
-			// Simple CF-minimum elite selection (v31+).
-			// ε-tiebreaker reverted: IC-space distance to opt_par is unreliable for
-			// already-converged poses (IC≠Cartesian proximity; nonlinear FK map +
-			// angular degeneracy). v30 ablation: net-neutral with 6 regressions on
-			// previously-perfect targets (0.00→2-6Å). Revert to plain CF sort.
-			std::vector<int> eidx(GB->num_chrom);
-			for (int q = 0; q < GB->num_chrom; ++q) eidx[q] = q;
-			std::partial_sort(eidx.begin(), eidx.begin() + n_elite, eidx.end(),
-				[&](int a, int b){
-					return (*chrom)[a].evalue < (*chrom)[b].evalue;
-				});
-			for (int e = 0; e < n_elite; ++e) {
-				const chromosome& src = (*chrom)[eidx[e]];
-				elite_cf_buf[e]   = src.cf;
-				elite_eval_buf[e] = src.evalue;
-				elite_app_buf[e]  = src.app_evalue;
-				for (int g = 0; g < GB->num_genes; ++g)
-					elite_genes_buf[static_cast<size_t>(e) * GB->num_genes + g] = src.genes[g];
-			}
-		}
+		elite_buffer.capture(*chrom, GB->num_chrom);
 
 		// ── P5: periodic BOOM random injection (diversity insurance) ──
 		// Every boom_inject_interval generations, replace the worst
@@ -1255,24 +1235,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		// over sharing-reduced fitness).  Overwrite the n_elite WORST individuals
 		// (highest evalue) of the new generation with the elites captured before
 		// boom/sharing, guaranteeing the running best is carried forward intact.
-		if (n_elite > 0) {
-			std::vector<int> widx(GB->num_chrom);
-			for (int q = 0; q < GB->num_chrom; ++q) widx[q] = q;
-			std::partial_sort(widx.begin(), widx.begin() + n_elite, widx.end(),
-				[&](int a, int b){ return (*chrom)[a].evalue > (*chrom)[b].evalue; });
-			for (int e = 0; e < n_elite; ++e) {
-				chromosome& dst = (*chrom)[widx[e]];
-				dst.cf              = elite_cf_buf[e];
-				dst.evalue          = elite_eval_buf[e];
-				dst.app_evalue      = elite_app_buf[e];
-				dst.fitnes          = 0.0;   // recomputed next reproduce()
-				dst.boltzmann_weight = 0.0;
-				dst.free_energy     = 0.0;
-				dst.status          = 'n';   // CF is valid (deep-copied) — no re-eval
-				for (int g = 0; g < GB->num_genes; ++g)
-					dst.genes[g] = elite_genes_buf[static_cast<size_t>(e) * GB->num_genes + g];
-			}
-		}
+		elite_buffer.restore(*chrom, GB->num_chrom);
 
 		// Fix 6: write snapshots COMPACTLY (stride = save_num_chrom), so the
 		// writer's layout matches what the post-GA thermo reader consumes.
@@ -3058,11 +3021,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	// (guarded by omp_in_parallel() in ic2cf.cpp) to avoid concurrent
 	// linked-list corruption; DEE pruning still operates in serial calls.
 	{
-#ifdef _OPENMP
-		const int n_thr = omp_get_max_threads();
-#else
-		const int n_thr = 1;
-#endif
+		const int n_thr = flexaids::ga_evaluation_threads();
 		const int natm  = FA->atm_cnt;
 		const int natmr = FA->atm_cnt_real;
 		const int nres  = FA->res_cnt;
@@ -3206,14 +3165,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			// fields: scorable_list, n_scorable, scorable_cap, fastpath_used).
 			std::vector<std::vector<int>>         tl_scorable;
 		};
-		thread_local ParEvalWS ws;  // resident across generations on THIS thread.
-		                       // Must not be process-wide static: --parallel-dock
-		                       // runs GA() under an outer OpenMP parallel-for
-		                       // (ParallelDock.cpp). A shared static races on
-		                       // rebuild and tl_* buffers. Inner eval still
-		                       // shares this thread's tl_* via references
-		                       // captured before the inner omp for, so the
-		                       // serial claim path is unchanged.
+		thread_local ParEvalWS ws;  // Resident across generations on this caller.
+		// Inner evaluators share only this caller's buffers. ParallelDock now
+		// serializes region GAs; thread_local alone never established complete
+		// region ownership of inline scoring buffers or global RNG epochs.
 
 		const bool ws_valid =
 			ws.n_thr == n_thr && ws.natm == natm && ws.nres == nres &&
@@ -3298,8 +3253,12 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			// Keep optres non-cf fields in sync with the reference (cf fields are
 			// cleared per-chromosome in the eval loop below).
 			std::copy(FA->optres, FA->optres + nopt, tl_optres[t].begin());
+			// A new Calc array has no index; a resident one keeps its own count,
+			// never the parent's. Vcontacts uses zero to invalidate its TLS cache.
+			const int retained_calc_count = ws_valid ? tl_vc[t].calc_count : 0;
 			// Refresh the cheap live VC snapshot, then redirect VC scratch.
 			tl_vc[t] = *VC;
+			tl_vc[t].calc_count = retained_calc_count;
 			tl_vc[t].Calc      = tl_calc[t].data();
 			tl_vc[t].Calclist  = tl_calclist[t].data();
 			tl_vc[t].ca_index  = tl_caidx[t].data();
@@ -3331,64 +3290,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		}
 		const int n_optres_atoms = (int)optres_atom_list.size();
 
-		// ── FLEXAID_DETERMINISTIC (P3 · CI A/B reproducibility) ──────────────
-		// When set, the parallel CF-eval loop runs on a single thread so its
-		// reduction order is serial-equivalent and bit-reproducible run-to-run
-		// (each chromosome writes only its own chrom[ii].cf, so 1-thread ==
-		// deterministic order). Enabled by the compile-time macro
-		// -DFLEXAID_DETERMINISTIC or by env FLEXAID_DETERMINISTIC=<non-empty,
-		// not "0">. See FLEXAID_FAST_DOCKING_PLAN P3/4.3.
-		//
-		// CORRECTED 2026-09-07. This comment previously described the default
-		// multi-thread path as accepting "the ~0.2% chromosome-level numeric
-		// drift documented in OPTIMIZATION_KNOWN_ISSUES.md". THAT CITATION WAS
-		// MISATTRIBUTED: the 0.2% figure in that document belongs to the
-		// FLEXAIDDS_PARALLEL_REPRODUCE (Opt1) section and is explicitly called
-		// flag-ON specific there; the same document measures flag-OFF at 4
-		// threads as REPRODUCIBLE. So the number never described this path.
-		//
-		// WHAT IS ACTUALLY MEASURED about the default (flag-unset) path, on the
-		// FLEXIBLE-sidechain arm, 1P2Y, gen=1000, FLEXAID_SEED=12345, with
-		// FLEXAIDDS_PARALLEL_REPRODUCE unset:
-		//   omp=3  per-restart pose-set jaccard 0.976 / 0.000 / 0.138
-		//          -> NOT reproducible; best CF ranged -254.86 to -230.86
-		//             across four runs of identical inputs
-		//   omp=1  jaccard 1.000 / 1.000 / 1.000 -> reproducible
-		// That is a different GA trajectory, not a rounding difference. Cause:
-		// the Voronoi non-convergence failsafe (Vcontacts.cpp) draws its
-		// coordinate perturbation from a THREAD_LOCAL RNG, and this loop is
-		// schedule(dynamic), so which thread -- and therefore which draw -- a
-		// chromosome receives is not reproducible. recalc==1 here means the hull
-		// is recomputed WITH the perturbed coordinate, so the returned CF depends
-		// on that draw. It is target-specific via the failsafe firing rate:
-		// 1P2Y fires 3575 times against a median of 42 across the 84-target set,
-		// a 15x outlier with no target in between.
-		//
-		// Setting this flag SUPPRESSES that divergence (eval_threads=1 removes the
-		// scheduling variable) but does not fix it, and pays for determinism by
-		// serialising evaluation. The cause is addressed by
-		// FLEXAIDDS_VCT_COORD_GUARD in Vcontacts.cpp, which keeps the threads.
-		static const bool deterministic_eval = [](){
-#ifdef FLEXAID_DETERMINISTIC
-			return true;
-#else
-			const char* env = std::getenv("FLEXAID_DETERMINISTIC");
-			return env && env[0] != '\0' && env[0] != '0';
-#endif
-		}();
-#ifdef _OPENMP
-		const int eval_threads = deterministic_eval ? 1 : n_thr;
-#else
-		// Scalar build: exactly one evaluation thread by construction.
-		// DECLARED IN BOTH BRANCHES DELIBERATELY. The selective-reset invariant
-		// checker below reads eval_threads unconditionally (std::min against
-		// tl_atoms.size()), so confining the declaration to the _OPENMP branch
-		// made an OpenMP-OFF build fail to COMPILE. The checker's runtime env
-		// gate cannot prevent that: a flag guards execution, not translation.
-		// The Eigen compile failure in test_cf_aggregator masked this on every
-		// CI lane. Found by external audit (CORE-1).
-		const int eval_threads = 1;
-#endif
+		// Generation zero and later evaluation use the same effective count.
+		// One worker removes scheduling-dependent jitter-stream assignment; it
+		// does not claim that coordinate guards alone make parallel GA deterministic.
+		const int eval_threads = n_thr;
 		const bool record_initial_workers = flexaids::ga_population_observation_active();
 		std::vector<flexaids::GaPopulationWorkerReceipt> initial_workers(
 		    record_initial_workers ? n_thr : 0);
@@ -4258,11 +4163,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 	// calculate evalue for each chromosome — thread-safe OpenMP parallel eval.
 	// Uses the same per-thread VC/atoms/FA workspace strategy as calculate_fitness.
 	{
-#ifdef _OPENMP
-		const int n_thr = omp_get_max_threads();
-#else
-		const int n_thr = 1;
-#endif
+		const int n_thr = flexaids::ga_evaluation_threads();
 		const int natm  = FA->atm_cnt;
 		const int natmr = FA->atm_cnt_real;
 		const int nres  = FA->res_cnt;
@@ -4304,6 +4205,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			p_fa[t].contributions = p_contrib[t].data();
 			p_fa[t].optres        = p_optres[t].data();
 			p_vc[t].Calc      = p_calc[t].data();
+			p_vc[t].calc_count = 0;  // fresh Calc storage, independent of parent index
 			p_vc[t].Calclist  = p_calclist[t].data();
 			p_vc[t].ca_index  = p_caidx[t].data();
 			p_vc[t].scorable_list = p_scorable[t].data();
@@ -4370,8 +4272,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		const int p_n_dirty_res = static_cast<int>(p_dirty_res_idx.size());
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) default(none) \
-	shared(p_record_initial_workers, p_initial_workers) \
+#pragma omp parallel for schedule(dynamic) num_threads(n_thr) default(none) \
+	shared(p_record_initial_workers, p_initial_workers, n_thr) \
 	shared(chrom, FA, GB, VC, gene_lim, atoms, residue, cleftgrid, target, \
 	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt, \
 	       n_receptor_chains, p_use_selective, p_dirty_atm, p_dirty_res_idx, \

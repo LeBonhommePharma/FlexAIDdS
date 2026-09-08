@@ -25,6 +25,10 @@ bool write_mcf_sidecar(const char* pdb_path,
 /// Surface honesty only: this does not invent an eigenvalue channel or elect poses.
 void format_vibrational_diagnostic_remark(char* buf, size_t buflen, double vib_corr);
 
+/// Decode the same rounded/clamped model gene used by the evaluator.
+/// Invalid multi-model metadata is an error, never an implicit model-zero pose.
+int chromosome_model_index(const chromosome& chrom, const FA_Global& fa, int num_genes);
+
 /*****************************************\
 			  Pose
 \*****************************************/
@@ -34,6 +38,9 @@ struct Pose
 	
 	// public constructor :
 	Pose(chromosome* chrom, int chrom_index, int order, float dist, uint temperature, std::vector<float>);
+	static Pose from_chromosome(chromosome* chrom, int chrom_index, int order,
+	                           float dist, uint temperature, std::vector<float> coordinates,
+	                           const FA_Global& fa, int num_genes);
 	~Pose();
 	// public (default behavior when struct is used instead of class)
 	int chrom_index;

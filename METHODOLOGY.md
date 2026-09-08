@@ -168,6 +168,35 @@ Rules that follow:
 
 ## 0.2 Provenance — what a receipt must capture
 
+### Audit repair contract (September 2026)
+
+Dataset-runner rates use a declared target roster, including failed, empty, and absent
+targets. Astex claim scoring pins `benchmarks/protocols/astex85_target_manifest.json`
+(85 targets); an execution list of 84 targets does not change that claim denominator.
+Record both the executed roster and the expected roster with the scorer revision. Score
+comparison arms together with that revision and roster; do not compare pre-fix and post-fix
+rates. Checkpoint completion is distinct from scientific success, and resume must restore
+the observations used by the fresh-run metrics and quality verdict. Incompatible checkpoint
+schemas or protocol/input fingerprints require a separate output namespace.
+
+The Python entropy ranking objective is explicitly selectable: `cf_minus_ts` computes
+`CF - temperature_K * entropy_kcal_per_mol_K`; `legacy_cf_minus_s` is a labelled diagnostic
+compatibility objective. Neither quantity is the ensemble Helmholtz free energy or the
+engine's soft-beta score. Record CF, S, temperature, and objective separately. Nonzero S
+requires a valid temperature. A temperature-dependent ranking-reversal regression and a
+zero-entropy invariance regression gate this correction. Report the emitted generator
+top-1 independently from entropy reranking and the any-pose sampling ceiling.
+
+Experimental `--parallel-dock` regions execute serially inside each process while retaining
+inner evaluator OpenMP and independent MPI ranks. This serializes region managers, not
+unrelated direct callers of `GA()`. Owned region scoring scratch and
+region-specific seeds repair shared mutable state; no historical pose parity or throughput
+claim follows from this repair. Default process-isolated benchmark binaries remain frozen.
+The local repair validation uses one build/test job at a time while the priority benchmark
+runs. Scientific parity and accuracy gates below still apply before a merge or campaign use.
+
+### Receipt tiers
+
 Three tiers, by how a parameter can be recovered after the fact:
 
 | tier | example | recoverable from |

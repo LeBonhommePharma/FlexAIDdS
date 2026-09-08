@@ -273,7 +273,9 @@ void FastOPTICS::Execute_FastOPTICS(char* end_strfile, char* tmp_end_strfile)
 		if( (this->points[pt]).first != NULL && (this->points[pt].first)->app_evalue < 0 )
 		{
 			// Calling Pose constructor: Pose holds the point's chromosome at the correct OPTICS position
-			Pose pose((this->points[pt]).first, pt, pos, this->reachDist[pt], this->Population->Temperature, (this->points[pt]).second);
+			Pose pose = Pose::from_chromosome((this->points[pt]).first, pt, pos,
+				this->reachDist[pt], this->Population->Temperature,
+				(this->points[pt]).second, *this->FA, this->GB->num_genes);
             this->OPTICS.push_back(pose);
 		}
 	}
@@ -612,10 +614,8 @@ std::vector<float> FastOPTICS::Vectorized_Cartesian_Coordinates(int chrom_index)
 	// conformers are separated in the joint configuration space.
 	if (this->FA->multi_model && this->FA->n_models > 1 &&
 	    this->FA->model_gene_index >= 0) {
-		int mg = this->FA->model_gene_index;
-		int model_idx = static_cast<int>(std::round(this->chroms[chrom_index].genes[mg].to_ic));
-		if (model_idx < 0) model_idx = 0;
-		if (model_idx >= this->FA->n_models) model_idx = this->FA->n_models - 1;
+		const int model_idx = chromosome_model_index(
+			this->chroms[chrom_index], *this->FA, this->GB->num_genes);
 		// Scale: model_index * (2 * cluster_rmsd) ensures distinct models
 		// are > cluster_rmsd apart in the joint space
 		float model_scale = 2.0f * this->FA->cluster_rmsd;

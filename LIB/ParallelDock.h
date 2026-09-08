@@ -13,9 +13,11 @@
 #include "GridDecomposer.h"
 #include "SharedPosePool.h"
 #include "TargetServer.h"
+#include "RegionScoringWorkspace.h"
 #include <vector>
 #include <functional>
 #include <string>
+#include <memory>
 
 struct ParallelDockConfig {
     int target_regions       = 128;   // number of spatial regions
@@ -23,7 +25,7 @@ struct ParallelDockConfig {
     int pose_pool_size       = 256;   // shared pool capacity
     int exchange_interval    = 10;    // generations between pool reads
     int seed_from_pool_count = 5;     // how many pool poses to inject per exchange
-    bool use_mpi             = false; // true for distributed (MPI), false for thread-based
+    bool use_mpi             = false; // MPI ranks may distribute regions; per-process regions run serially
 };
 
 struct RegionResult {
@@ -76,7 +78,9 @@ public:
 
     // Phase 2: Run all GA instances
     //   - MPI mode: distributed across ranks (call from all ranks)
-    //   - Thread mode: OpenMP parallel over regions on single machine
+    //   - Local mode: serial regions, OpenMP remains inside each GA evaluator.
+    // Outer concurrent regions are unsafe while GA seed epochs/nested state
+    // remain process-global. This trades region-level throughput for correctness.
     void run(cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*));
 
     // Phase 3: Aggregate results into global partition function
@@ -132,14 +136,8 @@ private:
         cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*)
     );
 
-    // Create deep copies of mutable state for a region
-    struct RegionWorkspace {
-        FA_Global fa;
-        GB_Global gb;
-        VC_Global vc;
-        std::vector<atom> atoms_copy;
-        std::vector<resid> residue_copy;
-        GAContext ga_ctx;  // per-region GA state for re-entrant execution
-    };
-    RegionWorkspace create_workspace() const;
+    // Own the region's scoring scratch and atom/OptRes bindings. Other nested
+    // pointers are still borrowed, which is why region GAs must remain serial.
+    using RegionWorkspace = flexaids::RegionScoringWorkspace;
+    std::unique_ptr<RegionWorkspace> create_workspace() const;
 };
