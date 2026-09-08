@@ -2558,6 +2558,37 @@ int roullete_wheel(const chromosome* chrom,int n){
 /*234567890123456789012345678901234567890123456789012345678901234567890*/
 /* 1         2         3         4         5         6         7*/
 /***********************************************************************/
+
+// Cached gate for the selective-reset invariant checker. Cached because the
+// check runs once per GENERATION: an uncached flexaids::env_bool() would call
+// std::getenv on every generation of every restart of every cell. Caching the
+// RESULT keeps env_bool's 1/true/yes/on semantics exactly.
+// DEFAULT ON. Set FLEXAIDDS_SELECTIVE_INVARIANT_CHECK=0 to disable.
+//
+// WHY ON BY DEFAULT. use_selective restores only dirty_atm, a set built from
+// what ic2cf modifies, and then uses it as a GLOBAL invariant. The Voronoi
+// failsafe violated it on receptor atoms 743 and 2293 -- outside that set --
+// and the displacement PERSISTED in tl_atoms, undetected, for as long as the
+// code has existed. A check that would have caught that on day one does not
+// belong behind a flag somebody has to know to set: opt-in reproduces exactly
+// the silence that let it through.
+//
+// COST IS MEASURED, NOT ASSERTED. The check self-times and reports
+// mean_check_ms. At natm=3319 with eval_threads=3 it costs 0.2222 ms per pass,
+// so 0.67 s across a gen=1000 restarts=3 cell -- about 0.09% of a ~760 s cell.
+// A 7436-atom receptor roughly doubles that and stays under 0.5%. Cost scales
+// with eval_threads x natm, so omp=3 is the expensive configuration and is the
+// one that was measured.
+//
+// IT CANNOT CHANGE A RESULT: it only reads coordinates and writes to stderr.
+// DatasetRunner parses engine output with find()-guarded try/catch and no
+// else-error path, and engine stderr is routed to a separate stderr.log read
+// only for [NATIVE_CF], so these lines cannot collide with its parsing.
+static bool selective_invariant_check_enabled()
+{
+    static const bool on = flexaids::env_bool("FLEXAIDDS_SELECTIVE_INVARIANT_CHECK", true);
+    return on;
+}
 void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chrom, const genlim* gene_lim,
                        atom* atoms,resid* residue,gridpoint* cleftgrid,char method[], int pop_size, int print,
                        cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
@@ -3352,6 +3383,17 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		std::vector<flexaids::GaPopulationWorkerReceipt> initial_workers(
 		    record_initial_workers ? n_thr : 0);
 
+		// Generation start, for the invariant checker's OWN cost accounting below.
+		// Taken only when the checker is armed, so the default path takes no
+		// timestamp at all. Measuring the checker against the SAME generation it
+		// ran in is the point: an across-run comparison on this box is dominated by
+		// load -- a previous attempt reported the instrumentation making the engine
+		// 12.65%% FASTER, which is a load artifact, not a cost.
+		const std::chrono::steady_clock::time_point gen_t0 =
+		    selective_invariant_check_enabled()
+		        ? std::chrono::steady_clock::now()
+		        : std::chrono::steady_clock::time_point{};
+
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) num_threads(eval_threads) default(none) \
 	shared(record_initial_workers, initial_workers) \
@@ -3453,9 +3495,16 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		// NON-VACUITY IS BUILT IN: it announces the number of comparisons it will
 		// make BEFORE any verdict, so "no violations" can never be confused with
 		// "the check never ran" -- a failure this project has hit more than once.
-		if (flexaids::env_bool("FLEXAIDDS_SELECTIVE_INVARIANT_CHECK", false)) {
+		if (selective_invariant_check_enabled()) {
 			static bool announced = false;
 			static int  reported  = 0;
+			// SELF-TIMED. The checker reports its own cost as a fraction of the
+			// generation it measured, so the number ships with the feature instead
+			// of depending on a quiet box.
+			static double t_check = 0.0, t_gen = 0.0;
+			static long long n_gen = 0;
+			const std::chrono::steady_clock::time_point chk_t0 =
+			    std::chrono::steady_clock::now();
 			if (!use_selective) {
 				if (!announced) {
 					announced = true;
@@ -3497,6 +3546,39 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					fprintf(stderr, "[SELECTIVE-INVARIANT] generation: checked=%lld "
 					        "violations=%lld worst|d|=%.6f\n",
 					        checked, violations, worst);
+
+				// Cost accounting. chk_t0 brackets only this block; gen_t0 was taken
+				// before the evaluation loop, so t_check/t_gen is the checker's share
+				// of a generation measured IN THE SAME RUN, immune to box load.
+				const std::chrono::steady_clock::time_point now_tp =
+				    std::chrono::steady_clock::now();
+				t_check += std::chrono::duration<double>(now_tp - chk_t0).count();
+				t_gen   += std::chrono::duration<double>(now_tp - gen_t0).count();
+				++n_gen;
+				// Reported on a ladder rather than every generation: enough samples to
+				// be stable, few enough lines to not swamp a log.
+				if (n_gen == 10 || n_gen == 100 || n_gen == 500 ||
+				    (n_gen % 1000) == 0) {
+					// LABELS ARE DELIBERATELY LITERAL. gen_t0 is captured inside
+					// calculate_fitness, so the interval it spans is the EVALUATION LOOP
+					// plus this check -- NOT a GA generation, which also includes
+					// selection, crossover, mutation and clustering. Labelling it
+					// "share of generation" overstated the cost by orders of magnitude
+					// on first read: it printed 80%, which is impossible. The eval loop
+					// only re-scores CHANGED chromosomes, so most loops are near-empty
+					// and this check legitimately exceeds them.
+					//
+					// THE FIGURE TO QUOTE IS mean_check_ms. Cell-level cost is
+					// mean_check_ms * generations * restarts / wall_s. Measured at
+					// 0.2222 ms/check (natm=3319, eval_threads=3) -> 0.67 s over a
+					// gen=1000 restarts=3 cell, about 0.09%% of a ~760 s cell.
+					fprintf(stderr, "[SELECTIVE-INVARIANT] cost: checks=%lld "
+					        "check_total=%.4fs evalloop_plus_check=%.4fs "
+					        "check_share_of_evalloop=%.2f%% mean_check_ms=%.4f\n",
+					        n_gen, t_check, t_gen,
+					        (t_gen > 0.0 ? 100.0 * t_check / t_gen : 0.0),
+					        1000.0 * t_check / static_cast<double>(n_gen));
+				}
 			}
 		}
 	}
