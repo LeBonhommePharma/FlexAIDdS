@@ -137,7 +137,13 @@ static bool write_flexed_receptor_companion(const FA_Global* FA,
 	// The one number that says whether this file differs from the input
 	// receptor at all. 0 means the search never moved a side chain, so a
 	// crystal-frame and a flexed-frame validity verdict must agree.
-	fprintf(f, "REMARK n_residues_off_input_rotamer %d\n", n_res_off_rot0);
+	// ONE literal for this key, shared with the harness reader — see
+	// flexed_receptor.h::remark_key_n_res_off_rotamer(). The key carries its own
+	// trailing space, so the emitted bytes are unchanged from the hand-written
+	// "REMARK n_residues_off_input_rotamer %d\n" this replaced.
+	fprintf(f, "%s%d\n",
+	        flexaids::flexed_receptor::remark_key_n_res_off_rotamer(),
+	        n_res_off_rot0);
 	fprintf(f, "REMARK NOTE this file records the receptor STATE only; it makes"
 	           " no claim that the state is physical. Read a flexed-frame"
 	           " validity verdict together with FLEXAIDDS_RECEPTOR_STRAIN.\n");
