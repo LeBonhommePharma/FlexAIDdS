@@ -1433,7 +1433,7 @@ if(BUILD_TESTING)
     # an implicitly-discovered GoogleTest win, which failed two ways:
     #
     #   * version drift — an active conda environment commonly supplies 1.11.0
-    #     (often pulled in transitively by yaml-cpp) while CI pins 1.17.0, so
+    #     (often pulled in transitively by yaml-cpp) while CI pins 1.18.0, so
     #     local and CI results were not measuring the same harness;
     #   * hard breakage — conda ships libgtest*.dylib whose install name is
     #     "@rpath/libgtest_main.<ver>.dylib", but CMake emits no LC_RPATH when an
@@ -1459,11 +1459,11 @@ if(BUILD_TESTING)
         FetchContent_Declare(
             googletest
             GIT_REPOSITORY https://github.com/google/googletest.git
-            GIT_TAG        v1.17.0
+            GIT_TAG        v1.18.0
         )
         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
         FetchContent_MakeAvailable(googletest)
-        message(STATUS "GoogleTest: pinned FetchContent v1.17.0 (matches CI)")
+        message(STATUS "GoogleTest: pinned FetchContent v1.18.0 (matches CI)")
     endif()
 
     enable_testing()
