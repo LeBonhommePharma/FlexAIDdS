@@ -17,39 +17,63 @@
 
 #include <algorithm>
 #include <cstdlib>
+#ifdef _WIN32
+#include <filesystem>
+#include <system_error>
+#else
 #include <dirent.h>
-#include <string>
 #include <sys/stat.h>
+#endif
+#include <string>
 #include <vector>
 
 namespace {
 
 std::string basename_of(const std::string& path)
 {
+#ifdef _WIN32
+    return std::filesystem::path(path).filename().string();
+#else
     const auto pos = path.find_last_of('/');
     return pos == std::string::npos ? path : path.substr(pos + 1);
+#endif
 }
 
 bool dir_exists(const std::string& p)
 {
+#ifdef _WIN32
+    std::error_code ec;
+    return std::filesystem::is_directory(p, ec);
+#else
     struct stat st {};
     return ::stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+#endif
 }
 
 std::vector<std::string> list_pose_pdbs(const std::string& dir)
 {
     std::vector<std::string> out;
+#ifdef _WIN32
+    // Nonthrowing directory access matches opendir/readdir failure handling.
+    std::error_code ec;
+    std::filesystem::directory_iterator it(dir, ec), end;
+    for (; !ec && it != end; it.increment(ec)) {
+        const std::string n = it->path().filename().string();
+#else
     DIR* d = ::opendir(dir.c_str());
     if (!d) return out;
     while (const dirent* e = ::readdir(d)) {
         const std::string n = e->d_name;
+#endif
         if (n.size() <= 4 || n.substr(n.size() - 4) != ".pdb") continue;
         if (n.find("elected_pose") != std::string::npos) continue;  // §10.1 duplicate
         if (n.find("_INI") != std::string::npos) continue;          // blinded seed
         if (n.find("_rmsd") != std::string::npos) continue;         // member copies
         out.push_back(dir + "/" + n);
     }
+#ifndef _WIN32
     ::closedir(d);
+#endif
     std::sort(out.begin(), out.end());
     return out;
 }

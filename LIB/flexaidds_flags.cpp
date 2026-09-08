@@ -633,14 +633,23 @@ void apply_to_environ() {
                 // Do not overwrite a caller-supplied non-empty value.
                 if (!env_raw(g.name) || env_raw(g.name)[0] == '\0') {
                     const char* v = g.value.empty() ? "1" : g.value.c_str();
+#ifdef _WIN32
+                    // Match setenv(..., 0): even an existing empty value wins.
+                    if (!env_raw(g.name)) _putenv_s(g.name, v);
+#else
                     setenv(g.name, v, 0);
+#endif
                 }
             }
         } else if (g.requested && (g.kind == Kind::Bool || g.kind == Kind::Enum)) {
             // Mutual-exclusion loser or superseded gate: hide from getenv()
             // so legacy call sites follow the winner. The flag stays in the
             // registry (requested() remains true).
+#ifdef _WIN32
+            _putenv_s(g.name, "");
+#else
             unsetenv(g.name);
+#endif
         }
     }
 }

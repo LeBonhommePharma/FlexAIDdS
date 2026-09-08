@@ -28,20 +28,33 @@
 
 #include <cstdlib>
 #include <cstdio>
+#ifdef _WIN32
+#include <cstring>     // _stricmp
+#else
 #include <strings.h>   // strcasecmp
+#endif
 
 namespace flexaids {
 
 enum class ClusterRepMode { LOWCF, MEDOID, BMEDOID, CENTER };
 
+inline bool cluster_rep_name_matches(const char* value, const char* name)
+{
+#ifdef _WIN32
+	return ::_stricmp(value, name) == 0;
+#else
+	return ::strcasecmp(value, name) == 0;
+#endif
+}
+
 inline ClusterRepMode cluster_rep_mode()
 {
 	const char* v = std::getenv("FLEXAIDDS_CLUSTER_REP");
 	if (v && *v) {
-		if (!strcasecmp(v, "lowcf"))   return ClusterRepMode::LOWCF;
-		if (!strcasecmp(v, "medoid"))  return ClusterRepMode::MEDOID;
-		if (!strcasecmp(v, "bmedoid")) return ClusterRepMode::BMEDOID;
-		if (!strcasecmp(v, "center"))  return ClusterRepMode::CENTER;
+		if (cluster_rep_name_matches(v, "lowcf"))   return ClusterRepMode::LOWCF;
+		if (cluster_rep_name_matches(v, "medoid"))  return ClusterRepMode::MEDOID;
+		if (cluster_rep_name_matches(v, "bmedoid")) return ClusterRepMode::BMEDOID;
+		if (cluster_rep_name_matches(v, "center"))  return ClusterRepMode::CENTER;
 		fprintf(stderr,
 		        "WARNING: FLEXAIDDS_CLUSTER_REP='%s' unrecognized "
 		        "(expected lowcf|medoid|bmedoid|center); using default 'lowcf'.\n",
