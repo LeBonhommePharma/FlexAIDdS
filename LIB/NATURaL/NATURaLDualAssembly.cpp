@@ -1,20 +1,24 @@
 // NATURaLDualAssembly.cpp — co-translational / co-transcriptional folding
 //
-// The same Zhao 2011 master-equation rationale applies to both polypeptide
-// and nucleotide chains:
+// Distinct Zhao 2011 papers (do not conflate):
+//   • Zhao et al., J. Phys. Chem. B 115, 3987 (2011) — ribosome master equation
+//     for protein cotranslation. The ODE below is that JPCB framework, reused
+//     for RNAP nucleotide elongation with different rates (not the JCP paper).
+//   • Zhao, Zhang, Chen, J. Chem. Phys. 135, 245101 (2011) — RNA
+//     cotranscriptional folding kinetics (2014 NATURAL seminar lineage). Pose→helix
+//     ΔH/ΔS rewrite lives in PoseHelixThermoRewrite.{h,cpp} and is default OFF.
 //
-//   Polypeptide (ribosome):
+//   Polypeptide (ribosome; JPCB 2011):
 //     dP_n/dt = k_{n-1} · P_{n-1} − k_n · P_n
 //     k_n  = codon-specific aa elongation rate (s⁻¹)  [Dong 1996 / Ingolia 2011]
 //     Tunnel: 34 aa occluded (Goldman 2010 Cell 143:92)
 //
-//   Nucleotide chain (RNA polymerase):
-//     Same master equation, k_n = nucleotide-specific NTP incorporation rate
+//   Nucleotide chain (RNA polymerase; same ODE, RNAP rates):
 //     k_n  from Uptain 1997 (E. coli RNAP) / Jonkers 2014 (Human RNAP II)
 //     Tunnel: 8 nt (RNAP RNA:DNA hybrid; Nudler 2012 Cell 149:1438)
 //
 // Both modes are handled by the same RibosomeElongation class (same interface,
-// different CodonRateTable) — "same rational for nucleotides than polypeptides".
+// different CodonRateTable).
 //
 // TransloconInsertion (TM helix lateral gating via Sec61 translocon) is also
 // evaluated at each growth step for polypeptide chains, using the Hessa 2007
@@ -873,6 +877,9 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
     }
 
     final_deltaG_ = cumulative_dG;
+    // Pose→helix ΔH/ΔS (PoseHelixThermoRewrite) is intentionally not applied
+    // here: CF + Shannon instantaneous ΔG is not the 2014 seminar ligand
+    // coupling. Call compute_pose_helix_rewrite() as a sidecar when enabled.
 
     // Optional: validate master equation against analytic solution
     if (n_residues_ >= 20) {
@@ -928,6 +935,23 @@ double DualAssemblyEngine::compute_growth_entropy(
     const std::vector<double>& cf_trajectory) const
 {
     return growth_entropy_nats(cf_trajectory);
+}
+
+PoseHelixRewriteResult DualAssemblyEngine::compute_pose_helix_rewrite(
+    const std::vector<ReceptorNtCoord>& rna_nts,
+    const std::vector<LigandPose>& poses) const
+{
+    PoseHelixRewriteResult empty;
+    empty.applied = false;
+    if (!config_.enable_pose_helix_rewrite) return empty;
+    if (!is_rna_receptor_) return empty;
+    if (config_.decision_helices.empty()) return empty;
+    PoseHelixRewriteConfig cfg = config_.pose_helix;
+    cfg.T_K = config_.temperature_K;
+    PoseHelixRewriteResult r = rewrite_helices_from_poses(
+        config_.decision_helices, rna_nts, poses, cfg);
+    r.applied = true;
+    return r;
 }
 
 #endif // FLEXAIDS_OMIT_DUAL_ASSEMBLY_ENGINE

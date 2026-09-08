@@ -1224,6 +1224,7 @@ if(ENABLE_DUAL_ASSEMBLY_TOOL)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/statmech.cpp
@@ -1798,6 +1799,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -1856,6 +1858,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2133,6 +2136,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2190,6 +2194,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2244,6 +2249,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2301,6 +2307,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2355,6 +2362,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2411,6 +2419,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2468,6 +2477,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2523,6 +2533,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2682,6 +2693,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -2897,6 +2909,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
@@ -3180,6 +3193,7 @@ flexaids_add_unit_test(test_protocol_config
             LIB/NATURaL/RibosomeElongation.cpp
             LIB/NATURaL/TransloconInsertion.cpp
             LIB/NATURaL/NucleationDetector.cpp
+            LIB/NATURaL/PoseHelixThermoRewrite.cpp
             LIB/NATURaL/NATURaLDualAssembly.cpp
             LIB/statmech.cpp
             LIB/TurboQuant.cpp
@@ -3210,6 +3224,14 @@ flexaids_add_unit_test(test_protocol_config
         add_test(NAME NATURaLTests COMMAND test_natural)
     endif()
 
+    # Experimental 2014 NATURAL pose→helix ΔH/ΔS rewrite (pure function; no GA).
+    flexaids_add_unit_test(test_pose_helix_thermo_rewrite
+        SOURCES
+            tests/test_pose_helix_thermo_rewrite.cpp
+            LIB/NATURaL/PoseHelixThermoRewrite.cpp
+        TEST_NAME PoseHelixThermoRewriteTests
+    )
+
     # test_nascent_chain_scheduler — cotranslational DualAssembly suite
     add_executable(test_nascent_chain_scheduler
         tests/test_nascent_chain_scheduler.cpp
@@ -3220,6 +3242,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/statmech.cpp
@@ -3491,6 +3514,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -3556,6 +3580,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/PoseHelixThermoRewrite.cpp
         LIB/NATURaL/NascentChainScheduler.cpp
         LIB/NATURaL/FibrilGrowthOracle.cpp
         LIB/GrandPartitionFunction.cpp
