@@ -359,6 +359,8 @@ def docking_power(
             n_success += 1
 
     denom = n_targets if n_targets is not None else len(by_target)
+    if denom < len(by_target):
+        raise ValueError("Docking denominator is smaller than the observed roster")
     return n_success / denom if denom > 0 else 0.0
 
 

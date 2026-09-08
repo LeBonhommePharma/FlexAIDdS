@@ -86,10 +86,9 @@ def test_no_attempts_is_not_flagged_productivity():
     assert _benchmark_inconclusive_reasons([dr]) == []
 
 
-def test_fully_resumed_run_is_not_inconclusive():
-    # Regression for the review finding (Bumble + Honey): a pure --resume run
-    # executes no fresh targets — its poses come from checkpoints, not all_poses
-    # — so 0 poses + unmeasured metrics must NOT read as a dead binary.
+def test_resume_without_reconstructed_metrics_is_inconclusive():
+    # A resume must reconstruct cached observations and remeasure its quality.
+    # Skipping work cannot exempt absent metrics from the completeness gate.
     dr = _dr(
         "astex_diverse",
         completed=["a", "b", "c"],   # all seeded from already_completed
@@ -98,7 +97,9 @@ def test_fully_resumed_run_is_not_inconclusive():
         total_poses=0,               # checkpoint poses not reloaded
         missing_metrics=["docking_power_top1", "mean_rmsd"],
     )
-    assert _benchmark_inconclusive_reasons([dr]) == []
+    reasons = _benchmark_inconclusive_reasons([dr])
+    assert any("completeness" in reason for reason in reasons)
+    assert any("productivity" in reason for reason in reasons)
 
 
 def test_run_that_scheduled_nothing_is_inconclusive():

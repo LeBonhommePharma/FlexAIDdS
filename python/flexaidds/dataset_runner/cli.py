@@ -175,6 +175,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Python reranking proxy: CF-T*S using emitted T (default), or legacy dimensionally incorrect CF-S for diagnostics. Generator election is reported separately.",
     )
     p.add_argument(
+        "--expected-target-manifest", default=None, metavar="JSON",
+        help="Pin the declared denominator to an existing dataset/N/targets manifest; absent execution rows count as failures.",
+    )
+    p.add_argument(
         "--entry-timeout-seconds",
         type=int,
         default=None,
@@ -254,17 +258,8 @@ def _benchmark_inconclusive_reasons(datasets) -> list[str]:
     reasons: list[str] = []
     for dr in datasets:
         slug = dr.config.slug
-        # Gates 2-3 judge only a run whose empty output is meaningful. Three
-        # cases (executed = targets run this session, resumed = checkpoints):
-        #   executed > 0             → fresh work; judge it.
-        #   executed == 0, resumed>0 → pure --resume/package-regen; poses live in
-        #                              checkpoints not all_poses, so skip — else
-        #                              a successful resume re-inverts the gate.
-        #   executed == 0, resumed==0→ the run scheduled NOTHING (empty tier, bad
-        #                              filter). Zero poses is meaningful: judge it,
-        #                              so a no-op cannot pass silently.
-        # Liveness still applies unconditionally — a non-zero exit can only have
-        # come from a target that did run.
+        # Resumed observations, metrics and execution evidence are restored.
+        # All scientific gates therefore apply equally to fresh and cached work.
         executed = getattr(dr, "newly_executed", None)
         if executed is None:  # tolerate objects predating the field
             executed = len(dr.targets_completed) + len(dr.targets_failed)
@@ -298,16 +293,13 @@ def _benchmark_inconclusive_reasons(datasets) -> list[str]:
                 f"did not complete successfully (None = no exit code produced: "
                 f"exec failure or timeout) [{codes}]"
             )
-        # 2. Productivity — only a run that executed targets can be faulted for
-        #    producing no poses (a resume/no-op executed nothing this session).
-        if executed > 0 and dr.total_poses == 0 and slug not in allow_empty:
+        # 2. Productivity — a declared run must contain observed poses.
+        if (executed > 0 or resumed > 0) and dr.total_poses == 0 and slug not in allow_empty:
             reasons.append(
-                f"{slug}: productivity — 0 poses across {executed} executed target(s)"
+                f"{slug}: productivity — 0 poses across {executed + resumed} observed target(s)"
             )
-        # 3. Completeness — declared baselines left unmeasured fail, UNLESS this
-        #    was a legitimate resume (executed==0 but resumed>0), where the
-        #    metrics live in checkpoints rather than this session's output.
-        if (executed > 0 or resumed == 0) and dr.inconclusive_metrics:
+        # 3. Completeness — every declared baseline needs a reconstructed metric.
+        if dr.inconclusive_metrics:
             reasons.append(
                 f"{slug}: completeness — baselines never measured: "
                 + ", ".join(dr.inconclusive_metrics)
@@ -387,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
         default_conc_M=getattr(args, 'default_conc_M', 1.0),
         entry_timeout_seconds=getattr(args, 'entry_timeout_seconds', None),
         ranking_objective=args.ranking_objective,
+        expected_target_manifest=args.expected_target_manifest,
     )
     if args.datasets_dir is not None:
         runner_kwargs["datasets_dir"] = args.datasets_dir
