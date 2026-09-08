@@ -119,6 +119,35 @@ struct FastpathCache {
 // as the identity source and still varies pass to pass; only the FINAL restore
 // changes. The identity is deliberately left alone.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// LOCAL-PERTURBATION MODE. Gated by FLEXAIDDS_VCT_LOCAL_PERTURB, DEFAULT OFF.
+// The CAUSE fix, where AtomCoordGuard is the symptom fix: instead of mutating
+// the shared atom array and restoring it, the failsafe perturbs a FUNCTION-LOCAL
+// copy that only the hull math reads. Nothing shared is written, so there is
+// nothing to restore, no `return -1` leak, no dirty_atm invariant to violate and
+// no thread interaction -- the defect class stops existing at this site rather
+// than being cleaned up after it.
+//
+// WHY IT IS THIS SMALL (measured, not assumed): the perturbed coordinate has
+// exactly ONE consumer in voronoi_poly2, the plane-normal setup. atomdist comes
+// from contlist[cai].dist, NOT recomputed from coordinates, and
+// save_seeds()/order_faces() read atom->coor zero times.
+//
+// FALSIFIABLE PREDICTION, recorded before the first run: this must reproduce
+// AtomCoordGuard's pose hash e19e6e5562661333 on 1P2Y (omp=1, gen=1000, seed
+// 12345) EXACTLY -- guard-on already means "perturbation visible to the hull,
+// pristine coordinate afterwards". A mismatch means one of the two is wrong and
+// is not to be written off as noise.
+// ---------------------------------------------------------------------------
+static bool vct_local_perturb_enabled()
+{
+    static const bool on = []() {
+        const char* raw = std::getenv("FLEXAIDDS_VCT_LOCAL_PERTURB");
+        return raw != nullptr && raw[0] != '\0' && raw[0] != '0';
+    }();
+    return on;
+}
+
 static bool vct_coord_guard_enabled()
 {
     static const bool on = []() {
@@ -755,6 +784,21 @@ int voronoi_poly2(VC_Global *VC,int atomzero, plane cont[], float rado,
 	// re-constructs it: the label follows this declaration, so no scope is
 	// entered or left and the captured pristine coordinate survives every pass.
 	AtomCoordGuard coord_guard;
+	// LOCAL PERTURBATION WORKING COPY. Declared before RESTART so it accumulates
+	// across passes exactly as the legacy in-place perturbation does (pass N adds
+	// on top of pass N-1) without touching shared state. `azc` is chosen ONCE: in
+	// legacy mode it aims at the shared array, so reads through it are
+	// bit-identical to reading atom->coor, and it stays current as either mutates.
+	float  az_coor[3] = {0.0f, 0.0f, 0.0f};
+	const bool az_local = vct_local_perturb_enabled() &&
+	                      VC->Calc[atomzero].atom != nullptr;
+	if (VC->Calc[atomzero].atom) {
+		az_coor[0] = VC->Calc[atomzero].atom->coor[0];
+		az_coor[1] = VC->Calc[atomzero].atom->coor[1];
+		az_coor[2] = VC->Calc[atomzero].atom->coor[2];
+	}
+	const float* const azc = az_local ? az_coor
+	                                  : VC->Calc[atomzero].atom->coor;
     
 	recalc = 'N';
 RESTART:
@@ -782,9 +826,11 @@ RESTART:
 			planedist = (atomdist*atomdist + rado*rado - (Rw + ca_ptr->atom->radius)*(Rw + ca_ptr->atom->radius))/(2*atomdist);
 		}
         
-		cont[cai].Ai[0] = (ca_ptr->atom->coor[0] - VC->Calc[atomzero].atom->coor[0])/atomdist;
-		cont[cai].Ai[1] = (ca_ptr->atom->coor[1] - VC->Calc[atomzero].atom->coor[1])/atomdist;
-		cont[cai].Ai[2] = (ca_ptr->atom->coor[2] - VC->Calc[atomzero].atom->coor[2])/atomdist;
+		// Reads through `azc`: the shared array in legacy mode (bit-identical), the
+		// function-local copy under FLEXAIDDS_VCT_LOCAL_PERTURB.
+		cont[cai].Ai[0] = (ca_ptr->atom->coor[0] - azc[0])/atomdist;
+		cont[cai].Ai[1] = (ca_ptr->atom->coor[1] - azc[1])/atomdist;
+		cont[cai].Ai[2] = (ca_ptr->atom->coor[2] - azc[2])/atomdist;
 		cont[cai].Ai[3] = -planedist;
 		cont[cai].dist  = fabs(planedist);
 		cont[cai].index = contlist[cai].index;
@@ -957,13 +1003,18 @@ RESTART:
 			// ===== coordinates and recalculate.                            =====
 			if(edgenum >= 200) {
 				++fs_pass;
-				if (vct_coord_guard_enabled() && VC->Calc[atomzero].atom)
+				// Pointless in local mode: nothing shared is written, so there is nothing
+				// to restore. Left UN-armed rather than armed-and-inert so the two
+				// mechanisms cannot be confused in a log.
+				if (!az_local && vct_coord_guard_enabled() && VC->Calc[atomzero].atom)
 					coord_guard.arm(VC->Calc[atomzero].atom->coor);
 				//printf("********* invalid solution for hull, recalculating *********\n");
 				VC->seed[atomzero*3] = -1;  // reset to no seed vertex
-				origcoor[0] = VC->Calc[atomzero].atom->coor[0];
-				origcoor[1] = VC->Calc[atomzero].atom->coor[1];
-				origcoor[2] = VC->Calc[atomzero].atom->coor[2];
+				// Per-pass reference AND the keyed-jitter identity source; read through azc
+				// so the identity still varies pass to pass in local mode.
+				origcoor[0] = azc[0];
+				origcoor[1] = azc[1];
+				origcoor[2] = azc[2];
 				
 				// perturb atom coordinates (deterministic when ga.seed/FLEXAID_SEED set)
 				if (flexaids_rng::voronoi_keyed_jitter_enabled()) {
@@ -972,15 +1023,27 @@ RESTART:
 						? VC->Calc[atomzero].atom->number : atomzero;
 					const std::uint64_t id = flexaids_rng::pose_atom_identity(
 						anum, origcoor[0], origcoor[1], origcoor[2]);
-					VC->Calc[atomzero].atom->coor[0] += flexaids_rng::keyed_jitter(id, 0);
-					VC->Calc[atomzero].atom->coor[1] += flexaids_rng::keyed_jitter(id, 1);
-					VC->Calc[atomzero].atom->coor[2] += flexaids_rng::keyed_jitter(id, 2);
+					if (az_local) {
+						az_coor[0] += flexaids_rng::keyed_jitter(id, 0);
+						az_coor[1] += flexaids_rng::keyed_jitter(id, 1);
+						az_coor[2] += flexaids_rng::keyed_jitter(id, 2);
+					} else {
+						VC->Calc[atomzero].atom->coor[0] += flexaids_rng::keyed_jitter(id, 0);
+						VC->Calc[atomzero].atom->coor[1] += flexaids_rng::keyed_jitter(id, 1);
+						VC->Calc[atomzero].atom->coor[2] += flexaids_rng::keyed_jitter(id, 2);
+					}
 				} else {
 					thread_local std::uniform_real_distribution<float> vc_dist(-0.005f, 0.005f);
 					auto& vc_rng = flexaids_rng::lazy_thread_rng(0x0C0A11ULL);
-					VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
-					VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
-					VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
+					if (az_local) {
+						az_coor[0] += vc_dist(vc_rng);
+						az_coor[1] += vc_dist(vc_rng);
+						az_coor[2] += vc_dist(vc_rng);
+					} else {
+						VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
+						VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
+						VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
+					}
 				}
 
 				// Log-only; dead unless FLEXAIDDS_VCT_FAILSAFE_DIAG is set.
