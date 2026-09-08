@@ -43,7 +43,6 @@
 #include "flexaid.h"
 
 #include <cstdlib>
-#include <cstring>
 
 // Defined in LIB/add2_optimiz_vec.cpp
 void reserve_par(FA_Global* FA, int need);
@@ -51,17 +50,27 @@ void realloc_par(FA_Global* FA, int* MIN_PAR);
 
 namespace {
 
-// Minimal FA_Global carrying only the par-array fields. realloc() on a null
-// pointer is malloc(), so a zeroed struct is a valid starting state.
+// realloc_par() owns six separate arrays. Value initialization keeps their
+// pointers null without overwriting FA_Global's nontrivial C++ members.
 struct ParFixture {
     FA_Global FA{};
     ParFixture() {
-        std::memset(&FA, 0, sizeof(FA));
         FA.MIN_PAR = 0;
         FA.map_par = nullptr;
         FA.npar = 0;
     }
-    ~ParFixture() { std::free(FA.map_par); }
+    ParFixture(const ParFixture&) = delete;
+    ParFixture& operator=(const ParFixture&) = delete;
+    ~ParFixture() {
+        // Free the current pointers after any reallocations. free(nullptr)
+        // also handles the disabled-reservation case and early assertions.
+        std::free(FA.map_par);
+        std::free(FA.opt_par);
+        std::free(FA.del_opt_par);
+        std::free(FA.min_opt_par);
+        std::free(FA.max_opt_par);
+        std::free(FA.map_opt_par);
+    }
 };
 
 // The invariant the two guarded call sites rely on: once reserve_par has been

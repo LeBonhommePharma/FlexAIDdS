@@ -65,9 +65,6 @@
 #include <string>
 #include <vector>
 
-#include <sys/wait.h>
-#include <signal.h>
-#include <unistd.h>
 #include <thread>
 
 #ifndef _MSC_VER
