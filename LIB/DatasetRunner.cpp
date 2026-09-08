@@ -25,7 +25,8 @@
 #include "EnvFlags.h"       // flexaids::env_bool — one parser for FLEXAIDDS_* switches
 // Receptor-frame provenance for the validator. Gates
 // FLEXAIDDS_WRITE_FLEXED_RECEPTOR (engine writes the as-scored receptor) and
-// FLEXAIDDS_PB_RECEPTOR=crystal|flexed (which receptor PoseBusters is handed).
+// FLEXAIDDS_PB_RECEPTOR=crystal|flexed|scored (which receptor PoseBusters is
+// handed; "scored" is the as-scored WATER/composition frame, valid on a rigid arm).
 // Header-only, no flexaid.h dependency, DEFAULT crystal = today's behaviour.
 #include "flexed_receptor.h"
 #include "shell_exec.h"
@@ -283,6 +284,41 @@ static int deterministic_ga_seed(const std::string& target_id, int restart,
                                  std::uint64_t seed_base = 0) {
     const std::uint64_t stream = seed_base ^ static_cast<std::uint64_t>(restart);
     return 1 + static_cast<int>(stable_seed_hash(target_id, stream) % 2147483646ULL);
+}
+
+/// Read the as-scored companion's OWN count of residues sitting off their input
+/// rotamer (the REMARK the writer emits in cluster.cpp).
+///
+/// Returns -1 when the file cannot be opened or the REMARK is absent, which is
+/// deliberately NOT folded into 0: zero means "the engine moved no side chain",
+/// absent means "this file did not come from a writer that records it". A
+/// rigid-arm water-set verdict is only interpretable if those two are
+/// distinguishable, so the caller reports -1 as unknown rather than as rigid.
+///
+/// Reads NOTHING about receptor composition — it does not count waters and does
+/// not look at a B-factor. modify_pdb.cpp decides composition; this only echoes
+/// a number the engine already wrote. The key literal is shared with the writer
+/// via flexed_receptor.h so the two halves cannot drift.
+static int companion_n_res_off_input_rotamer(const std::string& companion_path)
+{
+    if (companion_path.empty()) return -1;
+    std::ifstream in(companion_path);
+    if (!in) return -1;
+    const std::string key =
+        flexaids::flexed_receptor::remark_key_n_res_off_rotamer();
+    std::string line;
+    // The REMARK block is the file header. Stop at the first coordinate record
+    // so this never scans thousands of ATOM lines looking for a key that a
+    // foreign PDB was never going to contain.
+    while (std::getline(in, line)) {
+        if (line.compare(0, 6, "ATOM  ") == 0 ||
+            line.compare(0, 6, "HETATM") == 0) break;
+        if (line.compare(0, key.size(), key) == 0) {
+            try { return std::stoi(line.substr(key.size())); }
+            catch (...) { return -1; }
+        }
+    }
+    return -1;
 }
 
 /// POSIX-shell single-quote escape for paths interpolated into `sh -c` strings.
@@ -6717,10 +6753,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 //    that writer — SCORED_ONLY=1 is precisely what suppressed these
                 //    coordinates for the whole campaign to date.
                 //
-                //  FLEXAIDDS_PB_RECEPTOR=crystal|flexed (HARNESS, this file) selects
-                //    which receptor validate_elected_pose() is handed. DEFAULT
+                //  FLEXAIDDS_PB_RECEPTOR=crystal|flexed|scored (HARNESS, this file)
+                //    selects which receptor validate_elected_pose() is handed. DEFAULT
                 //    "crystal" = entry.receptor_path, i.e. exactly today's call, so
                 //    every existing validity outcome is reproduced bit for bit.
+                //    "flexed" and "scored" both read the companion above; they differ
+                //    in the question asked and in what is recorded, not in the bytes
+                //    read. "scored" is the receptor COMPOSITION frame (the engine's
+                //    water set) and is the one that means something on a RIGID arm.
                 //
                 // WHY: PoseBusters currently judges every arm against the CRYSTAL
                 // receptor. In the flexible arm the engine moved side chains, so an
@@ -6738,7 +6778,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
                               << " WARNING: FLEXAIDDS_PB_RECEPTOR='"
                               << flexaids::flexed_receptor::pb_receptor_raw()
-                              << "' is not one of crystal|flexed; falling back to"
+                              << "' is not one of "
+                              << flexaids::flexed_receptor::pb_receptor_modes_csv()
+                              << "; falling back to"
                                  " crystal and recording crystal here too.\n";
                 }
                 if (write_flexed_receptor) {
@@ -6751,9 +6793,20 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
                                   << " NOTE: autoflex_max=" << autoflex_max
                                   << " -> the receptor is RIGID, so every companion"
-                                     " will equal the input receptor conformation"
+                                     " will equal the input receptor CONFORMATION"
                                      " (REMARK n_residues_off_input_rotamer 0). That is"
                                      " a useful NULL control, not an error.\n";
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " NOTE: equal conformation is NOT an equal FILE."
+                                     " The companion carries the receptor COMPOSITION"
+                                     " the engine scored — waters filtered by"
+                                     " protein.structural_water_bfactor_max, altloc 'A'"
+                                     " only, hydrogens removed — while the cache"
+                                     " receptor still carries all of them."
+                                     " On a rigid arm that difference is the entire"
+                                     " content of the companion, and it is what"
+                                     " FLEXAIDDS_PB_RECEPTOR=scored exists to"
+                                     " validate against.\n";
                     }
                 }
                 if (pb_receptor_cfg == "flexed") {
@@ -6783,9 +6836,69 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
                                   << " NOTE: autoflex_max=" << autoflex_max
                                   << " -> the receptor is RIGID, so the flexed frame and"
-                                     " the crystal frame are the same conformation and"
-                                     " this arm is a structural no-op. Set"
-                                     " FLEXAIDDS_AUTOFLEX_MAX>0 for the flexible arm.\n";
+                                     " the crystal frame are the same CONFORMATION, and"
+                                     " no side-chain overlap can be reattributed. Set"
+                                     " FLEXAIDDS_AUTOFLEX_MAX>0 for the flexible arm."
+                                     " This is NOT a total no-op: the two frames still"
+                                     " differ in their WATER set, so if that is what you"
+                                     " are after, ask for it by name with"
+                                     " FLEXAIDDS_PB_RECEPTOR=scored, which records"
+                                     " pb_receptor_used=scored instead of flexed.\n";
+                    }
+                }
+                // ── FLEXAIDDS_PB_RECEPTOR=scored ────────────────────────────
+                // Same companion file as "flexed", different question and a
+                // different record. See flexed_receptor.h "THE WATER SET".
+                // Valid on EVERY arm: unlike "flexed" there is no autoflex
+                // precondition, because the receptor COMPOSITION differs from
+                // the crystal file whether or not a side chain moved.
+                if (pb_receptor_cfg == "scored") {
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " FLEXAIDDS_PB_RECEPTOR=scored -> PoseBusters judges"
+                                 " the pose against the receptor COMPOSITION the engine"
+                                 " scored, i.e. the receptor as modify_pdb() produced"
+                                 " it: waters filtered by"
+                                 " protein.structural_water_bfactor_max, alternate"
+                                 " conformation 'A' only, hydrogens removed, cofactors"
+                                 " and metals kept. The cache receptor used by default"
+                                 " carries every water and every alt-conformer, so"
+                                 " ligand-water checks there are scored against waters"
+                                 " the engine had already removed. This CHANGES validity"
+                                 " numbers by design and must be reported as its own"
+                                 " arm.\n";
+                    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                              << " NOTE: this mode does no filtering of its own. It"
+                                 " selects the file the engine wrote; modify_pdb.cpp"
+                                 " remains the only place receptor composition is"
+                                 " decided.\n";
+                    if (!write_flexed_receptor) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " WARNING: FLEXAIDDS_PB_RECEPTOR=scored with"
+                                     " FLEXAIDDS_WRITE_FLEXED_RECEPTOR unset -> no"
+                                     " as-scored receptor will exist, every case will"
+                                     " fall back to the crystal receptor, and"
+                                     " validator_provenance.json will read"
+                                     " pb_receptor_used="
+                                     "\"crystal_fallback_no_scored_receptor\". Set BOTH."
+                                     " Retro-fitting an ALREADY-RUN arm is not possible"
+                                     " from here: no companion was written, so a"
+                                     " re-validation of existing poses has to be done"
+                                     " offline.\n";
+                    }
+                    if (autoflex_max <= 0) {
+                        std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+                                  << " NOTE: autoflex_max=" << autoflex_max
+                                  << " -> RIGID receptor, which is the CLEANEST case for"
+                                     " this mode, not a degenerate one: side chains are"
+                                     " identical to the crystal frame, so any validity"
+                                     " delta is attributable to COMPOSITION rather than"
+                                     " to motion. Composition is not waters alone —"
+                                     " alt-conformers and hydrogens are also absent"
+                                     " (e.g. 1GPK: 529 waters AND 91 non-'A' altloc"
+                                     " atoms), so do not report a flip as water-only"
+                                     " without checking the structure. The companion's"
+                                     " REMARK n_residues_off_input_rotamer will be 0 and"
+                                     " is echoed per case on the [PB-RECEPTOR] line.\n";
                     }
                 }
                 std::ofstream jf(config_path);
@@ -6934,7 +7047,15 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // WHICH RECEPTOR THE VALIDATOR JUDGES THE POSE AGAINST.
                    // "crystal" (DEFAULT) = entry.receptor_path, exactly today's
                    // call, so existing validity outcomes are unchanged.
-                   // "flexed" = the as-scored companion above. Read by the HARNESS
+                   // "flexed" = the as-scored companion above, asked for as a
+                   // SIDE-CHAIN frame (needs FLEXAIDDS_AUTOFLEX_MAX>0 to mean
+                   // anything).
+                   // "scored" = the same companion, asked for as the receptor
+                   // COMPOSITION the engine scored — the waters that survived
+                   // protein.structural_water_bfactor_max above, not the full
+                   // water set of the cache receptor. Valid on a rigid arm,
+                   // where it is the only difference between the two frames.
+                   // Read by the HARNESS
                    // (this file), not by the engine, and echoed here because a
                    // validity verdict whose receptor is unrecorded is not
                    // interpretable. The per-case ground truth of what was actually
@@ -8714,18 +8835,46 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 // scoring in the other frame would make an arm uninterpretable.
                 pb_receptor_path = entry.receptor_path;
                 pb_receptor_used = "crystal";
-                if (pb_receptor_requested == "flexed") {
+                //
+                // "scored" reads the SAME companion as "flexed" — the water-set
+                // correction was already reachable under the "flexed" name,
+                // because neither this selection nor the companion discovery
+                // above is gated on autoflex_max. What "scored" adds is a name
+                // for the water question and a distinguishable record; see
+                // flexed_receptor.h "THE WATER SET".
+                if (flexaids::flexed_receptor::pb_receptor_uses_companion(
+                        pb_receptor_requested)) {
                     if (!flexed_receptor_path.empty() &&
                         fs::exists(flexed_receptor_path)) {
                         pb_receptor_path = flexed_receptor_path;
-                        pb_receptor_used = "flexed";
+                        // Record the mode ASKED FOR, not a single shared label:
+                        // a rigid water-set arm and a flexible side-chain arm
+                        // read the same file but are not the same measurement,
+                        // and pooling them under "flexed" would make neither
+                        // recoverable from the record.
+                        pb_receptor_used = pb_receptor_requested;
                     } else {
-                        pb_receptor_used = "crystal_fallback_no_flexed_receptor";
+                        // Built from the requested mode so a new mode cannot
+                        // land without its own fallback label. For "flexed"
+                        // this yields "crystal_fallback_no_flexed_receptor",
+                        // byte-identical to HEAD, which stored arms carry.
+                        pb_receptor_used = "crystal_fallback_no_" +
+                                           pb_receptor_requested + "_receptor";
                         if (pb_receptor_note.empty()) {
+                            // Per-mode advice: AUTOFLEX_MAX>0 is a precondition
+                            // for "flexed" only. Telling a "scored" user to set
+                            // it would send them after the wrong variable.
                             pb_receptor_note =
-                                "FLEXAIDDS_PB_RECEPTOR=flexed but no as-scored "
-                                "receptor was written; is FLEXAIDDS_WRITE_FLEXED_"
-                                "RECEPTOR=1 set and FLEXAIDDS_AUTOFLEX_MAX>0?";
+                                (pb_receptor_requested == "scored")
+                                    ? "FLEXAIDDS_PB_RECEPTOR=scored but no as-scored "
+                                      "receptor was written; FLEXAIDDS_WRITE_FLEXED_"
+                                      "RECEPTOR=1 must be set on the ENGINE run that "
+                                      "produced these poses. An arm already on disk "
+                                      "cannot be retro-fitted here; re-validate its "
+                                      "poses offline instead."
+                                    : "FLEXAIDDS_PB_RECEPTOR=flexed but no as-scored "
+                                      "receptor was written; is FLEXAIDDS_WRITE_FLEXED_"
+                                      "RECEPTOR=1 set and FLEXAIDDS_AUTOFLEX_MAX>0?";
                         }
                     }
                 }
@@ -8782,6 +8931,29 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     std::cerr << " CAVEAT=\"flexed-frame overlap does NOT check"
                                  " receptor internal geometry; read with"
                                  " FLEXAIDDS_RECEPTOR_STRAIN\"";
+                // For the water-set mode, the companion's own REMARK is what
+                // says whether this verdict is a clean water-only delta or a
+                // water delta mixed with side-chain motion. Printing the mode
+                // without that number would leave the two indistinguishable in
+                // a stderr log.
+                if (pb_receptor_used == "scored") {
+                    const int n_off =
+                        companion_n_res_off_input_rotamer(pb_receptor_path);
+                    std::cerr << " n_residues_off_input_rotamer=" << n_off;
+                    if (n_off == 0)
+                        std::cerr << " CAVEAT=\"side chains identical to the crystal"
+                                     " frame, so any validity delta is the"
+                                     " water/heteroatom set alone\"";
+                    else if (n_off > 0)
+                        std::cerr << " CAVEAT=\"" << n_off << " residue(s) off input"
+                                     " rotamer, so this verdict MIXES a water-set"
+                                     " delta with side-chain motion, and receptor"
+                                     " internal geometry is not checked; read with"
+                                     " FLEXAIDDS_RECEPTOR_STRAIN\"";
+                    else
+                        std::cerr << " CAVEAT=\"companion REMARK absent or unreadable:"
+                                     " cannot say whether side chains moved\"";
+                }
                 std::cerr << "\n";
             }
 
@@ -8895,8 +9067,10 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    // the two candidate receptors give different answers by
                    // construction. requested = the FLEXAIDDS_PB_RECEPTOR gate;
                    // used = what was actually handed to PoseBusters, which
-                   // differs when "flexed" was asked for and the engine wrote
-                   // no as-scored receptor. flexed_receptor_* are present iff
+                   // differs when a companion mode ("flexed" or "scored") was
+                   // asked for and the engine wrote no as-scored receptor — the
+                   // COMMON case on any arm run before the writer existed, not
+                   // an edge case. flexed_receptor_* are present iff
                    // the engine ran with FLEXAIDDS_WRITE_FLEXED_RECEPTOR=1.
                    << "  \"pb_receptor_requested\": \"" << pb_receptor_requested
                    << "\",\n"

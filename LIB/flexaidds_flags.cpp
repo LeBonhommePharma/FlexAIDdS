@@ -206,7 +206,15 @@ void seed_runtime_gates() {
         // Receptor frame handed to PoseBusters (DatasetRunner.cpp).
         // "crystal" (default) = entry.receptor_path, i.e. today's behaviour and
         // today's validity numbers; "flexed" = the as-scored receptor written by
-        // FLEXAIDDS_WRITE_FLEXED_RECEPTOR. Any other value falls back to crystal.
+        // FLEXAIDDS_WRITE_FLEXED_RECEPTOR, asked for as a SIDE-CHAIN frame;
+        // "scored" = that same file, asked for as the receptor COMPOSITION the
+        // engine scored — the receptor as modify_pdb() produced it: waters
+        // filtered by protein.structural_water_bfactor_max, altloc 'A' only,
+        // hydrogens removed. On a rigid arm that composition is the ONLY
+        // difference from the crystal receptor. Any other value falls back to
+        // crystal. Both non-default modes require FLEXAIDDS_WRITE_FLEXED_RECEPTOR
+        // on the engine run, else every case falls back and says so in
+        // validator_provenance.json -> pb_receptor_used.
         "FLEXAIDDS_PB_RECEPTOR",
         "FLEXAIDDS_CLUSTER_REP",
         "FLEXAIDDS_FITNESS_MODEL",

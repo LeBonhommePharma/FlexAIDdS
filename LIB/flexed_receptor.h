@@ -3,7 +3,7 @@
 //                     choose which receptor frame it judges the pose in
 //
 //   gates: FLEXAIDDS_WRITE_FLEXED_RECEPTOR  (engine, DEFAULT OFF)
-//          FLEXAIDDS_PB_RECEPTOR=crystal|flexed (harness, DEFAULT crystal)
+//          FLEXAIDDS_PB_RECEPTOR=crystal|flexed|scored (harness, DEFAULT crystal)
 //
 // Apache-2.0 (c) 2026 Le Bonhomme Pharma
 //
@@ -33,6 +33,75 @@
 // 2. FLEXAIDDS_PB_RECEPTOR selects which of those two receptors the validator
 //    is handed. It defaults to "crystal", so today's validity outcomes are
 //    reproduced EXACTLY and no published number moves.
+//
+// THE WATER SET — why "flexed" was not enough, and what "scored" is for
+// ---------------------------------------------------------------------
+// The header above frames the crystal/as-scored difference as a SIDE-CHAIN
+// difference, and concludes that on a RIGID arm the two frames are the same
+// conformation and selecting the companion is a structural no-op. The
+// conformation claim is true. The no-op conclusion is FALSE, and it hid a
+// measured defect for an entire campaign.
+//
+// The receptor the engine scores is not the receptor file on disk. Every Astex
+// arm runs with protein.remove_water=true, keep_structural_waters=true,
+// structural_water_bfactor_max=20, so modify_pdb() (modify_pdb.cpp:157-166)
+// drops every water with B > 20 while writing the temp receptor that read_pdb()
+// then parses into atoms[]/residue[]. The validator, meanwhile, was handed
+// entry.receptor_path — the cache receptor, with EVERY water still in it.
+//
+// So on a rigid arm the two frames differ by exactly the discarded waters, and
+// PoseBusters was scoring ligand-water clashes against waters the engine had
+// already removed. Measured over 84 Astex targets per arm, water checks were
+// 45 of 70 failures (guard) and 50 of 67 (seed2): minimum_distance_to_waters
+// 38/41 and volume_overlap_with_waters 7/9. Re-validating offline against a
+// B<=20-filtered receptor flipped 6 targets per arm from fail to pass. The cut
+// is structure-dependent and large: 1GPK keeps 0 of 529 waters, 2BSM 0 of 247,
+// 1XOZ 36 of 352, 1K3U 123 of 712, 1JD0 156 of 504.
+//
+// The companion already carries the right water set, because it serialises the
+// in-memory atoms[] the filtered temp file produced — verified on the one
+// rigid-arm companion that exists on this box: 1JD0_1_receptor.pdb has 156 HOH
+// atom lines and 4325 atom lines total, against 504 HOH and 4673 total in
+// cache_v2/astex_diverse/1JD0/1JD0_apo.pdb, and 504-156 = 4673-4325 = 348. The
+// companion IS the apo file minus precisely the waters the engine discarded.
+//
+// WATERS ARE NOT THE ONLY COMPOSITION DIFFERENCE. modify_pdb() also strips
+// hydrogens and keeps only alternate conformation 'A' (see its own banner:
+// "Hydrogens are removed", "'A' alternate conformation ONLY is chosen"), and
+// that is measurable: 1GPK's cache receptor carries 91 atoms with an altloc
+// other than 'A', and the companion carries none of them. On 1GPK the companion
+// is 4162 atoms against the apo's 4782 = 529 waters + 91 alt-conformers + 4162.
+// Both files then agree atom-for-atom on the remainder (C 2683, N 702, O 755,
+// S 22). 1JD0 has no altlocs and no hydrogens, which is why its arithmetic is
+// water-only.
+//
+// So the honest statement of what "scored" gives you is the receptor
+// COMPOSITION as modify_pdb produced it — water-filtered by B-factor, altloc-A
+// only, hydrogen-free — not "the same file minus some waters". On a structure
+// with alternate conformations, attributing a validity flip to waters alone
+// would be wrong; the attributable quantity is the composition, and the water
+// term is merely the largest part of it on most Astex targets.
+//
+// Mode "scored" is therefore not a new mechanism — it selects the same
+// companion file "flexed" selects. It exists because:
+//   * the two modes answer different questions. "flexed" asks "did this pose
+//     clash in the side-chain state it was scored in", which is a FLEXIBLE-arm
+//     question and needs FLEXAIDDS_AUTOFLEX_MAX>0 to mean anything. "scored"
+//     asks "was this pose judged against the receptor composition the engine
+//     actually saw", which is a question on EVERY arm, rigid included.
+//   * the announce text for "flexed" tells a rigid-arm user the mode is a
+//     no-op and to go set AUTOFLEX_MAX. That advice is correct for attributing
+//     a side-chain overlap and wrong for the water confound, and a user
+//     chasing water failures has no reason to reach for a flag called
+//     "flexed".
+//   * pb_receptor_used must distinguish them in the record. A rigid arm
+//     validated against the engine's water set is not a flexed-side-chain arm,
+//     and labelling it "flexed" would make the two uncombinable in analysis.
+// What "scored" does NOT do: it does not filter anything itself. modify_pdb.cpp
+// remains the single source of truth for receptor composition; a second
+// B-factor comparison in the harness is the defect that let this project's
+// Cartesian and torsional entropy bases drift apart, and it is not repeated
+// here.
 //
 // NEITHER GATE TOUCHES SCORING. No CF channel, no REMARK on the pose, no
 // existing artifact. With both unset the engine and the harness are
@@ -104,22 +173,56 @@ inline std::string pb_receptor_raw()
     return v;
 }
 
+/// The mode set this build understands, as one string, for every human-facing
+/// message. Warning text that lists the modes by hand drifts the moment a mode
+/// is added — that is exactly how "crystal|flexed" survived the addition of a
+/// third mode in the first draft of this change.
+inline const char* pb_receptor_modes_csv() noexcept { return "crystal|flexed|scored"; }
+
 /// True only when FLEXAIDDS_PB_RECEPTOR names a mode this build understands.
 /// An unset variable is "recognised" (it selects the documented default).
 inline bool pb_receptor_recognised()
 {
     const std::string v = pb_receptor_raw();
-    return v.empty() || v == "crystal" || v == "flexed";
+    return v.empty() || v == "crystal" || v == "flexed" || v == "scored";
 }
 
 /// Harness gate: which receptor the validator is handed.
 /// "crystal" (DEFAULT, and the value returned for any unrecognised input, so a
-/// typo can never silently move a validity number) or "flexed".
+/// typo can never silently move a validity number), "flexed", or "scored".
 inline std::string pb_receptor_mode()
 {
     const std::string v = pb_receptor_raw();
     if (v == "flexed") return "flexed";
+    if (v == "scored") return "scored";
     return "crystal";
+}
+
+/// True for the modes whose receptor is the ENGINE'S as-scored companion rather
+/// than the crystal input file. Both "flexed" and "scored" select the same
+/// file — they differ in intent and in what gets recorded, not in the bytes
+/// they read (see THE WATER SET, above).
+///
+/// This predicate exists so the selection site, the announce block and the
+/// provenance writer cannot disagree about which modes need a companion. A
+/// fourth mode added to pb_receptor_mode() without being added here is a
+/// half-wired mode that silently validates against the crystal receptor, which
+/// is the failure shape this whole file exists to prevent.
+inline bool pb_receptor_uses_companion(const std::string& mode)
+{
+    return mode == "flexed" || mode == "scored";
+}
+
+/// The REMARK key carrying the number of residues sitting off their input
+/// rotamer, written by the companion writer (cluster.cpp) and read back by the
+/// harness. ONE literal, shared by writer and reader, including the trailing
+/// space: a companion whose key the reader cannot find is indistinguishable
+/// from a companion with zero moved side chains, and those two mean opposite
+/// things when you are deciding whether a validity delta came from the water
+/// set or from side-chain motion.
+inline const char* remark_key_n_res_off_rotamer() noexcept
+{
+    return "REMARK n_residues_off_input_rotamer ";
 }
 
 /// Directory that holds the as-scored receptor companion for `pose_pdb_path`.
