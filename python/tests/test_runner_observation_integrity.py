@@ -10,7 +10,7 @@ import pytest
 
 from flexaidds.dataset_runner.cli import _benchmark_inconclusive_reasons
 from flexaidds.dataset_runner.metrics import PoseScore
-from flexaidds.dataset_runner.runner import DatasetConfig, DatasetRunner
+from flexaidds.dataset_runner.runner import BenchmarkReport, DatasetConfig, DatasetRunner
 
 
 def _config():
@@ -175,6 +175,96 @@ def test_mixed_state_pool_refused_and_explicit_single_state_honored(tmp_path):
     result = runner.run_dataset(cfg, structural_states=["apo"])
     assert result.observation_roster == [("a", "apo"), ("b", "apo")]
     assert result.metrics["docking_power_top1"] == 0.5
+
+
+def test_run_all_partitions_states_with_fixed_denominators_and_resume(tmp_path, monkeypatch):
+    cfg = _config()
+    cfg.structural_states = ["holo", "apo"]
+    runner = _runner(tmp_path)
+    monkeypatch.setattr(runner, "discover_datasets", lambda: [cfg])
+    calls = []
+
+    def dock(target, *args, structural_state="holo", **kwargs):
+        calls.append((target, structural_state))
+        if target == "b":
+            return []
+        return [_pose(target, 1.0 if structural_state == "holo" else 5.0, structural_state)]
+
+    runner._dock_target = dock
+    fresh = runner.run_all()
+    assert runner.results_dir == tmp_path
+    assert cfg.structural_states == ["holo", "apo"]
+    assert [dr.config.structural_states for dr in fresh.datasets] == [["holo"], ["apo"]]
+    assert [dr.metrics["docking_power_top1"] for dr in fresh.datasets] == [0.5, 0.0]
+    for dr in fresh.datasets:
+        state = dr.config.structural_states[0]
+        assert dr.targets_attempted == ["a", "b"]
+        assert dr.observation_roster == [("a", state), ("b", state)]
+        assert dr.to_dict()["structural_states"] == [state]
+        output = tmp_path / "states" / state
+        assert (output / "integrity_tier2.json").is_file()
+        assert (output / "integrity/tier2" / f"a_{state}.json").is_file()
+        manifest = BenchmarkReport._load_entry_manifest_summary(dr)
+        assert manifest["observation_roster"] == [["a", state], ["b", state]]
+
+    calls.clear()
+    runner.resume = True
+    resumed = runner.run_all()
+    assert calls == []
+    assert [dr.resumed for dr in resumed.datasets] == [2, 2]
+    assert [_verdict(dr) for dr in resumed.datasets] == [_verdict(dr) for dr in fresh.datasets]
+    saved = tmp_path / "report.json"
+    saved.write_text(fresh.to_json())
+    loaded = BenchmarkReport.load(saved)
+    assert [dr.config.structural_states for dr in loaded.datasets] == [["holo"], ["apo"]]
+    assert [dr.output_dir for dr in loaded.datasets] == [dr.output_dir for dr in fresh.datasets]
+
+
+def test_run_all_single_state_preserves_existing_namespace(tmp_path, monkeypatch):
+    cfg = _config()
+    runner = _runner(tmp_path)
+    monkeypatch.setattr(runner, "discover_datasets", lambda: [cfg])
+    _stub(runner, {"a": 1.0, "b": None}, [])
+    report = runner.run_all()
+    assert len(report.datasets) == 1
+    assert report.datasets[0].config is cfg
+    assert (tmp_path / "integrity_tier2.json").is_file()
+    assert (tmp_path / "integrity/tier2/a_holo.json").is_file()
+    assert not (tmp_path / "states").exists()
+
+
+def test_run_all_restores_namespace_on_state_failure(tmp_path, monkeypatch):
+    cfg = _config()
+    cfg.structural_states = ["holo", "apo"]
+    runner = _runner(tmp_path)
+    monkeypatch.setattr(runner, "discover_datasets", lambda: [cfg])
+
+    def fail(*args, **kwargs):
+        raise ValueError("invalid checkpoint")
+
+    monkeypatch.setattr(runner, "run_dataset", fail)
+    with pytest.raises(ValueError, match="invalid checkpoint"):
+        runner.run_all()
+    assert runner.results_dir == tmp_path
+
+
+def test_crossdock_catalog_respects_declared_and_explicit_states(tmp_path, monkeypatch):
+    catalog = [
+        {"entry_id": "pair", "family": "ACE", "state": "crossdock"},
+        {"entry_id": "pair", "family": "ACE", "state": "apo"},
+    ]
+    monkeypatch.setattr("flexaidds.dataset_runner.runner.load_large_dataset_catalog", lambda slug: catalog)
+    cfg = DatasetConfig(slug="astex_nonnative", name="catalog fixture", description="",
+                        targets=["ACE"], structural_states=["crossdock"],
+                        metrics=["docking_power_top1"])
+    assert cfg.scheduled_work_items(2) == [("pair", "crossdock")]
+    assert cfg.scheduled_targets(2) == ["pair"]
+    cfg.structural_states = ["crossdock", "apo"]
+    runner = _runner(tmp_path)
+    _stub(runner, {"pair": 1.0}, [])
+    result = runner.run_dataset(cfg, structural_states=["apo"])
+    assert result.observation_roster == [("pair", "apo")]
+    assert result.metrics["docking_power_top1"] == 1.0
 
 
 def test_bootstrap_samples_full_roster_including_empty_target(tmp_path, monkeypatch):
