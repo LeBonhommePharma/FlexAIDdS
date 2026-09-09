@@ -29,6 +29,7 @@
 // handed; "scored" is the as-scored WATER/composition frame, valid on a rigid arm).
 // Header-only, no flexaid.h dependency, DEFAULT crystal = today's behaviour.
 #include "flexed_receptor.h"
+#include "pooled_election.h"  // FLEXAIDDS_POOLED_ELECTION — election OBJECTIVE
 #include "shell_exec.h"
 #include "RunReceipt.h"
 #include "statmech.h"
@@ -1617,6 +1618,52 @@ static std::pair<std::string,float> select_pose_freq_gated_pooled(
             poses.push_back({head.path, cf, freq, std::move(mcfs), /*is_seed=*/false,
                              /*restart=*/static_cast<int>(ri)});
         }
+    }
+
+    // ── FLEXAIDDS_POOLED_ELECTION=mincf: plain min-CF over the pooled set ───
+    // Lane B's elector (b) — the 45.3/84 row against the engine's own 40.0/84
+    // on three 84-target Astex arms. `poses` above already spans EVERY pooled
+    // restart prefix, so this changes the election OBJECTIVE and nothing about
+    // its SCOPE; see pooled_election.h for why that distinction is the whole
+    // point of the flag and for the measurement that establishes pooling was
+    // never off.
+    //
+    // Placed HERE, before the seed block, deliberately and for two reasons:
+    //   1. it bypasses the frequency gate, seed-anchored elitism, macro-cluster
+    //      consensus demotion and the Softbeta branch below — those ARE the
+    //      objective being replaced, so short-circuiting past them is the
+    //      change, not a shortcut around it;
+    //   2. `_INI.pdb` seeds are built below and are absent from `poses` (the
+    //      enumerator matches digit-only rank suffixes), so a crystal seed
+    //      cannot win a min-CF election. That would be an oracle leak, and it
+    //      is prevented structurally rather than by a check that could rot.
+    // Sentinels (CF >= 1e3) need no exclusion: an argmin cannot pick a large
+    // positive CF while any scored head is negative.
+    if (flexaids::pooled_election::elects_pooled_mincf(
+            flexaids::pooled_election::mode_snapshot())) {
+        const PoseInfo* mincf_best = nullptr;
+        for (const auto& p : poses) {
+            if (!std::isfinite(p.cf)) continue;  // fail-closed, as elsewhere here
+            if (mincf_best == nullptr || p.cf < mincf_best->cf) mincf_best = &p;
+        }
+        if (mincf_best != nullptr) {
+            fprintf(stderr,
+                    "[POOLED-ELECTION] objective=mincf prefixes=%d candidates=%d "
+                    "elected_restart=%d CF=%.4f path=%s\n",
+                    static_cast<int>(prefixes.size()),
+                    static_cast<int>(poses.size()), mincf_best->restart,
+                    static_cast<double>(mincf_best->cf), mincf_best->path.c_str());
+            return {mincf_best->path, mincf_best->cf};
+        }
+        // No finite-CF candidate. Fall through to the default elector rather
+        // than returning empty: it can still elect a seed under elitism, and a
+        // mode that turns "no GA pose" into "no pose at all" would silently
+        // change more than the objective.
+        fprintf(stderr,
+                "[POOLED-ELECTION] objective=mincf prefixes=%d candidates=0 "
+                "-- no finite-CF cluster head; falling through to default "
+                "elector\n",
+                static_cast<int>(prefixes.size()));
     }
 
     // ── Seed-anchored elitism (FLEXAIDDS_SEED_ELITISM, default ON) ──────────
@@ -8076,7 +8123,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // The elector drops degenerate (CF≈0) poses, prefers clusters with
             // Frequency>1, admits `_INI.pdb` seeds under seed-anchored elitism,
             // and returns the min-CF pose within the chosen pool (see helper
-            // definition near compute_pose_ligand_rmsd).
+            // definition near compute_pose_ligand_rmsd). What the pool is
+            // pooled OVER is settled above; what the election OPTIMISES over it
+            // is selectable via FLEXAIDDS_POOLED_ELECTION (pooled_election.h).
             // elected_pose_for_pb lives outside this block for PoseBust post-pass.
             std::string best_pose_pdb = select_pose_freq_gated_pooled(
                 all_prefixes, sel_elitism_ovr, cf_window_selector_,
@@ -8554,6 +8603,64 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (!flexaids::flexed_receptor::pb_receptor_recognised()) {
             pb_receptor_note = "unrecognised FLEXAIDDS_PB_RECEPTOR value; using crystal";
         }
+
+        // ── Election-objective provenance (FLEXAIDDS_POOLED_ELECTION) ──────
+        // requested = the gate value; used = what the elector actually did.
+        // Never silently equal. The cases that must stay distinguishable in
+        // the record:
+        //   mincf                       genuine multi-restart pooled min-CF
+        //   mincf_single_restart_pool   objective changed, but only ONE prefix
+        //                               was in the pool, so cross-restart
+        //                               pooling contributed nothing. A NULL
+        //                               CONTROL, not an error -- and not
+        //                               aggregable with the row above.
+        //   default_fallback_unrecognised  a typo; today's elector ran
+        //   none_docking_incomplete     no election was held at all
+        // restarts_pooled is recorded unconditionally, including under the
+        // default objective, because "how many restarts did this election see"
+        // was the unrecorded quantity that let a false belief about election
+        // scope stand for a whole campaign.
+        const std::string pooled_election_requested =
+            flexaids::pooled_election::mode_snapshot();
+        const int pooled_election_restarts_pooled =
+            static_cast<int>(all_prefixes.size());
+        std::string pooled_election_used = "default";
+        std::string pooled_election_note;
+        if (!flexaids::pooled_election::recognised()) {
+            pooled_election_used = "default_fallback_unrecognised";
+            pooled_election_note =
+                "unrecognised FLEXAIDDS_POOLED_ELECTION value '" +
+                flexaids::pooled_election::raw_sanitized() +
+                "'; using default objective (recognised: " +
+                std::string(flexaids::pooled_election::modes_csv()) + ")";
+            std::cerr << "  [POOLED-ELECTION] WARNING: unrecognised "
+                         "FLEXAIDDS_POOLED_ELECTION value '"
+                      << flexaids::pooled_election::raw_sanitized()
+                      << "' -- recognised values are "
+                      << flexaids::pooled_election::modes_csv()
+                      << "; falling back to the default objective\n";
+        } else if (!docking_completed) {
+            pooled_election_used = "none_docking_incomplete";
+            pooled_election_note = "docking did not complete; no election held";
+        } else if (flexaids::pooled_election::elects_pooled_mincf(
+                       pooled_election_requested)) {
+            if (pooled_election_restarts_pooled >= 2) {
+                pooled_election_used = "mincf";
+            } else {
+                pooled_election_used = "mincf_single_restart_pool";
+                pooled_election_note =
+                    "only 1 restart prefix in the pool, so cross-restart "
+                    "pooling contributed nothing (NULL CONTROL, not an error); "
+                    "the min-CF objective still replaced the frequency-gated "
+                    "one";
+            }
+        }
+        std::cerr << "  [POOLED-ELECTION] requested=" << pooled_election_requested
+                  << " used=" << pooled_election_used
+                  << " restarts_pooled=" << pooled_election_restarts_pooled;
+        if (!pooled_election_note.empty())
+            std::cerr << " note=\"" << pooled_election_note << "\"";
+        std::cerr << "\n";
 
         // ── Persist elected pose + SHA256 (audit P0) ───────────────────────
         // Downstream validators must cite this hash, not root <pdb>_0.pdb.
@@ -9093,6 +9200,24 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                    << "  \"pb_receptor_sha256\": \"" << pb_receptor_sha256
                    << "\",\n"
                    << "  \"pb_receptor_note\": \"" << pb_receptor_note << "\",\n"
+                   // ELECTION OBJECTIVE AND SCOPE. requested = the
+                   // FLEXAIDDS_POOLED_ELECTION gate; used = what the elector
+                   // did, which differs when the value was unrecognised (typo
+                   // -> default objective) or when only one restart prefix was
+                   // in the pool (objective changed, pooling a no-op -- a null
+                   // control that must not be aggregated with a genuine pooled
+                   // election). restarts_pooled is how many restart prefixes
+                   // the election actually saw: cross-restart pooling is the
+                   // DEFAULT here and always has been, and leaving that
+                   // unrecorded is what let the opposite belief stand.
+                   << "  \"pooled_election_requested\": \""
+                   << pooled_election_requested << "\",\n"
+                   << "  \"pooled_election_used\": \"" << pooled_election_used
+                   << "\",\n"
+                   << "  \"pooled_election_restarts_pooled\": "
+                   << pooled_election_restarts_pooled << ",\n"
+                   << "  \"pooled_election_note\": \"" << pooled_election_note
+                   << "\",\n"
                    << "  \"crystal_receptor_path\": \"" << entry.receptor_path
                    << "\",\n"
                    << "  \"flexed_receptor_written\": "
