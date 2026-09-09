@@ -432,8 +432,6 @@ function InstallSection() {
             <div className="cmt"># first shot — review, then run</div>
             <div><span className="plain">$</span> <span className="cmd">curl</span> -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh <span className="plain">| bash</span></div>
             <div><span className="plain">$</span> <span className="cmd">wget</span> -qO- https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh <span className="plain">| bash</span></div>
-            <div style={{ marginTop: "8px" }} className="cmt"># checksummed GitHub Release + SHA256SUMS.txt — after the next v* tag (v2.2.0 has zero assets)</div>
-            <div><span className="plain">$</span> <span className="cmd">curl</span> -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh <span className="plain">| bash -s -- --from-release latest</span></div>
             <div style={{ marginTop: "8px" }} className="cmt"># update every front already on the machine</div>
             <div><span className="plain">$</span> <span className="cmd">curl</span> -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/update.sh <span className="plain">| bash</span></div>
             <div><span className="plain">$</span> <span className="cmd">python</span> -m flexaidds --self-update</div>
@@ -447,7 +445,6 @@ function InstallSection() {
             <div><span className="plain">$</span> <span className="cmd">brew trust</span> --formula lebonhommepharma/flexaidds/flexaidds</div>
             <div><span className="plain">$</span> <span className="cmd">brew install</span> --HEAD lebonhommepharma/flexaidds/flexaidds</div>
             <div><span className="plain">$</span> <span className="cmd">FlexAIDdS</span> --help</div>
-            <div style={{ marginTop: "8px" }} className="cmt"># bottles land on the next provenance-capable tag; formula has no bottle do</div>
           </pre>
         )}
 
@@ -467,8 +464,6 @@ function InstallSection() {
             <div className="cmt"># native engine — build works today</div>
             <div><span className="plain">$</span> <span className="cmd">docker build</span> -f containers/Dockerfile.locked --build-arg FLEXAIDS_GIT_COMMIT="$(git rev-parse --short HEAD)" -t flexaidds:locked .</div>
             <div><span className="plain">$</span> <span className="cmd">docker run</span> --rm flexaidds:locked --help</div>
-            <div style={{ marginTop: "8px" }} className="cmt"># GHCR pull — after ghcr.yml has published a tag; 404 until then</div>
-            <div><span className="plain">$</span> <span className="cmd">docker pull</span> ghcr.io/lebonhommepharma/flexaidds:latest</div>
           </pre>
         )}
 

@@ -312,8 +312,8 @@ def _pages_install_section() -> str:
     return match.group(0)
 
 
-def test_pages_install_shows_first_shot_and_extra_fronts() -> None:
-    """Drive the shipped Pages #install source, not a restated command list."""
+def test_pages_install_shows_working_first_shots_only() -> None:
+    """Drive the shipped Pages #install source. No public-index 404 commands."""
     section = _pages_install_section()
     required = (
         "scripts/install.sh",
@@ -326,9 +326,6 @@ def test_pages_install_shows_first_shot_and_extra_fronts() -> None:
         "python</span> -m flexaidds --self-update",
         "Two separate things",
         "flexaidds</span> Python",
-        "--from-release latest",
-        "SHA256SUMS.txt",
-        "ghcr.io/lebonhommepharma/flexaidds",
         "Dockerfile.locked",
         "environment.yml",
         "setup-flexaidds",
@@ -337,8 +334,6 @@ def test_pages_install_shows_first_shot_and_extra_fronts() -> None:
         "packaging/easybuild/flexaidds-2.0.3.eb",
         "packaging/modulefiles",
         "not on PyPI",
-        "no bottle do",
-        "not a conda-forge feedstock",
         "install-tabs",
         "code-box",
         "cmake-table",
@@ -347,13 +342,16 @@ def test_pages_install_shows_first_shot_and_extra_fronts() -> None:
     missing = [token for token in required if token not in section]
     assert missing == [], f"Pages #install missing tokens: {missing}"
     assert 'maxWidth: "896px"' in section
-    assert re.search(r"pip install flexaidds(?![^\n]*subdirectory=python)", section) is None
     assert "pip install flexaidds" not in section
     assert re.search(
         r"brew install(?![\s\S]{0,20}--HEAD)[\s\S]{0,80}lebonhommepharma/flexaidds/flexaidds",
         section,
     ) is None
     assert "conda install -c conda-forge flexaidds" not in section
+    # These are real channels later; they 404 today. Do not paste them as first-shot.
+    assert "docker pull" not in section
+    assert "ghcr.io/lebonhommepharma/flexaidds" not in section
+    assert "--from-release" not in section
     for tab in ("curl", "Homebrew", "Python", "Docker", "conda", "CI", "HPC", "CMake"):
         assert tab in section
 
