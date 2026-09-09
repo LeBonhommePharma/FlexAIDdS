@@ -25,6 +25,6 @@
     "typescript": "^5.4",
     "vite": "^6.0",
     "vite-plugin-pwa": "^0.21",
-    "vitest": "^4.1"
+    "vitest": "^5.0"
   }
 }
