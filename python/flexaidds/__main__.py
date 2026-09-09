@@ -74,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--self-update",
         action="store_true",
-        help="Check for and install the latest version via pip.",
+        help="Refresh every detected install front (Homebrew engine, pip/uv/pipx, docker).",
     )
     return parser
 
@@ -133,30 +133,19 @@ def main() -> int:
 
     # Handle update flags first
     if args.check_update or args.self_update:
-        from .updater import check_for_updates, update_pip
+        from .updater import check_for_updates, update_all
 
         info = check_for_updates()
-        if info is None:
-            print("Could not reach GitHub API to check for updates.")
-            return 1
+        if info is not None:
+            print(f"Current version: {info.current_version}")
+            print(f"Latest GitHub Release: {info.latest_version}")
+            print(f"Release URL: {info.release_url}")
+        else:
+            print("GitHub Releases API unreachable; continuing with git/HEAD refresh.")
 
-        print(f"Current version: {info.current_version}")
-        print(f"Latest version:  {info.latest_version}")
-
-        if not info.update_available:
-            print("You are up to date.")
-            return 0
-
-        print(f"Update available: {info.release_url}")
         if args.self_update:
-            print("Installing update via pip...")
-            version = info.latest_version.lstrip("v")
-            rc = update_pip(version)
-            if rc == 0:
-                print("Update installed successfully.")
-            else:
-                print(f"pip exited with code {rc}")
-            return rc
+            print("Refreshing Homebrew engine, pip/uv/pipx, and docker if present...")
+            return update_all()
 
         return 0
 

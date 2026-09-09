@@ -427,3 +427,34 @@ jobs:
               print("unpinned run deps (reproducibility):", unpinned); sys.exit(1)
           print("all run deps carry a version constraint")
           PY
+
+  setup-action-smoke:
+    name: composite action installs flexaidds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+      - uses: ./.github/actions/setup-flexaidds
+        with:
+          from-checkout: "true"
+          skip-core: "true"
+      - name: CLI works
+        run: python -m flexaidds --help
+
+
+  setup-action-smoke:
+    name: composite action installs flexaidds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+      - uses: ./.github/actions/setup-flexaidds
+        with:
+          from-checkout: "true"
+          skip-core: "true"
+      - name: CLI works
+        run: python -m flexaidds --help

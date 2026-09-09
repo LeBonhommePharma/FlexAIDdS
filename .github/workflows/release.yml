@@ -158,3 +158,36 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}.zip
+
+  # Attach tarballs + SHA256SUMS.txt to the GitHub Release so
+  # `scripts/install.sh --from-release` can fail-closed on a checksum.
+  # Previous tags (through v2.2.0) have zero release assets — this job is
+  # why the next tag can be a first-shot binary install.
+  publish_release_assets:
+    name: Attach checksummed binaries to the GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          path: artifacts
+      - name: Flatten artifacts and write SHA256SUMS.txt
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find artifacts -type f \( -name 'flexaidds-*.tar.gz' -o -name 'flexaidds-*.zip' \) \
+            -exec cp -f {} dist/ \;
+          ls -l dist
+          (cd dist && sha256sum flexaidds-*.tar.gz flexaidds-*.zip > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber \
+            --repo "${GITHUB_REPOSITORY}"
+

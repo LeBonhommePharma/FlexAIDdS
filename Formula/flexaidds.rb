@@ -22,6 +22,10 @@ class Flexaidds < Formula
   # links Metal bridges via flexaid_core (PR #260).
   option "with-metal", "Build with Metal GPU acceleration (macOS; needs Metal toolchain)"
 
+  # No `bottle do` block: a bottle URL that 404s is worse than compiling
+  # --HEAD. Bottles are produced by .github/workflows/homebrew-bottle.yml on a
+  # provenance-capable tag. Do not paste a fabricated cellar URL here.
+
   depends_on "cmake" => :build
   depends_on "ninja" => :build
   depends_on "eigen"
