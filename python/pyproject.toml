@@ -69,6 +69,7 @@ namespaces = false
 [tool.setuptools.package-data]
 "flexaidds" = ["py.typed"]
 "flexaidds.dataset_runner" = ["datasets/*.yaml"]
+"flexaidds.dataset_runner.datasets" = ["*.yaml"]
 
 # cibuildwheel: produce installable wheels even when the optional C++ extension
 # cannot be compiled (pure-Python fallback). setup.py never fails the install.
