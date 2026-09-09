@@ -142,8 +142,10 @@ The benchmark reports three scores for each run. **This repository currently pub
 ## Astex-85 success rate — WITHDRAWN pending verification
 
 > **No Astex-85 success rate is published by this repository at present.**
+> Benchmarks are still rolling. Do not cite a former numerical FlexAID∆S rate
+> (including any figure at or above 90%) as current docking power.
 >
-> The figures previously stated here (78/85 = 91.8%) are **withdrawn**. They could not be
+> Previously stated numerical rates on this page are **withdrawn**. They could not be
 > reproduced from a receipted, blind, unseeded run on the current engine, and the
 > reproduction path they referenced (`scripts/run_dataset.py`, `scripts/analyze_affinity.py`)
 > does not exist in the tree. This matches the status already stated in `README.md`:
@@ -153,10 +155,10 @@ The benchmark reports three scores for each run. **This repository currently pub
 > `METHODOLOGY.md` §0 — blind, `native_pose_seeded=0`, no seed elitism, a fixed 85-target
 > denominator, and a provenance receipt pinning engine hash, matrix hash, and input hashes.
 >
-> Do not cite 91.8%, 94.1%, or 88.2% as current FlexAID(∆S) docking power. The 88.2%
-> (75/85) figure previously listed as FlexAID 2015 S1 is a **literature misquote**;
+> The figure previously listed as FlexAID 2015 S1 is a **literature misquote**;
 > Gaudreault & Najmanovich 2015 JCIM **Table 2** is **top-1 45.2% / top-10 66.7%**
-> (`METHODOLOGY.md` §3). 94.1% (80/85) was an oracle ceiling (`REPRODUCIBILITY.md`).
+> (`METHODOLOGY.md` §3). The former oracle-ceiling arm is documented in
+> `REPRODUCIBILITY.md` and is not docking power.
 >
 > The methodology, diagnostics and failure-mode *categories* below remain valid as *method*
 > documentation. Any number appearing in them is illustrative of the analysis, not a claim.
@@ -188,10 +190,10 @@ and water handling.
 
 ## Additional benchmarks — unverified / no receipt
 
-> **Unverified / no receipt.** The Pearson **r = 0.93** (ITC-187), CASF-2016 **81%**,
-> DUD-E **AUC 0.89**, and CNS **92%** figures previously stated here are **withdrawn**.
-> No provenance receipt for those numbers exists in this repository. Do not cite them
-> as FlexAID∆S performance. Dataset YAML files may exist; that is not a result.
+> **Unverified / no receipt.** Previously stated ITC correlation, CASF, DUD-E, and CNS
+> figures on this page are **withdrawn**. No provenance receipt for those numbers exists
+> in this repository. Do not cite them as FlexAID∆S performance. Dataset YAML files may
+> exist; that is not a result.
 
 ### ITC-187: binding affinity prediction (intended campaign)
 
@@ -204,7 +206,7 @@ before quoting any correlation.
 ### CASF-2016, DUD-E, neurological targets
 
 These remain *intended* evaluation surfaces (pose prediction, virtual-screening enrichment,
-internal CNS pose-rescue). Previously quoted percentages (CASF 81%, DUD-E AUC 0.89, CNS 92%)
+internal CNS pose-rescue). Previously quoted percentages for those campaigns
 are withdrawn until a receipted run exists.
 
 ---

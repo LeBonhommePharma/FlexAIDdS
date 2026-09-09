@@ -196,6 +196,35 @@ def test_scanner_allows_jcim_table2_literature_comparator() -> None:
     assert unqualified_claim_hits(text, source="fixture") == []
 
 
+def test_public_product_docs_do_not_restate_ninety_plus_success_rates() -> None:
+    """Public how-tos must not restate ≥90% FlexAID∆S rates while campaigns roll."""
+    banned = ("91.8%", "94.1%", "92%")
+    surfaces = (
+        ROOT / "README.md",
+        ROOT / "docs" / "INSTALL.md",
+        ROOT / "docs" / "USERGUIDE.md",
+        ROOT / "docs" / "BENCHMARK.md",
+        ROOT / "site" / "FlexAIDdS" / "index.html",
+        ROOT / "site" / "FlexAIDdS" / "sections.jsx",
+    )
+    failures: list[str] = []
+    for path in surfaces:
+        text = path.read_text(encoding="utf-8")
+        rel = str(path.relative_to(ROOT))
+        for token in banned:
+            if token in text:
+                failures.append(f"{rel} restates {token}")
+        if path.name == "sections.jsx":
+            assert "no validated FlexAID∆S success rate" in text
+            assert "Benchmarks are still rolling" in text
+        if path.name == "BENCHMARK.md":
+            assert "Benchmarks are still rolling" in text
+            assert "at or above 90%" in text
+    assert failures == [], "public surfaces still restate ≥90% rates:\n" + "\n".join(
+        failures
+    )
+
+
 def test_site_does_not_headline_live_affinity_or_binding_mode_rates() -> None:
     banned = (
         "Pearson r = 0.93",
