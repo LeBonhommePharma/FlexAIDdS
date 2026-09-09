@@ -409,20 +409,98 @@ function Footer() {
 
 // ─── INSTALL ───
 function InstallSection() {
-  const [tab, setTab] = useStateS("cli");
+  const [tab, setTab] = useStateS("curl");
   return (
     <section id="install" className="section alt">
       <div className="container" style={{ maxWidth: "896px" }}>
         <SectionHeader eyebrow="get started">
           Installation
         </SectionHeader>
+        <p className="binding-blurb">
+          Two separate things: the native <span className="kw">FlexAIDdS</span> engine
+          (Homebrew / CMake / Docker) and the <span className="kw">flexaidds</span> Python
+          package (analysis CLI). Installing one does not give you the other.
+        </p>
         <div className="install-tabs">
-          {[["cli", "CLI Build"], ["python", "Python"]].map(([k, l]) => (
+          {[["curl", "curl"], ["brew", "Homebrew"], ["python", "Python"], ["docker", "Docker"], ["conda", "conda"], ["ci", "CI"], ["hpc", "HPC"], ["cmake", "CMake"]].map(([k, l]) => (
             <button key={k} className={"install-tab" + (tab === k ? " active" : "")} onClick={() => setTab(k)}>{l}</button>
           ))}
         </div>
 
-        {tab === "cli" && (
+        {tab === "curl" && (
+          <pre className="code-box">
+            <div className="cmt"># first shot — review, then run</div>
+            <div><span className="plain">$</span> <span className="cmd">curl</span> -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh <span className="plain">| bash</span></div>
+            <div><span className="plain">$</span> <span className="cmd">wget</span> -qO- https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh <span className="plain">| bash</span></div>
+            <div style={{ marginTop: "8px" }} className="cmt"># update every front already on the machine</div>
+            <div><span className="plain">$</span> <span className="cmd">curl</span> -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/update.sh <span className="plain">| bash</span></div>
+            <div><span className="plain">$</span> <span className="cmd">python</span> -m flexaidds --self-update</div>
+          </pre>
+        )}
+
+        {tab === "brew" && (
+          <pre className="code-box">
+            <div className="cmt"># native engine only — macOS. first-shot is --HEAD</div>
+            <div><span className="plain">$</span> <span className="cmd">brew tap</span> lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS</div>
+            <div><span className="plain">$</span> <span className="cmd">brew trust</span> --formula lebonhommepharma/flexaidds/flexaidds</div>
+            <div><span className="plain">$</span> <span className="cmd">brew install</span> --HEAD lebonhommepharma/flexaidds/flexaidds</div>
+            <div><span className="plain">$</span> <span className="cmd">FlexAIDdS</span> --help</div>
+          </pre>
+        )}
+
+        {tab === "python" && (
+          <pre className="code-box">
+            <div className="cmt"># not on PyPI — git+subdirectory (or uv / pipx)</div>
+            <div><span className="plain">$</span> <span className="cmd">FLEXAIDDS_SKIP_CORE=1 pip install</span> <span className="str">"git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"</span></div>
+            <div><span className="plain">$</span> <span className="cmd">FLEXAIDDS_SKIP_CORE=1 uv tool install</span> <span className="str">"git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"</span></div>
+            <div><span className="plain">$</span> <span className="cmd">FLEXAIDDS_SKIP_CORE=1 pipx install</span> <span className="str">"git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"</span></div>
+            <div style={{ marginTop: "8px" }}><span className="kw">import</span> flexaidds <span className="kw">as</span> fd</div>
+            <div>results = fd.<span className="cmd">dock</span>(receptor=<span className="str">'receptor.pdb'</span>, ligand=<span className="str">'ligand.mol2'</span>, compute_entropy=<span className="kw">True</span>)</div>
+          </pre>
+        )}
+
+        {tab === "docker" && (
+          <pre className="code-box">
+            <div className="cmt"># native engine — build works today</div>
+            <div><span className="plain">$</span> <span className="cmd">docker build</span> -f containers/Dockerfile.locked --build-arg FLEXAIDS_GIT_COMMIT="$(git rev-parse --short HEAD)" -t flexaidds:locked .</div>
+            <div><span className="plain">$</span> <span className="cmd">docker run</span> --rm flexaidds:locked --help</div>
+          </pre>
+        )}
+
+        {tab === "conda" && (
+          <pre className="code-box">
+            <div className="cmt"># Python package — not a conda-forge feedstock</div>
+            <div><span className="plain">$</span> <span className="cmd">git clone</span> https://github.com/LeBonhommePharma/FlexAIDdS.git <span className="plain">&amp;&amp; cd FlexAIDdS</span></div>
+            <div><span className="plain">$</span> <span className="cmd">conda env create</span> -f environment.yml <span className="plain">&amp;&amp; conda activate flexaidds</span></div>
+            <div><span className="plain">$</span> <span className="cmd">python</span> -c <span className="str">"import flexaidds as fd; print(fd.__version__)"</span></div>
+          </pre>
+        )}
+
+        {tab === "ci" && (
+          <pre className="code-box">
+            <div className="cmt"># GitHub Action — Python package, not the engine</div>
+            <div>- uses: LeBonhommePharma/FlexAIDdS/.github/actions/setup-flexaidds@main</div>
+            <div>  with:</div>
+            <div>    from-checkout: <span className="str">"false"</span></div>
+            <div>    skip-core: <span className="str">"true"</span></div>
+            <div style={{ marginTop: "8px" }} className="cmt"># Dev Container / Codespaces — .devcontainer/ with FLEXAIDDS_SKIP_CORE=1</div>
+            <div><span className="plain">$</span> <span className="cmd">code</span> --reopen-in-container</div>
+          </pre>
+        )}
+
+        {tab === "hpc" && (
+          <pre className="code-box">
+            <div className="cmt"># overlays, not upstream Spack / EasyBuild</div>
+            <div className="cmt"># copy packaging/spack/package.py into a Spack repo overlay</div>
+            <div className="cmt"># copy packaging/easybuild/flexaidds-2.0.3.eb into an EasyBuild robot path</div>
+            <div><span className="plain">$</span> <span className="cmd">eb</span> packaging/easybuild/flexaidds-2.0.3.eb</div>
+            <div><span className="plain">$</span> <span className="cmd">module use</span> $PWD/packaging/modulefiles</div>
+            <div><span className="plain">$</span> <span className="cmd">export</span> FLEXAIDDS_PREFIX=/path/to/install</div>
+            <div><span className="plain">$</span> <span className="cmd">module load</span> flexaidds</div>
+          </pre>
+        )}
+
+        {tab === "cmake" && (
           <>
             <pre className="code-box">
               <div><span className="plain">$</span> <span className="cmd">git clone</span> https://github.com/LeBonhommePharma/FlexAIDdS.git <span className="plain">&amp;&amp; cd FlexAIDdS</span></div>
@@ -444,14 +522,6 @@ function InstallSection() {
             </table>
           </>
         )}
-
-        {tab === "python" && (
-          <pre className="code-box">
-            <div><span className="plain">$</span> <span className="cmd">cd</span> python <span className="plain">&amp;&amp; pip install -e .</span></div>
-            <div style={{ marginTop: "8px" }}><span className="kw">import</span> flexaidds <span className="kw">as</span> fd</div>
-            <div>results = fd.<span className="cmd">dock</span>(receptor=<span className="str">'receptor.pdb'</span>, ligand=<span className="str">'ligand.mol2'</span>, compute_entropy=<span className="kw">True</span>)</div>
-          </pre>
-        )}
       </div>
     </section>
   );
@@ -466,7 +536,7 @@ function BenchmarksSection() {
           Benchmark <span className="t-gold">status</span>
         </SectionHeader>
         <p className="binding-blurb">
-          This site publishes <span className="kw">no validated FlexAID∆S success rate</span>. Astex-85, ITC-187, CASF, and CNS figures are <span className="kw">unverified / pending receipt</span> until a METHODOLOGY.md §0 receipted blind campaign exists. Literature comparators (JCIM 2015 Table 2 top-1 45.2% / top-10 66.7%) are someone else’s published numbers, not ours.
+          This site publishes <span className="kw">no validated FlexAID∆S success rate</span>. Benchmarks are still rolling — do not cite a former rate at or above 90%. Astex-85, ITC-187, CASF, and CNS figures are <span className="kw">unverified / pending receipt</span> until a METHODOLOGY.md §0 receipted blind campaign exists. Literature comparators (JCIM 2015 Table 2 top-1 45.2% / top-10 66.7%) are someone else’s published numbers, not ours.
         </p>
       </div>
     </section>
