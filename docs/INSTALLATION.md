@@ -1,5 +1,16 @@
 # Installation Guide
 
+> **Canonical how-to:** [INSTALL.md](INSTALL.md). The GitHub landing page
+> Installation link and Quick Start both resolve there. Native engine (CMake /
+> Homebrew / Docker) and the `flexaidds` Python package are **separate** —
+> installing one does not give you the other. This page is extra platform
+> detail (Homebrew recovery, Windows, conda internals), not a second install
+> story.
+>
+> FlexAID∆S ranks poses with the **CF/contact-function scoring proxy**. Ensemble
+> fields are `proxy_only` diagnostics — not a physical binding free energy,
+> `Kd`, or `Ki`. Astex-85 accuracy is **unverified / pending receipt**.
+
 Complete build and installation instructions for FlexAID∆S on all supported platforms.
 
 ---

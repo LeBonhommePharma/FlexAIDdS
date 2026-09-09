@@ -1,5 +1,14 @@
 # Installing FlexAID∆S
 
+This is the canonical install how-to linked from the GitHub landing page.
+Native engine (CMake / Homebrew / Docker) and the `flexaidds` Python package
+are **separate**. Extra platform notes live in [INSTALLATION.md](INSTALLATION.md);
+do not treat that page as a second Quick Start.
+
+FlexAID∆S ranks poses with the **CF/contact-function scoring proxy**. Ensemble
+fields are `proxy_only` diagnostics in arbitrary CF units — not a physical
+binding free energy, `Kd`, or `Ki`. Astex-85 accuracy is **unverified / pending receipt**.
+
 Two separate things ship from this repo, and conflating them is the most common
 install failure:
 

@@ -6,14 +6,15 @@ Complete reference for using FlexAID∆S — from zero-config docking to advance
 
 ## Overview
 
-FlexAID∆S is an entropy-aware molecular docking engine. It extends the
+FlexAID∆S is a thermodynamically-aware molecular docking engine. It extends the
 FlexAID genetic algorithm with ensemble diagnostics and a schema-v2 scientific
-provenance gate. Standard docking uses arbitrary-unit CF scores and
-optimizer-selected samples, so its thermodynamic-looking fields are
-`proxy_only` unless an explicit calibrated energy domain and ensemble measure
-are supplied.
+provenance gate. Search ranks poses with the **CF/contact-function scoring proxy**.
+Standard docking uses arbitrary-unit CF scores and optimizer-selected
+samples, so its thermodynamic-looking fields are `proxy_only` — not a physical
+binding free energy, `Kd`, or `Ki` — unless an explicit calibrated energy
+domain and ensemble measure are supplied. Astex-85 accuracy is **unverified / pending receipt**.
 
-**Design philosophy**: All parameters have sensible defaults. A typical docking run requires only a receptor and a ligand — no configuration needed. Arguments are auto-detected from file content, so order doesn't matter.
+**Design philosophy**: All parameters have sensible defaults. A typical docking run requires only a receptor and a ligand — no configuration needed. Arguments are auto-detected from file content, so order doesn't matter. JSON `thermodynamics.temperature` is a **score-scale parameter**, not kelvin.
 
 ---
 
@@ -22,14 +23,14 @@ are supplied.
 ### Command Line
 
 ```bash
-# Full flexibility + entropy at 300 K (all defaults)
+# Flexible docking with default score-scale temperature (not kelvin)
 ./FlexAIDdS receptor.pdb ligand.mol2
 ```
 
 This single command:
 1. Detects binding site automatically (SURFNET cavity detection)
 2. Runs genetic algorithm with full ligand flexibility
-3. Computes score-space Shannon and optional model-scale tENCoM diagnostics
+3. Computes score-space Shannon and optional model-scale tENCoM diagnostics (`proxy_only`)
 4. Clusters poses and ranks them on the configured CF/election path
 5. Outputs ranked binding modes as PDB files
 
@@ -62,7 +63,7 @@ Inputs are auto-detected from file content — argument order doesn't matter. Ac
 |:-----|:------------|
 | `-c <file>` | JSON config file (overrides defaults) |
 | `-o <prefix>` | Output prefix for result files |
-| `--rigid` | Disable all flexibility and entropy (enthalpy-only scoring) |
+| `--rigid` | Disable ligand torsions and the ensemble diagnostic (CF-only ranking) |
 | `--folded` | Skip NATURaL co-translational chain growth |
 | `--legacy` | Legacy 3-argument mode: `config.inp ga.inp output_prefix` |
 | `--version` | Print version and exit |
@@ -79,7 +80,7 @@ is supplied.
 
 | Flag | Description |
 |:-----|:------------|
-| `-T <temp>` | Temperature in Kelvin (default: 300) |
+| `-T <temp>` | Model temperature parameter (default: 300); not a measured laboratory temperature |
 | `-r <cutoff>` | Contact distance cutoff in Å |
 | `-k <k0>` | Spring constant |
 | `-o <prefix>` | Output prefix |
@@ -97,7 +98,13 @@ python -m flexaidds /path/to/results/ --csv out.csv  # CSV export
 
 ## JSON Configuration
 
-All keys are optional — defaults enable full flexibility at 300 K. Override only what you need.
+All keys are optional — defaults enable full ligand flexibility with a score-scale
+`thermodynamics.temperature` of 300 (not kelvin). Override only what you need.
+
+Every key below is read by `LIB/config_parser.cpp`. Unknown keys — including
+`flexibility.ring_conformers` and `flexibility.chirality` — are silently ignored
+(fail-open). Ring-pucker sampling is `FLEXAIDDS_RING_FLEX`; restart count is
+`FLEXAIDDS_RESTARTS`. Neither is a JSON key.
 
 ### Complete Example
 
@@ -118,8 +125,6 @@ All keys are optional — defaults enable full flexibility at 300 K. Override on
   "flexibility": {
     "ligand_torsions": true,
     "intramolecular": true,
-    "ring_conformers": true,
-    "chirality": true,
     "permeability": 1.0,
     "dee_clash": 0.5
   },
@@ -130,10 +135,10 @@ All keys are optional — defaults enable full flexibility at 300 K. Override on
   },
   "ga": {
     "num_chromosomes": 1000,
-    "num_generations": 500,
+    "num_generations": 2000,
     "crossover_rate": 0.8,
     "mutation_rate": 0.03,
-    "fitness_model": "PSHARE",
+    "fitness_model": "SMFREE",
     "reproduction_model": "BOOM",
     "seed": 0
   },
@@ -178,16 +183,17 @@ All keys are optional — defaults enable full flexibility at 300 K. Override on
 |:----|:--------|:------------|
 | `ligand_torsions` | `true` | DEE torsion sampling |
 | `intramolecular` | `true` | Intramolecular scoring |
-| `ring_conformers` | `true` | Chair/boat/twist ring sampling |
-| `chirality` | `true` | Explicit R/S discrimination |
 | `permeability` | `1.0` | VDW permeability factor |
 | `dee_clash` | `0.5` | DEE clash threshold |
+
+Ring-pucker sampling and explicit R/S genes are **not** JSON keys. Enable ring
+pucker with `FLEXAIDDS_RING_FLEX`. Unknown JSON keys stay fail-open / ignored.
 
 #### `thermodynamics`
 
 | Key | Default | Description |
 |:----|:--------|:------------|
-| `temperature` | `300` | Temperature in K (0 disables entropy) |
+| `temperature` | `300` | Score-scale parameter for the CF ensemble diagnostic (0 disables it). Not kelvin. |
 | `clustering_algorithm` | `"CF"` | Clustering: `CF` (centroid-first), `DP` (Density Peak), or `FO` (FastOPTICS) |
 | `cluster_rmsd` | `2.0` | RMSD threshold for clustering (Å) |
 
@@ -196,10 +202,10 @@ All keys are optional — defaults enable full flexibility at 300 K. Override on
 | Key | Default | Description |
 |:----|:--------|:------------|
 | `num_chromosomes` | `1000` | Population size |
-| `num_generations` | `500` | Number of generations |
+| `num_generations` | `2000` | Number of generations |
 | `crossover_rate` | `0.8` | Crossover probability |
 | `mutation_rate` | `0.03` | Mutation probability |
-| `fitness_model` | `"PSHARE"` | Fitness sharing model |
+| `fitness_model` | `"SMFREE"` | Fitness model (`PSHARE` is also applied if set) |
 | `reproduction_model` | `"BOOM"` | Reproduction strategy |
 | `seed` | `0` | RNG seed (0 = time-based) |
 
@@ -309,17 +315,17 @@ for lig in ligands/*.mol2; do
 done
 ```
 
-### Accurate Binding Mode (Full Entropy)
+### Accurate Binding Mode (full flexibility)
 
 ```json
 {
   "ga": { "num_chromosomes": 2000, "num_generations": 1000 },
   "thermodynamics": { "temperature": 300, "clustering_algorithm": "DP" },
-  "flexibility": { "ring_conformers": true, "chirality": true }
+  "flexibility": { "ligand_torsions": true, "intramolecular": true }
 }
 ```
 
-### Enthalpy-Only Ranking (No Entropy)
+### CF-Only Ranking (no ensemble diagnostic)
 
 ```bash
 ./FlexAIDdS receptor.pdb ligand.mol2 --rigid
@@ -411,8 +417,8 @@ engine.add_samples(pose_scores)
 thermo = engine.compute()
 
 print(f"F  = {thermo.free_energy:.2f} [input-domain units]")
-print(f"S  = {thermo.entropy:.4f} [input-domain units / K]")
-print(f"Cv = {thermo.heat_capacity:.4f} [input-domain units / K]")
+print(f"S  = {thermo.entropy:.4f} [input-domain units / score-scale T]")
+print(f"Cv = {thermo.heat_capacity:.4f} [input-domain units / score-scale T]")
 print(thermo.claim_validity.value)   # proxy_only for CF scores
 ```
 
@@ -518,7 +524,7 @@ TypeScript PWA remain experimental clients of this file contract.
 
 ### Accuracy
 
-- **Always use entropy** — the `--rigid` flag is for quick screening only; entropy recovers correct binding modes that enthalpy-only scoring misses
+- **Prefer the default flexible path** — `--rigid` is for quick screening only; it drops torsion sampling and the score-space ensemble diagnostic. It does not compute a physical binding free energy, and the default path is still `proxy_only` CF ranking plus diagnostics
 - **Keep structural waters** — ordered waters mediate real contacts, and removing them changes the
   pocket shape the contact function sees. FlexAID∆S makes no calibrated kcal/mol claim about their
   energetic contribution
@@ -540,6 +546,6 @@ TypeScript PWA remain experimental clients of this file contract.
 
 ## Next Steps
 
-- [Installation Guide](INSTALLATION.md) — build instructions and troubleshooting
-- [Benchmarks](BENCHMARKS.md) — performance and accuracy data
-- [Configuration Reference](../README.md#json-config) — full JSON config schema in README
+- [Installation how-to](INSTALL.md) — native engine vs Python package (canonical)
+- [Benchmarks](BENCHMARK.md) — dataset provenance; Astex-85 unverified / pending receipt
+- [Configuration Reference](../README.md#example-json-configuration) — JSON keys the engine actually applies

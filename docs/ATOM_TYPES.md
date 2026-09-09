@@ -1,8 +1,10 @@
 # Atom Types in FlexAID∆S: The 40-Type NRGDock System
 
-FlexAID∆S uses a 40-type atom classification system derived from the SYBYL forcefield types. Each heavy atom in a receptor or ligand is assigned one of these 40 types, and that type is used as the row and column index into the 40×40 NRGDock energy matrix (`MC_st0r5.2_6.dat`). Getting the type right is essential: a mis-typed atom scores against the wrong row of the matrix and contributes either noise or the wrong sign to CF.
+FlexAID∆S uses a 40-type atom classification system derived from the SYBYL forcefield types. Each heavy atom in a receptor or ligand is assigned one of these 40 types, and that type is used as the row and column index into the 40×40 NRGDock energy matrix (`MC_st0r5.2_6.dat`). Getting the type right is essential: a mis-typed atom scores against the wrong row of the matrix and contributes either noise or the wrong sign to the **CF/contact-function scoring proxy**. CF and any ensemble transform over it are `proxy_only` diagnostics — not a physical binding free energy, `Kd`, or `Ki`. Astex-85 accuracy is **unverified / pending receipt**.
 
 This document describes all 40 types, explains the biological and chemical rationale for each, and documents the four type assignments that were incorrect in the original FlexAID and have been fixed in FlexAID∆S.
+
+**FlexAID∆S remaps** (MOL2 `sybyl_to_flexaid_type`, SDF `element_to_flexaid_type` for I, and `sybyl_name_to_canonical_vct`): N.2→N.ar, N.3→N.am, C.1→C.2, I→BR. Same four rows as the README remap table.
 
 ---
 

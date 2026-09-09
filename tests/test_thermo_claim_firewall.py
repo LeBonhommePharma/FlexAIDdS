@@ -310,6 +310,17 @@ def test_fake_digest_inside_a_list_is_not_invisible(tmp_path: Path) -> None:
     assert any("placeholder/fake digest is forbidden" in e for e in errors)
 
 
+# GitHub landing README + the other named public vehicles Copilot was asked
+# to finish. Keep this list in sync with tests/test_public_docs_vehicles.py.
+PUBLIC_VEHICLES = (
+    "README.md",
+    "docs/INSTALL.md",
+    "docs/USERGUIDE.md",
+    "VERSION.md",
+    "docs/ATOM_TYPES.md",
+)
+
+
 def test_primary_docs_do_not_claim_unwired_physical_election() -> None:
     root = Path(__file__).resolve().parents[1]
     surfaces = {
@@ -318,6 +329,13 @@ def test_primary_docs_do_not_claim_unwired_physical_election() -> None:
             encoding="utf-8"
         ),
         "docs/USERGUIDE.md": (root / "docs" / "USERGUIDE.md").read_text(
+            encoding="utf-8"
+        ),
+        "docs/INSTALL.md": (root / "docs" / "INSTALL.md").read_text(
+            encoding="utf-8"
+        ),
+        "VERSION.md": (root / "VERSION.md").read_text(encoding="utf-8"),
+        "docs/ATOM_TYPES.md": (root / "docs" / "ATOM_TYPES.md").read_text(
             encoding="utf-8"
         ),
     }
@@ -331,6 +349,19 @@ def test_primary_docs_do_not_claim_unwired_physical_election() -> None:
     for name, text in surfaces.items():
         for phrase in forbidden:
             assert phrase not in text, f"{name} retains unsupported claim: {phrase}"
+
+    for rel in PUBLIC_VEHICLES:
+        text = surfaces[rel]
+        assert "CF/contact-function scoring proxy" in text, (
+            f"{rel} missing frozen CF/contact-function scoring proxy language"
+        )
+        assert "proxy_only" in text, f"{rel} missing proxy_only"
+        assert "unverified" in text and "pending receipt" in text, (
+            f"{rel} missing Astex-85 unverified / pending receipt"
+        )
+        assert "Kd" in text and "Ki" in text, (
+            f"{rel} must name Kd / Ki as things it does not claim"
+        )
 
     ranking = (root / "docs" / "classic_entropy_ranking.md").read_text(
         encoding="utf-8"
