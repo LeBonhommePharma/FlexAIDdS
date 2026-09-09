@@ -16,7 +16,7 @@
 **[Scoring](docs/SCORING.md)** ·
 **[Atom Types](docs/ATOM_TYPES.md)** ·
 **[Benchmarks](docs/BENCHMARK.md)** ·
-**[Changelog**needs update**](VERSION.md)**
+**[Changelog](VERSION.md)**
 
 </div>
 
