@@ -60,6 +60,31 @@ def test_skip_gate_ci_files_do_not_dock():
     assert gate.files_need_dock(files) is False
 
 
+def test_install_only_paths_skip_dock():
+    files = [
+        "Formula/flexaidds.rb",
+        "packaging/spack/package.py",
+        "conda/meta.yaml",
+        "containers/Dockerfile.locked",
+        ".devcontainer/devcontainer.json",
+        "python/flexaidds/updater.py",
+        "python/README.md",
+        "python/pyproject.toml",
+        "python/setup.py",
+        "scripts/install.sh",
+        "scripts/update.sh",
+        "site/FlexAIDdS/index.html",
+    ]
+    assert all(gate.is_post_election_path(p) for p in files)
+    assert gate.files_need_dock(files) is False
+
+
+def test_updater_plus_results_still_docks():
+    assert gate.files_need_dock(
+        ["python/flexaidds/updater.py", "python/flexaidds/results.py"]
+    ) is True
+
+
 def test_cli_files_flag(capsys, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     github_output = tmp_path / "github_output"
