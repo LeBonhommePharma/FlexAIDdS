@@ -13,7 +13,7 @@ This module is intentionally small. It writes manifests, tool inputs, poses,
 rescored CSVs, and plots under:
 
 ```text
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy
 ```
 
 ## Install
@@ -21,7 +21,7 @@ rescored CSVs, and plots under:
 From the FlexAIDdS checkout:
 
 ```bash
-cd /Users/lp.more/Projects/FlexAIDdS
+cd ~/Projects/FlexAIDdS
 
 /opt/homebrew/bin/python3.12 -m venv .venv-astex-entropy
 source .venv-astex-entropy/bin/activate
@@ -34,15 +34,15 @@ python -m pip install -r benchmarks/astex_entropy/requirements.txt
 The default `config.yaml` is pinned to local tool paths under the checkout:
 
 ```text
-/Users/lp.more/Projects/FlexAIDdS/build_lto/benchmark_datasets
-/Users/lp.more/Projects/FlexAIDdS/.tools/bin/vina
-/Users/lp.more/Projects/FlexAIDdS/.tools/rdock/bin/rbcavity
-/Users/lp.more/Projects/FlexAIDdS/.tools/rdock/bin/rbdock
-/Users/lp.more/Projects/FlexAIDdS/build_lto/cavity_detect_cli
-/Users/lp.more/Projects/Get_Cleft/Get_Cleft
-/Users/lp.more/Projects/FlexAIDdS/.venv-posebusters/bin/bust
-/Users/lp.more/Projects/FlexAIDdS/build_lto/tencom_entropy_diff
-/Users/lp.more/Projects/FlexAIDdS/.venv-boltz/bin/boltz
+~/Projects/FlexAIDdS/build_lto/benchmark_datasets
+~/Projects/FlexAIDdS/.tools/bin/vina
+~/Projects/FlexAIDdS/.tools/rdock/bin/rbcavity
+~/Projects/FlexAIDdS/.tools/rdock/bin/rbdock
+~/Projects/FlexAIDdS/build_lto/cavity_detect_cli
+~/Projects/Get_Cleft/Get_Cleft
+~/Projects/FlexAIDdS/.venv-posebusters/bin/bust
+~/Projects/FlexAIDdS/build_lto/tencom_entropy_diff
+~/Projects/FlexAIDdS/.venv-boltz/bin/boltz
 /opt/homebrew/bin/obabel
 ```
 
@@ -51,7 +51,7 @@ Install the external command-line tools:
 ```bash
 brew install open-babel
 
-cd /Users/lp.more/Projects/FlexAIDdS
+cd ~/Projects/FlexAIDdS
 
 mkdir -p .tools/bin
 curl -L --fail \
@@ -72,14 +72,14 @@ test -x .tools/rdock/bin/rbdock
 .venv-boltz/bin/python -m pip install boltz
 
 /opt/homebrew/bin/obabel -V
-/Users/lp.more/Projects/FlexAIDdS/build_lto/benchmark_datasets --help
-/Users/lp.more/Projects/FlexAIDdS/build_lto/cavity_detect_cli --help
-/Users/lp.more/Projects/FlexAIDdS/build_lto/tencom_entropy_diff --help || true
-/Users/lp.more/Projects/FlexAIDdS/.tools/bin/vina --help
-/Users/lp.more/Projects/FlexAIDdS/.venv-posebusters/bin/bust --help
-NUMBA_CACHE_DIR="/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/cache/numba" \
-  /Users/lp.more/Projects/FlexAIDdS/.venv-boltz/bin/python \
-  /Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_entropy/boltz_cli.py predict --help
+~/Projects/FlexAIDdS/build_lto/benchmark_datasets --help
+~/Projects/FlexAIDdS/build_lto/cavity_detect_cli --help
+~/Projects/FlexAIDdS/build_lto/tencom_entropy_diff --help || true
+~/Projects/FlexAIDdS/.tools/bin/vina --help
+~/Projects/FlexAIDdS/.venv-posebusters/bin/bust --help
+NUMBA_CACHE_DIR="~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/cache/numba" \
+  ~/Projects/FlexAIDdS/.venv-boltz/bin/python \
+  ~/Projects/FlexAIDdS/benchmarks/astex_entropy/boltz_cli.py predict --help
 ```
 
 Boltz-2 is configured for the 18 GB MacBook Pro constraint: CPU accelerator,
@@ -172,15 +172,15 @@ python -m benchmarks.astex_entropy.orchestrate --mode native --tools flexaidds,v
 Each orchestrator run writes:
 
 ```text
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/orchestrator_runs/<run_id>/orchestrator_summary.json
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/orchestrator_runs/<run_id>/orchestrator_summary.md
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/orchestrator_runs/<run_id>/orchestrator_summary.json
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/orchestrator_runs/<run_id>/orchestrator_summary.md
 ```
 
 ## Prepare Data
 
 Native Astex uses the existing prepared checkout layout:
 
-`/Users/lp.more/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/<PDB>/<PDB>_apo.pdb`
+`~/Projects/FlexAIDdS/benchmarks/astex_diverse/astex_diverse/<PDB>/<PDB>_apo.pdb`
 
 Run a fast native smoke:
 
@@ -258,10 +258,10 @@ python -m benchmarks.astex_entropy run --mode non_native --tools vina,rdock,bolt
 Outputs:
 
 ```text
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/poses/native_flexaidds_poses.csv
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/poses/native_vina_poses.csv
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/poses/native_rdock_poses.csv
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/poses/native_boltz_poses.csv
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/poses/native_flexaidds_poses.csv
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/poses/native_vina_poses.csv
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/poses/native_rdock_poses.csv
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/poses/native_boltz_poses.csv
 ```
 
 Each `run` invocation rewrites the current mode/tool pose CSVs. Use a separate
@@ -305,9 +305,9 @@ python -m benchmarks.astex_entropy rescore --mode non_native --poses_from flexai
 Rescore outputs:
 
 ```text
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/rescored/native/vina/rescored_poses.csv
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/rescored/native/vina/report.md
-/Users/lp.more/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/rescored/native/vina/gbind_vs_rmsd.png
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/rescored/native/vina/rescored_poses.csv
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/rescored/native/vina/report.md
+~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/astex_entropy/rescored/native/vina/gbind_vs_rmsd.png
 ```
 
 ## Scoring Columns
@@ -346,6 +346,6 @@ Rescore outputs:
 - FlexAIDdS runs through the configured `benchmark_datasets` binary, writes its
   raw output under the iCloud work dir, then harvests emitted pose PDBs into the
   same pose CSV format as Vina/rDock/Boltz.
-- The module defaults to `/Users/lp.more/Projects/FlexAIDdS` for source data
+- The module defaults to `~/Projects/FlexAIDdS` for source data
   because this benchmark workspace is not the main Git checkout.
 - Edit `config.yaml` if your binaries or source checkout live elsewhere.
