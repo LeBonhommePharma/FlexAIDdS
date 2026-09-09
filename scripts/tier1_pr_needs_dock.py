@@ -35,6 +35,14 @@ _SKIP_EXACT = frozenset(
         "README.md",
         "scripts/tier1_pr_needs_dock.py",
         "tests/test_tier1_pr_needs_dock.py",
+        "python/README.md",
+        "python/flexaidds/updater.py",
+        "python/pyproject.toml",
+        "python/setup.py",
+        "scripts/install.sh",
+        "scripts/update.sh",
+        "scripts/validate_install_patterns.sh",
+        "scripts/check_github_workflows.py",
     }
 )
 _SKIP_PREFIXES = (
@@ -43,6 +51,12 @@ _SKIP_PREFIXES = (
     "python/tests/",
     "docs/",
     ".github/",
+    "Formula/",
+    "packaging/",
+    "conda/",
+    "containers/",
+    ".devcontainer/",
+    "site/",
 )
 
 

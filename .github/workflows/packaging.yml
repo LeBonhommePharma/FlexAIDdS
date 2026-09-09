@@ -57,6 +57,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
       - name: actionlint
         run: |
           set -euo pipefail
@@ -65,24 +69,11 @@ jobs:
           # a *parse* failure is not.
           ./actionlint -color -shellcheck= -pyflakes= || true
           echo "--- strict YAML parse (this is the blocking check) ---"
-          python3 - <<'PY'
-          import pathlib, sys
-          import yaml
-          bad = []
-          for f in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
-              try:
-                  d = yaml.safe_load(f.read_text(encoding="utf-8"))
-              except Exception as exc:
-                  bad.append(f"{f}: {type(exc).__name__}: {exc}")
-                  continue
-              if not isinstance(d, dict) or "jobs" not in d:
-                  bad.append(f"{f}: parsed but has no 'jobs' mapping")
-          if bad:
-              print("UNPARSEABLE WORKFLOW FILES:")
-              print("\n".join(bad))
-              sys.exit(1)
-          print("all workflow files parse and declare jobs")
-          PY
+          # yaml.safe_load silently keeps the last duplicate key, which is
+          # exactly how a duplicated job id produced 0-second GitHub startup
+          # failures with no jobs (workflow name shown as the file path).
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/check_github_workflows.py
 
   # ── Gate 1b: the Homebrew formula is Ruby, and nothing here ever read it ──
   # Formula/** is in this workflow's path filter, so editing the formula starts
@@ -427,22 +418,6 @@ jobs:
               print("unpinned run deps (reproducibility):", unpinned); sys.exit(1)
           print("all run deps carry a version constraint")
           PY
-
-  setup-action-smoke:
-    name: composite action installs flexaidds
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.11"
-      - uses: ./.github/actions/setup-flexaidds
-        with:
-          from-checkout: "true"
-          skip-core: "true"
-      - name: CLI works
-        run: python -m flexaidds --help
-
 
   setup-action-smoke:
     name: composite action installs flexaidds
