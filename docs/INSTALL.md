@@ -23,6 +23,30 @@ docks" reports are this.
 
 ---
 
+## One-liner (`curl | bash`)
+
+Review the script, then run it. Default: Python package everywhere; native
+engine on macOS when Homebrew is present (`brew install --HEAD`).
+
+```bash
+# review
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | less
+
+# install (macOS: Homebrew engine + Python; elsewhere: Python)
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash
+
+# Python only / engine only / print commands
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash -s -- --python-only
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash -s -- --engine-only
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash -s -- --dry-run
+```
+
+The script is `scripts/install.sh` in this repo. It does **not** call
+unpublished `pip install flexaidds` and does **not** call stable Homebrew
+without `--HEAD`.
+
+---
+
 ## Support matrix
 
 | Path | macOS arm64 | macOS x86_64 | Linux x86_64 | Windows | Ships engine | Ships Python |
