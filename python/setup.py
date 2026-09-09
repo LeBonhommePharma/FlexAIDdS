@@ -30,24 +30,26 @@ from setuptools.command.build_ext import build_ext as _build_ext
 from setuptools.command.sdist import sdist as _sdist
 
 # --- P0: Wire source validator guard (python path) ---
-# Runs early so developers doing `pip install -e .` (or equivalent) get
-# immediate feedback if they added sources without wiring them.
-try:
-    repo_root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(repo_root))
-    from scripts.validate_sources import validate_sources
+# Developer checkouts only. An sdist / isolated PEP 517 build does not ship
+# scripts/validate_sources.py; staying silent there is required so first-shot
+# pip has no package-owned Warning on stderr.
+_repo_root = Path(__file__).resolve().parent.parent
+_guard = _repo_root / "scripts" / "validate_sources.py"
+if _guard.is_file():
+    try:
+        sys.path.insert(0, str(_repo_root))
+        from scripts.validate_sources import validate_sources
 
-    # Respect env var for CI / strict local runs. Default is lenient for
-    # normal developer `pip install -e` usage.
-    strict = os.environ.get("FLEXAIDS_STRICT_SOURCE_VALIDATION", "0").lower() not in (
-        "0",
-        "false",
-        "",
-    )
-    validate_sources(root=str(repo_root), strict=strict)
-except Exception as exc:
-    # Never break the build due to the guard during normal development.
-    print(f"[source-guard] Warning: validator skipped ({exc})", file=sys.stderr)
+        strict = os.environ.get("FLEXAIDS_STRICT_SOURCE_VALIDATION", "0").lower() not in (
+            "0",
+            "false",
+            "",
+        )
+        validate_sources(root=str(_repo_root), strict=strict)
+    except Exception:
+        # Never break pip. Do not print: isolated builds and missing optional
+        # tooling are not user-facing install failures.
+        pass
 
 ROOT = Path(__file__).resolve().parent
 
@@ -416,10 +418,6 @@ class optional_build_ext(_build_ext):
 
     def _prepare_core_extension(self, ext: Extension) -> bool:
         if _skip_core_requested():
-            warnings.warn(
-                "FLEXAIDDS_SKIP_CORE set — installing pure-Python package only.",
-                stacklevel=2,
-            )
             return False
 
         try:
@@ -613,10 +611,7 @@ def _placeholder_extension_modules() -> List[Extension]:
     Real sources are filled in by ``optional_build_ext`` at compile time.
     """
     if _skip_core_requested():
-        warnings.warn(
-            "FLEXAIDDS_SKIP_CORE set — installing pure-Python package only.",
-            stacklevel=2,
-        )
+        # Explicit request — do not emit a UserWarning on first-shot installs.
         return []
 
     if not _can_attempt_core():

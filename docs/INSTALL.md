@@ -28,10 +28,12 @@ docks" reports are this.
 | Path | macOS arm64 | macOS x86_64 | Linux x86_64 | Windows | Ships engine | Ships Python |
 |---|---|---|---|---|---|---|
 | CMake from source | ✅ | ✅ | ✅ | ⚠️ partial | ✅ | optional |
-| Homebrew (`Formula/flexaidds.rb`) | ✅ | ✅ | — | — | ✅ | ❌ |
+| Homebrew (`brew install --HEAD`) | ✅ first-shot | ✅ first-shot | — | — | ✅ | ❌ |
+| Homebrew stable `v2.0.3` tarball | ❌ provenance refuse | ❌ provenance refuse | — | — | — | — |
 | Docker (`containers/Dockerfile.locked`) | ✅ via Docker | ✅ | ✅ | ✅ via Docker | ✅ | ❌ |
 | Apptainer (`containers/*.def`) | — | — | ✅ | — | ✅ | ❌ |
-| `pip` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `pip install flexaidds` (PyPI) | ❌ unpublished | ❌ unpublished | ❌ unpublished | ❌ unpublished | ❌ | — |
+| pip git+subdirectory / local wheel | ✅ first-shot | ✅ first-shot | ✅ | ✅ | ❌ | ✅ |
 | conda (`conda/meta.yaml`) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
 | Release binaries (`release.yml`) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 
@@ -72,16 +74,23 @@ Dependencies: CMake ≥ 3.28, Ninja or Make, Eigen 3.4+, and OpenMP
 
 ## Engine: Homebrew (lowest friction on macOS)
 
+First-shot command — this is the one that installs today. Stable `v2.0.3`
+tarball **cannot** emit `flexaidds-build-provenance.json`, and the formula
+refuses it rather than putting an unidentifiable binary on PATH. Use `--HEAD`
+until the next tag.
+
 ```bash
 brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
 brew trust --formula lebonhommepharma/flexaidds/flexaidds
-brew install lebonhommepharma/flexaidds/flexaidds
+brew install --HEAD lebonhommepharma/flexaidds/flexaidds
+FlexAIDdS --help
 ```
 
-CPU + OpenMP by default. Metal is opt-in and needs a real Metal toolchain:
+CPU + OpenMP by default. Metal is opt-in and needs a real Metal toolchain
+(not the first-shot path):
 
 ```bash
-brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
+brew install --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
 ```
 
 ## Engine: Docker (most reproducible)
@@ -101,17 +110,35 @@ with `--build-arg ALLOW_UNKNOWN_PROVENANCE=1` only for a throwaway image.
 
 ## Python: pip
 
+`flexaidds` is **not on public PyPI**. `pip install flexaidds` fails today
+(`No matching distribution found`). First-shot is git+subdirectory or a
+local wheel. `FLEXAIDDS_SKIP_CORE=1` is the no-compiler path (pure Python).
+
 ```bash
-pip install flexaidds          # once published
-# or, from the repo:
-pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install -U pip
+FLEXAIDDS_SKIP_CORE=1 pip install \
+  "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+python -c "import flexaidds as fd; print(fd.__version__)"
 flexaidds --help
 ```
 
-`pip install` is designed never to fail. The accelerated `flexaidds._core`
-extension is optional: when pybind11, Eigen, and a C++26 compiler are all
-present it is compiled; otherwise the install succeeds with pure-Python
-fallbacks and `flexaidds.HAS_CORE_BINDINGS` is `False`. Check which you got:
+From a clone, the same first-shot as a built wheel (no editable checkout):
+
+```bash
+cd python
+FLEXAIDDS_SKIP_CORE=1 python -m build
+FLEXAIDDS_SKIP_CORE=1 pip install dist/flexaidds-*.whl
+flexaidds --help
+```
+
+After the first PyPI release, `pip install flexaidds` will work. Until then
+do not treat that line as a working first-shot.
+
+The accelerated `flexaidds._core` extension is optional: when pybind11, Eigen,
+and a C++26 compiler are all present it is compiled; otherwise the install
+succeeds with pure-Python fallbacks and `flexaidds.HAS_CORE_BINDINGS` is
+`False`. Check which you got:
 
 ```bash
 python -c "import flexaidds as fd; print(fd.__version__, fd.HAS_CORE_BINDINGS)"
@@ -219,9 +246,20 @@ Where the packaging format allows a pin, it is pinned:
 
 ## Troubleshooting
 
+**`pip install flexaidds` → No matching distribution found.** Public PyPI has
+no `flexaidds` package yet. Use the git+subdirectory first-shot above (or a
+local wheel). `FLEXAIDDS_SKIP_CORE=1` is the no-compiler path.
+
 **`pip install` succeeded but `HAS_CORE_BINDINGS` is `False`.** Expected unless
 you have pybind11 + Eigen + a C++26 compiler. Not an error; the pure-Python
 fallbacks are correct, just slower.
+
+**`brew install` (no `--HEAD`) dies immediately about provenance.** Expected
+until the next tag. The first-shot command is `brew install --HEAD …`.
+
+**`which FlexAIDdS` is a repo `build/` binary, not Homebrew.** Homebrew warns
+that `FlexAIDdS` is shadowed if a git checkout's `build/` is on `PATH`. Run
+`/opt/homebrew/bin/FlexAIDdS --help` or put Homebrew's `bin` first.
 
 **CMake: "requires GCC ≥ 14".** The floor is real. `CXX=g++-14 cmake -S . -B build …`.
 
