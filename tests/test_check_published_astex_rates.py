@@ -206,6 +206,7 @@ def test_public_product_docs_do_not_restate_ninety_plus_success_rates() -> None:
         ROOT / "docs" / "BENCHMARK.md",
         ROOT / "site" / "FlexAIDdS" / "index.html",
         ROOT / "site" / "FlexAIDdS" / "sections.jsx",
+        ROOT / "site" / "entropy-driven" / "index.html",
     )
     failures: list[str] = []
     for path in surfaces:
@@ -215,6 +216,9 @@ def test_public_product_docs_do_not_restate_ninety_plus_success_rates() -> None:
             if token in text:
                 failures.append(f"{rel} restates {token}")
         if path.name == "sections.jsx":
+            assert "no validated FlexAID∆S success rate" in text
+            assert "Benchmarks are still rolling" in text
+        if path.name == "index.html" and "entropy-driven" in rel:
             assert "no validated FlexAID∆S success rate" in text
             assert "Benchmarks are still rolling" in text
         if path.name == "BENCHMARK.md":

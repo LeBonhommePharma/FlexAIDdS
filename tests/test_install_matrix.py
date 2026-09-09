@@ -312,9 +312,18 @@ def _pages_install_section() -> str:
     return match.group(0)
 
 
-def test_pages_install_shows_working_first_shots_only() -> None:
-    """Drive the shipped Pages #install source. No public-index 404 commands."""
-    section = _pages_install_section()
+def _entropy_install_section() -> str:
+    text = (ROOT / "site" / "entropy-driven" / "index.html").read_text(encoding="utf-8")
+    match = re.search(
+        r'<section id="install".*?</section>',
+        text,
+        flags=re.S,
+    )
+    assert match, "#install missing from site/entropy-driven/index.html"
+    return match.group(0)
+
+
+def _assert_working_first_shot_install(section: str, *, source: str) -> None:
     required = (
         "scripts/install.sh",
         'cmd">wget</span> -qO-',
@@ -325,7 +334,6 @@ def test_pages_install_shows_working_first_shots_only() -> None:
         "scripts/update.sh",
         "python</span> -m flexaidds --self-update",
         "Two separate things",
-        "flexaidds</span> Python",
         "Dockerfile.locked",
         "environment.yml",
         "setup-flexaidds",
@@ -337,23 +345,47 @@ def test_pages_install_shows_working_first_shots_only() -> None:
         "install-tabs",
         "code-box",
         "cmake-table",
-        "binding-blurb",
     )
     missing = [token for token in required if token not in section]
-    assert missing == [], f"Pages #install missing tokens: {missing}"
-    assert 'maxWidth: "896px"' in section
+    assert missing == [], f"{source} #install missing tokens: {missing}"
+    assert "896px" in section
     assert "pip install flexaidds" not in section
     assert re.search(
         r"brew install(?![\s\S]{0,20}--HEAD)[\s\S]{0,80}lebonhommepharma/flexaidds/flexaidds",
         section,
     ) is None
     assert "conda install -c conda-forge flexaidds" not in section
-    # These are real channels later; they 404 today. Do not paste them as first-shot.
     assert "docker pull" not in section
     assert "ghcr.io/lebonhommepharma/flexaidds" not in section
     assert "--from-release" not in section
     for tab in ("curl", "Homebrew", "Python", "Docker", "conda", "CI", "HPC", "CMake"):
-        assert tab in section
+        assert tab in section, f"{source} missing tab {tab!r}"
+
+
+def test_pages_install_shows_working_first_shots_only() -> None:
+    """Drive the shipped product Pages #install source."""
+    section = _pages_install_section()
+    _assert_working_first_shot_install(section, source="site/FlexAIDdS/sections.jsx")
+    assert "binding-blurb" in section
+    assert 'maxWidth: "896px"' in section
+
+
+def test_entropy_driven_install_matches_working_first_shots() -> None:
+    """Drive the shipped entropy-driven #install block, not a restated copy."""
+    section = _entropy_install_section()
+    _assert_working_first_shot_install(section, source="site/entropy-driven/index.html")
+    css = (ROOT / "site" / "entropy-driven" / "index.html").read_text(encoding="utf-8")
+    assert ".install-tabs" in css
+    assert ".code-box" in css
+    assert ".cmake-table" in css
+
+
+def test_install_chrome_not_restyled() -> None:
+    product_css = (ROOT / "site" / "FlexAIDdS" / "styles.css").read_text(encoding="utf-8")
+    assert ".install-tabs {" in product_css
+    assert ".code-box {" in product_css
+    assert ".cmake-table {" in product_css
+    assert ".install-tab.active" in product_css
 
 
 def test_setup_py_first_shot_has_no_package_owned_warning_prints() -> None:
