@@ -286,6 +286,76 @@ def test_extra_install_fronts_exist_and_parse() -> None:
     assert "ghcr.io/lebonhommepharma/flexaidds" in howto
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     assert "SHA256SUMS.txt" in release
+    ver_py = (ROOT / "python" / "flexaidds" / "__version__.py").read_text(encoding="utf-8")
+    ver = re.search(r'__version__\s*=\s*"([^"]+)"', ver_py)
+    assert ver, "python/flexaidds/__version__.py missing __version__"
+    meta = (ROOT / "conda" / "meta.yaml").read_text(encoding="utf-8")
+    assert "load_file_regex" in meta
+    assert "../python/flexaidds/__version__.py" in meta
+    assert f'version = "{ver.group(1)}"' not in meta
+    eb = (ROOT / "packaging" / "easybuild" / "flexaidds-2.0.3.eb").read_text(encoding="utf-8")
+    assert f"version = '{ver.group(1)}'" in eb
+    formula_sha = re.search(r'^  sha256 "([0-9a-f]{64})"', formula, flags=re.M)
+    spack = (ROOT / "packaging" / "spack" / "package.py").read_text(encoding="utf-8")
+    assert formula_sha and formula_sha.group(1) in spack
+    assert formula_sha.group(1) in eb
+
+
+def _pages_install_section() -> str:
+    text = (ROOT / "site" / "FlexAIDdS" / "sections.jsx").read_text(encoding="utf-8")
+    match = re.search(
+        r"function InstallSection\(\) \{.*?\n\}\n\n// ─── BENCHMARKS",
+        text,
+        flags=re.S,
+    )
+    assert match, "InstallSection missing from site/FlexAIDdS/sections.jsx"
+    return match.group(0)
+
+
+def test_pages_install_shows_first_shot_and_extra_fronts() -> None:
+    """Drive the shipped Pages #install source, not a restated command list."""
+    section = _pages_install_section()
+    required = (
+        "scripts/install.sh",
+        'cmd">wget</span> -qO-',
+        "brew install</span> --HEAD lebonhommepharma/flexaidds/flexaidds",
+        "subdirectory=python",
+        "uv tool install",
+        "pipx install",
+        "scripts/update.sh",
+        "python</span> -m flexaidds --self-update",
+        "Two separate things",
+        "flexaidds</span> Python",
+        "--from-release latest",
+        "SHA256SUMS.txt",
+        "ghcr.io/lebonhommepharma/flexaidds",
+        "Dockerfile.locked",
+        "environment.yml",
+        "setup-flexaidds",
+        ".devcontainer/",
+        "packaging/spack/package.py",
+        "packaging/easybuild/flexaidds-2.0.3.eb",
+        "packaging/modulefiles",
+        "not on PyPI",
+        "no bottle do",
+        "not a conda-forge feedstock",
+        "install-tabs",
+        "code-box",
+        "cmake-table",
+        "binding-blurb",
+    )
+    missing = [token for token in required if token not in section]
+    assert missing == [], f"Pages #install missing tokens: {missing}"
+    assert 'maxWidth: "896px"' in section
+    assert re.search(r"pip install flexaidds(?![^\n]*subdirectory=python)", section) is None
+    assert "pip install flexaidds" not in section
+    assert re.search(
+        r"brew install(?![\s\S]{0,20}--HEAD)[\s\S]{0,80}lebonhommepharma/flexaidds/flexaidds",
+        section,
+    ) is None
+    assert "conda install -c conda-forge flexaidds" not in section
+    for tab in ("curl", "Homebrew", "Python", "Docker", "conda", "CI", "HPC", "CMake"):
+        assert tab in section
 
 
 def test_setup_py_first_shot_has_no_package_owned_warning_prints() -> None:
