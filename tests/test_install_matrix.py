@@ -15,9 +15,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HOWTO = ROOT / "docs" / "INSTALL.md"
+README = ROOT / "README.md"
 FORMULA = ROOT / "Formula" / "flexaidds.rb"
 PYPROJECT = ROOT / "python" / "pyproject.toml"
 SETUP_PY = ROOT / "python" / "setup.py"
+INSTALL_SH = ROOT / "scripts" / "install.sh"
+CURL_URL = (
+    "https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/"
+    "main/scripts/install.sh"
+)
 
 
 def _section(text: str, heading: str) -> str:
@@ -125,6 +131,40 @@ def test_formula_shell_output_matches_homebrew_api() -> None:
         f"status argument: {bad.group(0)!r}"
     )
     assert 'shell_output("#{bin/"FlexAIDdS"} --help")' in formula
+
+
+def test_curl_installer_is_documented_and_dry_run_safe() -> None:
+    howto = HOWTO.read_text(encoding="utf-8")
+    readme = README.read_text(encoding="utf-8")
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    assert INSTALL_SH.is_file()
+    assert CURL_URL in howto
+    assert CURL_URL in readme
+    assert "brew install --HEAD" in script
+    assert "subdirectory=python" in script
+    assert "FLEXAIDDS_SKIP_CORE=1" in script
+    # Must not present unpublished PyPI or refused stable brew as first-shot.
+    assert not re.search(r"^\s*pip install flexaidds\s*$", script, flags=re.M)
+    assert "brew install --HEAD" in script
+    assert not re.search(
+        r"brew install (?!--HEAD)lebonhommepharma/flexaidds/flexaidds",
+        script,
+    )
+
+    proc = subprocess.run(
+        ["bash", str(INSTALL_SH), "--dry-run"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    out = proc.stdout
+    assert "brew install --HEAD" in out
+    assert "subdirectory=python" in out
+    assert "FLEXAIDDS_SKIP_CORE=1" in out
+    assert "pip install flexaidds\n" not in out
+    assert "done." in out
 
 
 def test_setup_py_first_shot_has_no_package_owned_warning_prints() -> None:
