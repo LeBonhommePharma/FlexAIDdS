@@ -8060,9 +8060,23 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             // Frequency-gated cluster selection (v24 Fix B). The plain min-CF
             // rule picks the deeper-but-wrong "off-native CF minimum"; the
             // near-native cluster is almost always the populated runner-up.
-            // select_pose_freq_gated() drops degenerate (CF≈0) poses, prefers
-            // clusters with Frequency>1, and returns the min-CF pose within that
-            // pool (see helper definition near compute_pose_ligand_rmsd).
+            //
+            // SCOPE: this elects over `all_prefixes` — EVERY restart, pooled.
+            // It is select_pose_freq_gated_POOLED(), not the single-prefix
+            // select_pose_freq_gated(); the latter has no callers and is dead
+            // code kept only for reference. The distinction is not cosmetic:
+            // this comment previously named the single-prefix helper, and that
+            // is the most likely origin of the standing (and measurably false)
+            // belief that "the engine elects from restart 0 only". Measured on
+            // the three stored 84-target Astex arms: the `[POOL]` receipt reads
+            // `pooling 3/3` on 254/254 target receipts, and the `[ELECTED-POSE]`
+            // receipt shows a restart OTHER than r0 winning on 165/252 cells
+            // (65.5%). Cross-restart pooling is the DEFAULT and has been.
+            //
+            // The elector drops degenerate (CF≈0) poses, prefers clusters with
+            // Frequency>1, admits `_INI.pdb` seeds under seed-anchored elitism,
+            // and returns the min-CF pose within the chosen pool (see helper
+            // definition near compute_pose_ligand_rmsd).
             // elected_pose_for_pb lives outside this block for PoseBust post-pass.
             std::string best_pose_pdb = select_pose_freq_gated_pooled(
                 all_prefixes, sel_elitism_ovr, cf_window_selector_,
