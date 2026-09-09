@@ -11,6 +11,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -251,3 +252,96 @@ def select_asset_for_platform(assets: list[AssetInfo]) -> Optional[AssetInfo]:
             return asset
 
     return None
+
+
+_FORMULA = "lebonhommepharma/flexaidds/flexaidds"
+_GHCR = "ghcr.io/lebonhommepharma/flexaidds"
+
+
+def _run(cmd: list[str], *, dry_run: bool, env: Optional[dict] = None) -> int:
+    print("+", " ".join(cmd))
+    if dry_run:
+        return 0
+    merged = os.environ.copy()
+    if env:
+        merged.update(env)
+    return subprocess.run(cmd, env=merged).returncode
+
+
+def update_all(*, dry_run: bool = False) -> int:
+    """Refresh every detected install front (engine, Python, docker).
+
+    One command for curl/Homebrew/pip/uv/pipx users. Does not require a new
+    GitHub Release tag — HEAD / git+subdirectory tracks ``main``.
+    """
+    rc = 0
+
+    brew = shutil.which("brew")
+    if brew:
+        listed = subprocess.run(
+            [brew, "list", "--formula", _FORMULA],
+            capture_output=True,
+        )
+        if listed.returncode != 0:
+            listed = subprocess.run(
+                [brew, "list", "--formula", "flexaidds"],
+                capture_output=True,
+            )
+        if listed.returncode == 0:
+            if _run([brew, "upgrade", "--fetch-HEAD", _FORMULA], dry_run=dry_run) != 0:
+                _run([brew, "uninstall", "--force", _FORMULA], dry_run=dry_run)
+                if _run([brew, "install", "--HEAD", _FORMULA], dry_run=dry_run) != 0:
+                    rc = 1
+        else:
+            print("engine: Homebrew flexaidds not installed — skip")
+    else:
+        print("engine: brew not found — skip")
+
+    pip_cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--force-reinstall",
+        _GIT_INSTALL_SPEC,
+    ]
+    if _run(pip_cmd, dry_run=dry_run, env={"FLEXAIDDS_SKIP_CORE": "1"}) != 0:
+        rc = 1
+
+    uv = shutil.which("uv")
+    if uv:
+        tools = subprocess.run([uv, "tool", "list"], capture_output=True, text=True)
+        if tools.returncode == 0 and "flexaidds" in tools.stdout:
+            if _run(
+                [uv, "tool", "upgrade", "flexaidds"],
+                dry_run=dry_run,
+                env={"FLEXAIDDS_SKIP_CORE": "1"},
+            ) != 0:
+                rc = 1
+
+    pipx = shutil.which("pipx")
+    if pipx:
+        tools = subprocess.run([pipx, "list"], capture_output=True, text=True)
+        if tools.returncode == 0 and "flexaidds" in tools.stdout.lower():
+            if _run(
+                [pipx, "upgrade", "flexaidds"],
+                dry_run=dry_run,
+                env={"FLEXAIDDS_SKIP_CORE": "1"},
+            ) != 0:
+                rc = 1
+
+    docker = shutil.which("docker")
+    if docker:
+        info = subprocess.run([docker, "info"], capture_output=True)
+        inspect = subprocess.run(
+            [docker, "image", "inspect", f"{_GHCR}:latest"],
+            capture_output=True,
+        )
+        if info.returncode == 0 and inspect.returncode == 0:
+            if _run([docker, "pull", f"{_GHCR}:latest"], dry_run=dry_run) != 0:
+                rc = 1
+        else:
+            print("docker: no local GHCR image or daemon down — skip")
+
+    return rc

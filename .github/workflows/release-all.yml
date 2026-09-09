@@ -1,0 +1,41 @@
+name: Release all channels
+
+# One button to refresh binaries, GHCR, and Homebrew bottles together.
+# PyPI stays opt-in (unpublished today; trusted publishing is a separate event).
+#
+#   gh workflow run release-all.yml
+# On a v* tag, release.yml / ghcr.yml / homebrew-bottle.yml also fire on their
+# own; this workflow is the explicit simultaneous kick for workflow_dispatch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_pypi:
+        description: Also dispatch pypi-release.yml (default false; package unpublished)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+  id-token: write
+
+jobs:
+  kick:
+    name: Dispatch channel workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sibling workflows on this ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF_NAME}"
+          gh workflow run release.yml --ref "$ref"
+          gh workflow run ghcr.yml --ref "$ref"
+          gh workflow run homebrew-bottle.yml --ref "$ref"
+          if [ "${{ inputs.include_pypi }}" = "true" ]; then
+            gh workflow run pypi-release.yml --ref "$ref" -f target=pypi
+          fi
+          echo "kicked release.yml ghcr.yml homebrew-bottle.yml on $ref"

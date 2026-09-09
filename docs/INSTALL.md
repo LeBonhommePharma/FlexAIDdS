@@ -23,17 +23,73 @@ docks" reports are this.
 
 ---
 
+## One-liner (`curl | bash`)
+
+Review the script, then run it. Default: Python package everywhere; native
+engine on macOS when Homebrew is present (`brew install --HEAD`).
+
+```bash
+# review
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | less
+
+# install (macOS: Homebrew engine + Python; elsewhere: Python)
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash
+
+# Python only / engine only / print commands
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash -s -- --python-only
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash -s -- --engine-only
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash -s -- --dry-run
+
+# wget (same script)
+wget -qO- https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash
+```
+
+The script is `scripts/install.sh` in this repo. It does **not** call
+unpublished `pip install flexaidds` and does **not** call stable Homebrew
+without `--HEAD`.
+
+### Update everything at once
+
+One command refreshes every front already on the machine (Homebrew `--HEAD`
+engine, `~/.flexaidds/venv` pip, `uv tool`, `pipx`, local GHCR image):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/update.sh | bash
+# or
+wget -qO- https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/update.sh | bash
+# or, from a clone / installed CLI:
+bash scripts/update.sh
+python -m flexaidds --self-update
+```
+
+`--dry-run` prints the commands. This tracks `main` via git/HEAD and does
+**not** wait for a new GitHub Release tag. Maintainers publish all channels
+together with `gh workflow run release-all.yml`.
+
+---
+
 ## Support matrix
 
 | Path | macOS arm64 | macOS x86_64 | Linux x86_64 | Windows | Ships engine | Ships Python |
 |---|---|---|---|---|---|---|
+| `curl`/`wget` `scripts/install.sh` | ✅ first-shot | ✅ first-shot | ✅ Python | ✅ Python | macOS brew | ✅ |
 | CMake from source | ✅ | ✅ | ✅ | ⚠️ partial | ✅ | optional |
-| Homebrew (`Formula/flexaidds.rb`) | ✅ | ✅ | — | — | ✅ | ❌ |
-| Docker (`containers/Dockerfile.locked`) | ✅ via Docker | ✅ | ✅ | ✅ via Docker | ✅ | ❌ |
+| Homebrew (`brew install --HEAD`) | ✅ first-shot | ✅ first-shot | — | — | ✅ | ❌ |
+| Homebrew stable `v2.0.3` tarball | ❌ provenance refuse | ❌ provenance refuse | — | — | — | — |
+| Homebrew bottle | ⚠️ next tag | ⚠️ next tag | — | — | ✅ | ❌ |
+| Docker **build** (`Dockerfile.locked`) | ✅ | ✅ | ✅ | ✅ via Docker | ✅ | ❌ |
+| `docker pull ghcr.io/lebonhommepharma/flexaidds` | ⚠️ workflow ready | ⚠️ | ⚠️ | ⚠️ | ✅ | ❌ |
 | Apptainer (`containers/*.def`) | — | — | ✅ | — | ✅ | ❌ |
-| `pip` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
-| conda (`conda/meta.yaml`) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
-| Release binaries (`release.yml`) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `pip install flexaidds` (PyPI) | ❌ unpublished | ❌ unpublished | ❌ unpublished | ❌ unpublished | ❌ | — |
+| pip git+subdirectory / local wheel | ✅ first-shot | ✅ first-shot | ✅ | ✅ | ❌ | ✅ |
+| `uv tool install` (git) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| `pipx install` (git) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| conda (`environment.yml` / `conda/meta.yaml`) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| conda-forge channel | ❌ no feedstock | ❌ | ❌ | ❌ | ❌ | — |
+| GitHub Release + `SHA256SUMS.txt` | ⚠️ next tag | ⚠️ next tag | ⚠️ next tag | ⚠️ next tag | ✅ | ❌ |
+| GitHub Action `setup-flexaidds` | ✅ CI | ✅ | ✅ | ✅ | ❌ | ✅ |
+| Dev Container / Codespaces | ✅ Python | ✅ | ✅ | — | optional | ✅ |
+| Spack / EasyBuild / Lmod | ⚠️ overlay | ⚠️ | ⚠️ overlay | — | ✅ | optional |
 
 ⚠️ **Windows**: MSVC has no `/std:c++26`, so `CMakeLists.txt` caps Windows at
 C++20 and only the `_core` Python extension builds correctly. The full engine
@@ -72,16 +128,23 @@ Dependencies: CMake ≥ 3.28, Ninja or Make, Eigen 3.4+, and OpenMP
 
 ## Engine: Homebrew (lowest friction on macOS)
 
+First-shot command — this is the one that installs today. Stable `v2.0.3`
+tarball **cannot** emit `flexaidds-build-provenance.json`, and the formula
+refuses it rather than putting an unidentifiable binary on PATH. Use `--HEAD`
+until the next tag.
+
 ```bash
 brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
 brew trust --formula lebonhommepharma/flexaidds/flexaidds
-brew install lebonhommepharma/flexaidds/flexaidds
+brew install --HEAD lebonhommepharma/flexaidds/flexaidds
+FlexAIDdS --help
 ```
 
-CPU + OpenMP by default. Metal is opt-in and needs a real Metal toolchain:
+CPU + OpenMP by default. Metal is opt-in and needs a real Metal toolchain
+(not the first-shot path):
 
 ```bash
-brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
+brew install --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
 ```
 
 ## Engine: Docker (most reproducible)
@@ -99,19 +162,113 @@ docker run --rm -v "$PWD:/work" -w /work flexaidds:locked-x86_64 --help
 The build **fails** if the resulting image has no recoverable commit. Override
 with `--build-arg ALLOW_UNKNOWN_PROVENANCE=1` only for a throwaway image.
 
-## Python: pip
+Published pull (after `.github/workflows/ghcr.yml` has run on a tag):
 
 ```bash
-pip install flexaidds          # once published
-# or, from the repo:
-pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+docker pull ghcr.io/lebonhommepharma/flexaidds:latest
+docker run --rm ghcr.io/lebonhommepharma/flexaidds:latest --help
+```
+
+Until that workflow has published an image, `docker pull` 404s — use `docker build`.
+
+## Python: pip
+
+`flexaidds` is **not on public PyPI**. `pip install flexaidds` fails today
+(`No matching distribution found`). First-shot is git+subdirectory or a
+local wheel. `FLEXAIDDS_SKIP_CORE=1` is the no-compiler path (pure Python).
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install -U pip
+FLEXAIDDS_SKIP_CORE=1 pip install \
+  "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+python -c "import flexaidds as fd; print(fd.__version__)"
 flexaidds --help
 ```
 
-`pip install` is designed never to fail. The accelerated `flexaidds._core`
-extension is optional: when pybind11, Eigen, and a C++26 compiler are all
-present it is compiled; otherwise the install succeeds with pure-Python
-fallbacks and `flexaidds.HAS_CORE_BINDINGS` is `False`. Check which you got:
+From a clone, the same first-shot as a built wheel (no editable checkout):
+
+```bash
+cd python
+FLEXAIDDS_SKIP_CORE=1 python -m build
+FLEXAIDDS_SKIP_CORE=1 pip install dist/flexaidds-*.whl
+flexaidds --help
+```
+
+After the first PyPI release, `pip install flexaidds` will work. Until then
+do not treat that line as a working first-shot.
+
+### uv / pipx (CLI on PATH, no venv lecture)
+
+```bash
+# uv (https://docs.astral.sh/uv/)
+FLEXAIDDS_SKIP_CORE=1 uv tool install \
+  "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+flexaidds --help
+
+# pipx
+FLEXAIDDS_SKIP_CORE=1 pipx install \
+  "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+flexaidds --help
+
+# or via the curl installer
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh \
+  | bash -s -- --python-only --uv
+```
+
+From a clone: `FLEXAIDDS_SKIP_CORE=1 uv tool install ./python` /
+`FLEXAIDDS_SKIP_CORE=1 pipx install ./python`.
+
+### Checksummed GitHub Release binary
+
+`.github/workflows/release.yml` now attaches `flexaidds-*.tar.gz` / `.zip`
+and `SHA256SUMS.txt` to the GitHub Release. **Tags through v2.2.0 have zero
+assets** — this path is first-shot after the next `v*` tag.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh \
+  | bash -s -- --from-release latest
+```
+
+Fail-closed: missing `SHA256SUMS.txt` or a hash mismatch aborts.
+
+### GitHub Action
+
+```yaml
+- uses: actions/checkout@v6
+- uses: actions/setup-python@v7
+  with: { python-version: "3.11" }
+- uses: LeBonhommePharma/FlexAIDdS/.github/actions/setup-flexaidds@main
+  with:
+    from-checkout: "false"
+    skip-core: "true"
+- run: python -m flexaidds --help
+```
+
+In this repo's CI, `from-checkout: true` installs `./python` from the PR.
+
+### Dev Container / Codespaces
+
+Open the repo in VS Code / Codespaces. `.devcontainer/` installs the Python
+package with `FLEXAIDDS_SKIP_CORE=1`. Native engine compile remains optional.
+
+### Spack / EasyBuild / Lmod
+
+Recipes live under `packaging/` and are **overlays**, not upstream:
+
+- `packaging/spack/package.py`
+- `packaging/easybuild/flexaidds-2.0.3.eb`
+- `packaging/modulefiles/flexaidds.lua` (`FLEXAIDDS_PREFIX`, `FLEXAIDDS_VENV`)
+
+### conda-forge
+
+Not a feedstock. Use `conda env create -f environment.yml`. See
+`conda/conda-forge.md`.
+
+The accelerated `flexaidds._core` extension is optional: when pybind11, Eigen,
+and a C++26 compiler are all present it is compiled; otherwise the install
+succeeds with pure-Python fallbacks and `flexaidds.HAS_CORE_BINDINGS` is
+`False`. Check which you got:
 
 ```bash
 python -c "import flexaidds as fd; print(fd.__version__, fd.HAS_CORE_BINDINGS)"
@@ -219,9 +376,20 @@ Where the packaging format allows a pin, it is pinned:
 
 ## Troubleshooting
 
+**`pip install flexaidds` → No matching distribution found.** Public PyPI has
+no `flexaidds` package yet. Use the git+subdirectory first-shot above (or a
+local wheel). `FLEXAIDDS_SKIP_CORE=1` is the no-compiler path.
+
 **`pip install` succeeded but `HAS_CORE_BINDINGS` is `False`.** Expected unless
 you have pybind11 + Eigen + a C++26 compiler. Not an error; the pure-Python
 fallbacks are correct, just slower.
+
+**`brew install` (no `--HEAD`) dies immediately about provenance.** Expected
+until the next tag. The first-shot command is `brew install --HEAD …`.
+
+**`which FlexAIDdS` is a repo `build/` binary, not Homebrew.** Homebrew warns
+that `FlexAIDdS` is shadowed if a git checkout's `build/` is on `PATH`. Run
+`/opt/homebrew/bin/FlexAIDdS --help` or put Homebrew's `bin` first.
 
 **CMake: "requires GCC ≥ 14".** The floor is real. `CXX=g++-14 cmake -S . -B build …`.
 

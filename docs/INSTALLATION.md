@@ -147,16 +147,13 @@ brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDd
 brew trust --formula lebonhommepharma/flexaidds/flexaidds
 # Fully-qualified install also trusts just that package for the install path.
 
-# Stable tagged release (v2.0.3+). Qualified name always works.
-brew install lebonhommepharma/flexaidds/flexaidds
-# short form after tap + trust: brew install flexaidds
-
-# Metal GPU (macOS + Xcode Metal toolchain). Stable v2.0.3+ links bridges via
-# flexaid_core (PR #260) on main / the release tag — never a feature branch.
-brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
-
-# Or latest development tip (formula head tracks main only)
+# First-shot (required today): stable v2.0.3 tarball cannot emit provenance
+# JSON, so the formula refuses it. --HEAD tracks main.
 brew install --HEAD lebonhommepharma/flexaidds/flexaidds
+FlexAIDdS --help
+
+# Metal GPU (macOS + Xcode Metal toolchain). Not the first-shot path.
+brew install --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
 
 # Update later
 brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
@@ -256,15 +253,12 @@ brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDd
 # Homebrew 6+ / HOMEBREW_REQUIRE_TAP_TRUST: trust this formula only
 brew trust --formula lebonhommepharma/flexaidds/flexaidds
 
-# Stable release (qualified name always works)
-brew install lebonhommepharma/flexaidds/flexaidds
-# short form after tap + trust: brew install flexaidds
-
-# Metal GPU (stable v2.0.3+ — flexaid_core Metal link fix, PR #260; no feature branch)
-brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
-
-# Development / latest (formula head tracks main only — never ephemeral branches)
+# First-shot (stable v2.0.3 tarball is refused — no provenance JSON)
 brew install --HEAD lebonhommepharma/flexaidds/flexaidds
+FlexAIDdS --help
+
+# Metal GPU (not first-shot; needs Xcode Metal toolchain)
+brew install --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
 
 # After install, add the Python package (GitHub until PyPI publish):
 pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
@@ -331,7 +325,7 @@ curl -sL "https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/${TAG}
   python -c "import flexaidds as fd; print(fd.__version__, fd.HAS_CORE_BINDINGS)"
   ```
 
-- **Homebrew**: Update `Formula/flexaidds.rb` (`url` + `sha256` for stable; `head` must track default branch `main` only — never ephemeral feature branches) when cutting releases. Users install via `brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS`, then `brew trust --formula lebonhommepharma/flexaidds/flexaidds` when `HOMEBREW_REQUIRE_TAP_TRUST` is set, then `brew install flexaidds` (Homebrew 6+ requires a real tap with `origin`; raw formula URLs are rejected). For Metal: `brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds` (stable v2.0.3+ on main/tag).
+- **Homebrew**: Update `Formula/flexaidds.rb` (`url` + `sha256` for stable; `head` must track default branch `main` only — never ephemeral feature branches) when cutting releases. Until the next tag, first-shot is `brew install --HEAD lebonhommepharma/flexaidds/flexaidds` after tap + `brew trust --formula lebonhommepharma/flexaidds/flexaidds`. Stable `v2.0.3` is refused (no provenance JSON). For Metal: `brew install --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds`.
 - **Native binaries**: Existing release workflow attaches platform archives on tag.
 
 - **In-package updater**: `python -m flexaidds --check-update` / `--self-update` uses the GitHub Releases API and `pip install --upgrade flexaidds` (falls back to the GitHub VCS URL when the package is not yet on the default index).

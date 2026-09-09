@@ -463,11 +463,15 @@
     .install-tabs {
       display: flex; gap: 0; border-bottom: 1px solid var(--teal-alpha-15);
       margin-bottom: 1.5rem;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
+    .install-tabs::-webkit-scrollbar { display: none; }
     .install-tab {
       font-family: 'JetBrains Mono', monospace; font-size: 12px;
       padding: 8px 16px; background: none; border: none; color: var(--muted);
       cursor: pointer; transition: all 0.2s; border-bottom: 2px solid transparent;
+      min-height: 44px; white-space: nowrap;
     }
     .install-tab:hover { color: var(--text); }
     .install-tab.active { color: var(--teal); border-bottom-color: var(--teal); }
@@ -1065,13 +1069,97 @@
       <div class="container" style="max-width:896px;">
         <p class="section-label">// get started</p>
         <h2 style="font-size:1.75rem; font-weight:700; margin-bottom:1.5rem;">Installation</h2>
+        <p style="font-size:0.85rem; color:var(--muted); margin-bottom:1.5rem;">
+          Two separate things: the native <strong>FlexAIDdS</strong> engine
+          (Homebrew / CMake / Docker) and the <strong>flexaidds</strong> Python
+          package (analysis CLI). Installing one does not give you the other.
+        </p>
 
         <div class="install-tabs">
-          <button class="install-tab active" data-tab="cli">CLI Build</button>
+          <button class="install-tab active" data-tab="curl">curl</button>
+          <button class="install-tab" data-tab="brew">Homebrew</button>
           <button class="install-tab" data-tab="python">Python</button>
+          <button class="install-tab" data-tab="docker">Docker</button>
+          <button class="install-tab" data-tab="conda">conda</button>
+          <button class="install-tab" data-tab="ci">CI</button>
+          <button class="install-tab" data-tab="hpc">HPC</button>
+          <button class="install-tab" data-tab="cmake">CMake</button>
         </div>
 
-        <div class="install-panel active" id="panel-cli">
+        <div class="install-panel active" id="panel-curl">
+          <div class="code-box">
+            <div class="comment"># first shot — review, then run</div>
+            <div><span class="plain">$</span> <span class="cmd">curl</span> -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh <span class="plain">| bash</span></div>
+            <div><span class="plain">$</span> <span class="cmd">wget</span> -qO- https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh <span class="plain">| bash</span></div>
+            <div style="margin-top:8px;" class="comment"># update every front already on the machine</div>
+            <div><span class="plain">$</span> <span class="cmd">curl</span> -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/update.sh <span class="plain">| bash</span></div>
+            <div><span class="plain">$</span> <span class="cmd">python</span> -m flexaidds --self-update</div>
+          </div>
+        </div>
+
+        <div class="install-panel" id="panel-brew">
+          <div class="code-box">
+            <div class="comment"># native engine only — macOS. first-shot is --HEAD</div>
+            <div><span class="plain">$</span> <span class="cmd">brew tap</span> lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS</div>
+            <div><span class="plain">$</span> <span class="cmd">brew trust</span> --formula lebonhommepharma/flexaidds/flexaidds</div>
+            <div><span class="plain">$</span> <span class="cmd">brew install</span> --HEAD lebonhommepharma/flexaidds/flexaidds</div>
+            <div><span class="plain">$</span> <span class="cmd">FlexAIDdS</span> --help</div>
+          </div>
+        </div>
+
+        <div class="install-panel" id="panel-python">
+          <div class="code-box">
+            <div class="comment"># not on PyPI — git+subdirectory (or uv / pipx)</div>
+            <div><span class="plain">$</span> <span class="cmd">FLEXAIDDS_SKIP_CORE=1 pip install</span> <span class="str">"git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"</span></div>
+            <div><span class="plain">$</span> <span class="cmd">FLEXAIDDS_SKIP_CORE=1 uv tool install</span> <span class="str">"git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"</span></div>
+            <div><span class="plain">$</span> <span class="cmd">FLEXAIDDS_SKIP_CORE=1 pipx install</span> <span class="str">"git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"</span></div>
+            <div style="margin-top:8px;"><span class="kw">import</span> flexaidds <span class="kw">as</span> fd</div>
+            <div>results = fd.<span class="cmd">dock</span>(receptor=<span class="str">'receptor.pdb'</span>, ligand=<span class="str">'ligand.mol2'</span>, compute_entropy=<span class="kw">True</span>)</div>
+          </div>
+        </div>
+
+        <div class="install-panel" id="panel-docker">
+          <div class="code-box">
+            <div class="comment"># native engine — build works today</div>
+            <div><span class="plain">$</span> <span class="cmd">docker build</span> -f containers/Dockerfile.locked --build-arg FLEXAIDS_GIT_COMMIT="$(git rev-parse --short HEAD)" -t flexaidds:locked .</div>
+            <div><span class="plain">$</span> <span class="cmd">docker run</span> --rm flexaidds:locked --help</div>
+          </div>
+        </div>
+
+        <div class="install-panel" id="panel-conda">
+          <div class="code-box">
+            <div class="comment"># Python package — not a conda-forge feedstock</div>
+            <div><span class="plain">$</span> <span class="cmd">git clone</span> https://github.com/LeBonhommePharma/FlexAIDdS.git <span class="plain">&amp;&amp; cd FlexAIDdS</span></div>
+            <div><span class="plain">$</span> <span class="cmd">conda env create</span> -f environment.yml <span class="plain">&amp;&amp; conda activate flexaidds</span></div>
+            <div><span class="plain">$</span> <span class="cmd">python</span> -c <span class="str">"import flexaidds as fd; print(fd.__version__)"</span></div>
+          </div>
+        </div>
+
+        <div class="install-panel" id="panel-ci">
+          <div class="code-box">
+            <div class="comment"># GitHub Action — Python package, not the engine</div>
+            <div>- uses: LeBonhommePharma/FlexAIDdS/.github/actions/setup-flexaidds@main</div>
+            <div>  with:</div>
+            <div>    from-checkout: <span class="str">"false"</span></div>
+            <div>    skip-core: <span class="str">"true"</span></div>
+            <div style="margin-top:8px;" class="comment"># Dev Container / Codespaces — .devcontainer/ with FLEXAIDDS_SKIP_CORE=1</div>
+            <div><span class="plain">$</span> <span class="cmd">code</span> --reopen-in-container</div>
+          </div>
+        </div>
+
+        <div class="install-panel" id="panel-hpc">
+          <div class="code-box">
+            <div class="comment"># overlays, not upstream Spack / EasyBuild</div>
+            <div class="comment"># copy packaging/spack/package.py into a Spack repo overlay</div>
+            <div class="comment"># copy packaging/easybuild/flexaidds-2.0.3.eb into an EasyBuild robot path</div>
+            <div><span class="plain">$</span> <span class="cmd">eb</span> packaging/easybuild/flexaidds-2.0.3.eb</div>
+            <div><span class="plain">$</span> <span class="cmd">module use</span> $PWD/packaging/modulefiles</div>
+            <div><span class="plain">$</span> <span class="cmd">export</span> FLEXAIDDS_PREFIX=/path/to/install</div>
+            <div><span class="plain">$</span> <span class="cmd">module load</span> flexaidds</div>
+          </div>
+        </div>
+
+        <div class="install-panel" id="panel-cmake">
           <div class="code-box">
             <div><span class="plain">$</span> <span class="cmd">git clone</span> https://github.com/LeBonhommePharma/FlexAIDdS.git <span class="plain">&amp;&amp; cd FlexAIDdS</span></div>
             <div><span class="plain">$</span> <span class="cmd">mkdir</span> build <span class="plain">&amp;&amp; cd build</span></div>
@@ -1092,14 +1180,6 @@
             </tbody>
           </table>
         </div>
-
-        <div class="install-panel" id="panel-python">
-          <div class="code-box">
-            <div><span class="plain">$</span> <span class="cmd">cd</span> python <span class="plain">&amp;&amp; pip install -e .</span></div>
-            <div style="margin-top:8px;"><span class="kw">import</span> flexaidds <span class="kw">as</span> fd</div>
-            <div>results = fd.<span class="cmd">dock</span>(receptor=<span class="str">'receptor.pdb'</span>, ligand=<span class="str">'ligand.mol2'</span>, compute_entropy=<span class="kw">True</span>)</div>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -1113,7 +1193,7 @@
           Benchmark <span class="text-gold">status</span>
         </h2>
         <p style="font-size:0.85rem; color:var(--muted); margin-bottom:1.5rem; max-width:640px;">
-          This page publishes no validated FlexAID∆S success rate. Astex-85, ITC-187, CASF, and CNS figures are unverified / pending receipt until a METHODOLOGY.md §0 receipted blind campaign exists. JCIM 2015 Table 2 (top-1 45.2% / top-10 66.7%) is a literature comparator, not ours.
+          This page publishes no validated FlexAID∆S success rate. Benchmarks are still rolling — do not cite a former rate at or above 90%. Astex-85, ITC-187, CASF, and CNS figures are unverified / pending receipt until a METHODOLOGY.md §0 receipted blind campaign exists. JCIM 2015 Table 2 (top-1 45.2% / top-10 66.7%) is a literature comparator, not ours.
         </p>
       </div>
     </section>

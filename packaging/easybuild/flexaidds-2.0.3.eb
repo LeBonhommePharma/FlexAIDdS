@@ -1,0 +1,38 @@
+# EasyBuild easyconfig — not in upstream EasyBuild yet.
+# Copy into an EasyBuild robot path. Apache-2.0.
+easyblock = 'CMakeMake'
+
+name = 'FlexAIDdS'
+version = '2.0.3'
+
+homepage = 'https://github.com/LeBonhommePharma/FlexAIDdS'
+description = "Entropy-aware molecular docking engine (native FlexAIDdS)."
+
+toolchain = {'name': 'GCCcore', 'version': '13.3.0'}
+
+source_urls = ['https://github.com/LeBonhommePharma/FlexAIDdS/archive/refs/tags/']
+sources = ['v%(version)s.tar.gz']
+checksums = ['6c8442fc672a127db354ff3b6e08a2252e8c921372d902d062ecbf4296aef186']
+
+builddependencies = [
+    ('CMake', '3.29.3'),
+    ('Ninja', '1.12.1'),
+]
+dependencies = [
+    ('Eigen', '3.4.0'),
+]
+
+configopts = ' '.join([
+    '-DBUILD_TESTING=OFF',
+    '-DBUILD_PYTHON_BINDINGS=OFF',
+    '-DFLEXAIDS_USE_CUDA=OFF',
+    '-DFLEXAIDS_USE_METAL=OFF',
+    '-DFLEXAIDS_GIT_COMMIT_OVERRIDE=%(version)s',
+])
+
+sanity_check_paths = {
+    'files': ['bin/FlexAIDdS'],
+    'dirs': [],
+}
+
+moduleclass = 'bio'

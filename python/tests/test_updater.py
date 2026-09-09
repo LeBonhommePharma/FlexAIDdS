@@ -19,6 +19,7 @@ from flexaidds.updater import (
     check_for_updates,
     get_current_version,
     select_asset_for_platform,
+    update_all,
 )
 
 
@@ -175,3 +176,32 @@ class TestSelectAssetForPlatform:
         ):
             result = select_asset_for_platform(assets)
         assert result is None
+
+
+class TestUpdateAll:
+    def test_dry_run_skips_subprocess_side_effects(self):
+        with (
+            mock.patch("flexaidds.updater.shutil.which", return_value=None),
+            mock.patch("flexaidds.updater.subprocess.run") as run,
+        ):
+            rc = update_all(dry_run=True)
+        assert rc == 0
+        # dry_run still runs brew/uv/pipx *list* probes? which() is None so
+        # only the pip command is printed, not executed.
+        run.assert_not_called()
+
+    def test_dry_run_with_brew_prints_upgrade_and_does_not_exec(self):
+        def which(name):
+            return "/opt/homebrew/bin/brew" if name == "brew" else None
+
+        list_ok = mock.MagicMock(returncode=0)
+        with (
+            mock.patch("flexaidds.updater.shutil.which", side_effect=which),
+            mock.patch("flexaidds.updater.subprocess.run", return_value=list_ok) as run,
+        ):
+            rc = update_all(dry_run=True)
+        assert rc == 0
+        # list probe runs; install/upgrade does not (dry_run).
+        called = [" ".join(c.args[0]) for c in run.call_args_list]
+        assert any("list" in c for c in called)
+        assert not any("upgrade" in c or "install" in c for c in called)

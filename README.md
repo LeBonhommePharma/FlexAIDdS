@@ -112,6 +112,26 @@ flag therefore does not currently enforce a physics filter on the elected pose.
 > The native engine and the `flexaidds` Python package are **separate**.
 > Installing one does not give you the other.
 
+### curl (first shot)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/install.sh | bash
+```
+
+Review first with `| less`. Same script via `wget -qO- … | bash`.
+Flags: `--python-only`, `--engine-only`, `--uv`, `--pipx`, `--from-release`.
+macOS installs the Homebrew engine (`--HEAD`) plus the Python package; other
+platforms get the Python package and print the CMake/Docker engine path.
+
+Update every front already on the machine:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/main/scripts/update.sh | bash
+python -m flexaidds --self-update
+```
+
+Details: [`docs/INSTALL.md`](docs/INSTALL.md#one-liner-curl--bash).
+
 ### Build
 
 ```bash

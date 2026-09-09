@@ -22,12 +22,32 @@ class Flexaidds < Formula
   # links Metal bridges via flexaid_core (PR #260).
   option "with-metal", "Build with Metal GPU acceleration (macOS; needs Metal toolchain)"
 
+  # No `bottle do` block: a bottle URL that 404s is worse than compiling
+  # --HEAD. Bottles are produced by .github/workflows/homebrew-bottle.yml on a
+  # provenance-capable tag. Do not paste a fabricated cellar URL here.
+
   depends_on "cmake" => :build
   depends_on "ninja" => :build
   depends_on "eigen"
   depends_on "libomp" if OS.mac?
 
   def install
+    # v2.0.3 tarball predates flexaidds-build-provenance.json. Building it
+    # wastes ~20 min then `odie`s. Fail immediately so first-shot users are
+    # pointed at --HEAD (the command that actually installs today).
+    unless build.head?
+      odie <<~EOS
+        Stable v#{version} cannot produce flexaidds-build-provenance.json.
+        First-shot macOS install until the next tagged release:
+
+          brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
+          brew trust --formula lebonhommepharma/flexaidds/flexaidds
+          brew install --HEAD lebonhommepharma/flexaidds/flexaidds
+
+        Then: FlexAIDdS --help
+      EOS
+    end
+
     # Metal OFF by default for CLT-only SDKs without a working metalc; use
     # --with-metal when Xcode/Metal toolchain is present. v2.0.3+ attaches
     # OBJCXX bridges + frameworks PUBLIC on flexaid_core so every consumer
@@ -231,25 +251,29 @@ class Flexaidds < Formula
         FlexAIDdS, FlexAID, tENCoM, tencom_entropy_diff
 
       It does *not* install the Python analysis package. Those are separate:
-        # Python CLI + load_results / StatMech (GitHub until public PyPI):
-        pip install "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+        # First-shot (not on public PyPI yet):
+        FLEXAIDDS_SKIP_CORE=1 pip install \
+          "git+https://github.com/LeBonhommePharma/FlexAIDdS.git#subdirectory=python"
+        flexaidds --help
         # After the first PyPI release: pip install flexaidds
-        # Then: flexaidds --help   or   python -m flexaidds --help
 
       Wrappers under #{bin} set FLEXAIDDS_DATA_DIR=#{libexec}/share so PATH
       symlinks still find MC matrices and AMINO.def.
 
       Stable v2.0.3+ includes the production docking matrix (atom typing works
-      out of the box). Upgrade from broken v2.0.0 / stale HEAD installs with:
-        brew update && brew reinstall lebonhommepharma/flexaidds/flexaidds
+      out of the box). Homebrew 6 treats `--HEAD` as install-only; upgrade with:
+        brew uninstall --force lebonhommepharma/flexaidds/flexaidds
+        brew install --HEAD lebonhommepharma/flexaidds/flexaidds
 
-      Install / reinstall path (Homebrew 6+ requires a real tap; raw URL installs
-      are rejected). The tap is this monorepo — keep the tap checkout on main:
+      First-shot install (Homebrew 6+ requires a real tap; raw URL installs
+      are rejected). Stable v2.0.3 is not installable: that tarball cannot
+      emit build provenance, so the formula refuses it. Use --HEAD until the
+      next tag. The tap is this monorepo — keep the tap checkout on main:
         brew tap lebonhommepharma/flexaidds https://github.com/LeBonhommePharma/FlexAIDdS
         # Prefer formula-scoped trust when HOMEBREW_REQUIRE_TAP_TRUST is set
         # (https://docs.brew.sh/Tap-Trust). Do not use HOMEBREW_NO_REQUIRE_TAP_TRUST.
         brew trust --formula lebonhommepharma/flexaidds/flexaidds
-        brew install lebonhommepharma/flexaidds/flexaidds
+        brew install --HEAD lebonhommepharma/flexaidds/flexaidds
 
       Default brew build uses CPU + OpenMP (no Metal) and is the portable path.
       Formula head tracks main only (never ephemeral fix/* branches).
@@ -259,13 +283,10 @@ class Flexaidds < Formula
         cd "$(brew --repository lebonhommepharma/flexaidds)"
         git fetch --prune && git checkout main && git reset --hard origin/main
         brew uninstall --force lebonhommepharma/flexaidds/flexaidds
-        brew install --build-from-source lebonhommepharma/flexaidds/flexaidds
+        brew install --HEAD lebonhommepharma/flexaidds/flexaidds
 
-      Metal GPU (macOS + Xcode Metal toolchain). Stable v2.0.3+ links Metal
-      bridges via flexaid_core (PR #260); no special git branch required:
-        brew install --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
-      Or after tap update if already installed:
-        brew reinstall --build-from-source --with-metal lebonhommepharma/flexaidds/flexaidds
+      Metal GPU (macOS + Xcode Metal toolchain). Not the first-shot path:
+        brew install --HEAD --with-metal lebonhommepharma/flexaidds/flexaidds
 
       Example:
         FlexAIDdS receptor.pdb ligand.sdf --rigid -o /tmp/out
@@ -280,7 +301,9 @@ class Flexaidds < Formula
     assert Dir["#{libexec}/share/MC_*.dat"].any?, "expected MC_*.dat in libexec/share"
 
     # Wrapper must advertise the Cellar data dir, not /opt/homebrew/bin.
-    output = shell_output("#{bin}/FlexAIDdS --help")
+    # shell_output(cmd, result=0): 2nd arg is the expected exit status, not argv.
+    # A Pathname cmd is exec'd with no argv — flags must live in the string.
+    output = shell_output("#{bin/"FlexAIDdS"} --help")
     assert_match "base path", output
 
     system bin/"tENCoM", "--help"
@@ -297,8 +320,8 @@ class Flexaidds < Formula
     # buildinfo begins by printing that same JSON, so the assertion compared a
     # string to itself and could not fail. Assert against the cross-check line,
     # which is derived from the binary.
-    info = shell_output("#{bin}/flexaidds-buildinfo")
-    assert_match "provenance_json_commit=#{prov['git_commit']}", info
+    info = shell_output("#{bin/"flexaidds-buildinfo"}")
+    assert_match "provenance_json_commit=#{prov["git_commit"]}", info
     refute_match "status=MISMATCH", info
   end
 end

@@ -1,0 +1,42 @@
+name: Setup FlexAIDdS
+description: >
+  Install the flexaidds Python package (analysis CLI). The native docking
+  engine is separate and is not installed by this action.
+inputs:
+  from-checkout:
+    description: Install ./python from this repository checkout (PR CI). Set false to use git+subdirectory.
+    required: false
+    default: "true"
+  skip-core:
+    description: Set FLEXAIDDS_SKIP_CORE=1 (pure-Python; no C++26 compiler required).
+    required: false
+    default: "true"
+  ref:
+    description: Git ref for git+subdirectory installs when from-checkout is false.
+    required: false
+    default: "main"
+runs:
+  using: composite
+  steps:
+    - name: Install flexaidds
+      shell: bash
+      env:
+        FLEXAIDDS_SKIP_CORE: ${{ inputs.skip-core == 'true' && '1' || '' }}
+        FROM_CHECKOUT: ${{ inputs.from-checkout }}
+        GIT_REF: ${{ inputs.ref }}
+      run: |
+        set -euo pipefail
+        python -m pip install -U pip
+        if [ "${FROM_CHECKOUT}" = "true" ]; then
+          test -f python/pyproject.toml
+          spec="./python"
+        else
+          spec="git+https://github.com/LeBonhommePharma/FlexAIDdS.git@${GIT_REF}#subdirectory=python"
+        fi
+        if [ "${FLEXAIDDS_SKIP_CORE:-}" = "1" ]; then
+          FLEXAIDDS_SKIP_CORE=1 python -m pip install "$spec"
+        else
+          python -m pip install "$spec"
+        fi
+        python -c "import flexaidds as fd; print('flexaidds', fd.__version__)"
+        python -m flexaidds --help

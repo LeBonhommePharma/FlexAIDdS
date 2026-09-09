@@ -16,7 +16,7 @@ from .dift import (
     spectral_entropy,
 )
 from .__version__ import __version__ as __version__
-from .updater import check_for_updates, UpdateInfo
+from .updater import check_for_updates, UpdateInfo, update_all
 from .boltz2 import (
     Boltz2Client,
     Boltz2PredictionResult,
@@ -325,6 +325,7 @@ __all__ = [
     "write_all_reports",
     # Updater
     "check_for_updates",
+    "update_all",
     "UpdateInfo",
     # Boltz2
     "Boltz2Client",
