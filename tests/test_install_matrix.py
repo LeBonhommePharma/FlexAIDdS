@@ -93,6 +93,40 @@ def test_support_matrix_does_not_checkmark_broken_first_shots() -> None:
     assert git_rows and all("✅" in row for row in git_rows)
 
 
+def _homebrew_assertions_rb() -> Path:
+    prefix = subprocess.check_output(["brew", "--prefix"], text=True).strip()
+    path = Path(prefix) / "Library" / "Homebrew" / "formula_assertions.rb"
+    assert path.is_file(), f"Homebrew assertions missing at {path}"
+    return path
+
+
+def test_formula_shell_output_matches_homebrew_api() -> None:
+    """shell_output(cmd, result=0) — 2nd arg is exit status, not a CLI flag.
+
+    Homebrew formula_assertions.rb is the shipped API. A Pathname cmd is
+    exec'd with no argv, so `shell_output(bin/"FlexAIDdS", "--help")` never
+    passes --help and fails brew test.
+    """
+    api = _homebrew_assertions_rb().read_text(encoding="utf-8")
+    sig = re.search(
+        r"def shell_output\(cmd,\s*result\s*=\s*0\)",
+        api,
+    )
+    assert sig, "Homebrew shell_output(cmd, result=0) signature missing"
+    assert "params(cmd: T.any(Pathname, String), result: Integer)" in api
+
+    formula = FORMULA.read_text(encoding="utf-8")
+    bad = re.search(
+        r'shell_output\(\s*bin/"[^"]+"\s*,\s*"[^"]+"\s*\)',
+        formula,
+    )
+    assert bad is None, (
+        "Formula/flexaidds.rb passes a CLI flag as shell_output's result= "
+        f"status argument: {bad.group(0)!r}"
+    )
+    assert 'shell_output("#{bin/"FlexAIDdS"} --help")' in formula
+
+
 def test_setup_py_first_shot_has_no_package_owned_warning_prints() -> None:
     setup = SETUP_PY.read_text(encoding="utf-8")
     assert "[source-guard] Warning" not in setup

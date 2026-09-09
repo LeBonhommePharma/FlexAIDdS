@@ -297,7 +297,9 @@ class Flexaidds < Formula
     assert Dir["#{libexec}/share/MC_*.dat"].any?, "expected MC_*.dat in libexec/share"
 
     # Wrapper must advertise the Cellar data dir, not /opt/homebrew/bin.
-    output = shell_output(bin/"FlexAIDdS", "--help")
+    # shell_output(cmd, result=0): 2nd arg is the expected exit status, not argv.
+    # A Pathname cmd is exec'd with no argv — flags must live in the string.
+    output = shell_output("#{bin/"FlexAIDdS"} --help")
     assert_match "base path", output
 
     system bin/"tENCoM", "--help"
@@ -314,7 +316,7 @@ class Flexaidds < Formula
     # buildinfo begins by printing that same JSON, so the assertion compared a
     # string to itself and could not fail. Assert against the cross-check line,
     # which is derived from the binary.
-    info = shell_output(bin/"flexaidds-buildinfo")
+    info = shell_output("#{bin/"flexaidds-buildinfo"}")
     assert_match "provenance_json_commit=#{prov["git_commit"]}", info
     refute_match "status=MISMATCH", info
   end
