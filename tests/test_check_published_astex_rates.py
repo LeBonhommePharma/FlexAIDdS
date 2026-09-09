@@ -20,6 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 SURFACES = (
     ROOT / "README.md",
+    ROOT / "docs" / "INSTALL.md",
+    ROOT / "docs" / "INSTALLATION.md",
+    ROOT / "docs" / "USERGUIDE.md",
+    ROOT / "VERSION.md",
+    ROOT / "docs" / "ATOM_TYPES.md",
     ROOT / "docs" / "BENCHMARK.md",
     ROOT / "REPRODUCIBILITY.md",
     ROOT / "scripts" / "reproduce_astex85.sh",

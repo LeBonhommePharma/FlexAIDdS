@@ -8,6 +8,29 @@
 
 ---
 
+## Unreleased (post-v2.0.3) — public surface honesty
+
+Tagged version remains **2.0.3**. These notes record user-facing work that has
+already landed on `main`. This is **not** a new release and does **not**
+publish an Astex-85 success rate.
+
+### Claim language
+- Search ranks poses with the **CF/contact-function scoring proxy**.
+- Ensemble diagnostics are `proxy_only` in arbitrary CF units — not a physical
+  binding free energy, `Kd`, or `Ki`.
+- Astex-85 accuracy is **unverified / pending receipt**. Withdrawn session
+  rates stay withdrawn.
+
+### Install how-to
+- Canonical landing how-to is [`docs/INSTALL.md`](docs/INSTALL.md): native
+  engine (CMake / Homebrew / Docker) and the `flexaidds` Python package are
+  **separate**. Header Installation and Quick Start now share that one file.
+- Build identity: `FlexAIDdS --version` and `flexaidds-build-provenance.json`.
+
+### Atom types
+- Documented NRGDock 40-type remaps as implemented: N.2→N.ar, N.3→N.am,
+  C.1→C.2, I→BR (`MC_st0r5.2_6.dat`).
+
 ## v2.0.3 (2026-07-15) — Homebrew Metal link fix
 
 Patch release so stable Homebrew `brew install --with-metal` can build from a fixed source tag.
@@ -61,7 +84,7 @@ Production docking matrix and installer fixes for out-of-the-box Homebrew / PyPI
 
 ## v2.0.0 (2026-04-04) — Stable Release
 
-First stable release of FlexAID∆S, the entropy-driven molecular docking engine. This is a ground-up rewrite of FlexAID combining genetic algorithms with statistical mechanics thermodynamics for accurate binding free energy prediction. 655 commits ahead of the v1.5 legacy tag. All development phases complete.
+First stable release of FlexAID∆S, the entropy-aware molecular docking engine. This is a ground-up rewrite of FlexAID combining genetic algorithms with a score-space ensemble diagnostic layer (`proxy_only`; not a physical binding free energy, `Kd`, or `Ki`). 655 commits ahead of the v1.5 legacy tag. All development phases complete. Current public Astex-85 status is unverified / pending receipt.
 
 ### Post-release fixes (2026-04-14)
 

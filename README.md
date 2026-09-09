@@ -11,7 +11,7 @@
 [![Astex-85](https://img.shields.io/badge/Astex--85-unverified%20%7C%20pending%20receipt-lightgrey.svg)](#benchmark-astex-85)
 [![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jcim.5b00078-blue)](https://doi.org/10.1021/acs.jcim.5b00078)
 
-**[Installation](docs/INSTALLATION.md)** ·
+**[Installation](docs/INSTALL.md)** ·
 **[User Guide](docs/USERGUIDE.md)** ·
 **[Scoring](docs/SCORING.md)** ·
 **[Atom Types](docs/ATOM_TYPES.md)** ·
@@ -32,7 +32,7 @@ FlexAID∆S descends from [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) (G
 
 ### The Contact Function
 
-The genetic algorithm searches ligand pose space — six rigid-body degrees of freedom plus all rotatable torsions — and evaluates each pose with the **Voronoi contact function** (CF). CF measures shape complementarity by decomposing the molecular surface into Voronoi polyhedra and integrating the contact area between atom pairs, weighted by a 40×40 energy matrix (`MC_st0r5.2_6.dat`) trained on PDB-derived contact statistics across 40 SYBYL atom types. Lower CF is better — a perfect complementary fit between a ligand and its receptor pocket approaches the global minimum.
+The genetic algorithm searches ligand pose space — six rigid-body degrees of freedom plus all rotatable torsions — and evaluates each pose with the **CF/contact-function scoring proxy** (Voronoi contact function). CF measures shape complementarity by decomposing the molecular surface into Voronoi polyhedra and integrating the contact area between atom pairs, weighted by a 40×40 energy matrix (`MC_st0r5.2_6.dat`) trained on PDB-derived contact statistics across 40 SYBYL atom types. Lower CF is better — a perfect complementary fit between a ligand and its receptor pocket approaches the global minimum. Ensemble fields emitted after search are `proxy_only` diagnostics in arbitrary CF units: they are not a physical binding free energy, `Kd`, or `Ki`. Astex-85 accuracy is **unverified / pending receipt**.
 
 The total CF for a pose is:
 
@@ -93,10 +93,10 @@ flag therefore does not currently enforce a physics filter on the elected pose.
 | Intermolecular clash detection | Approximated (23× undercounting) | ✓ Optional all-pairs clash *penalty* in CF (`pb_clash`, default off); post-election PoseBusters `bust` is the S2 gate |
 | Receptor clash grid | Rebuilt every CF eval | ✓ Loop-invariant hoist (once per dock) |
 | Spread guard (false-minima demotion) | ✗ | ✓ Two-gate: distance + frequency + consensus |
-| Atom type: N.2 (sp2 imine) | → N.am (donor, wrong sign) | → N.ar (acceptor, correct) |
-| Atom type: N.3 (amine) | → N.3/type-8 (dead matrix row) | → N.am/type-11 (live) |
-| Atom type: C.1 (sp carbon) | → C.1/type-1 (sparse) | → C.2/type-2 (better sampled) |
-| Atom type: I (iodine) | → type-26 (3 live entries) | → BR/type-25 (full halogen row) |
+| Atom type: N.2 (sp2 imine) | → N.am (donor, wrong sign) | N.2→N.ar (acceptor, correct) |
+| Atom type: N.3 (amine) | → N.3/type-8 (dead matrix row) | N.3→N.am (type-11, live) |
+| Atom type: C.1 (sp carbon) | → C.1/type-1 (sparse) | C.1→C.2 (type-2, better sampled) |
+| Atom type: I (iodine) | → type-26 (3 live entries) | I→BR (type-25, full halogen row) |
 | WAL repulsion | Unbounded (SIGSEGV on extreme clashes) | ✓ Capped at 50 CF units per contact |
 | Vibrational diagnostic (tENCoM) | ✗ | ✓ torsional elastic-network model scale |
 | Astex-85 success rate | unverified / pending receipt | unverified / pending receipt |
