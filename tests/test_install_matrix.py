@@ -6,11 +6,15 @@ Reads the shipped files. Does not re-implement the support matrix.
 
 from __future__ import annotations
 
+import ast
+import hashlib
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +24,7 @@ FORMULA = ROOT / "Formula" / "flexaidds.rb"
 PYPROJECT = ROOT / "python" / "pyproject.toml"
 SETUP_PY = ROOT / "python" / "setup.py"
 INSTALL_SH = ROOT / "scripts" / "install.sh"
+UPDATE_SH = ROOT / "scripts" / "update.sh"
 CURL_URL = (
     "https://raw.githubusercontent.com/LeBonhommePharma/FlexAIDdS/"
     "main/scripts/install.sh"
@@ -165,6 +170,122 @@ def test_curl_installer_is_documented_and_dry_run_safe() -> None:
     assert "FLEXAIDDS_SKIP_CORE=1" in out
     assert "pip install flexaidds\n" not in out
     assert "done." in out
+
+
+def test_unified_updater_dry_run() -> None:
+    assert UPDATE_SH.is_file()
+    howto = HOWTO.read_text(encoding="utf-8")
+    assert "scripts/update.sh" in howto
+    assert "python -m flexaidds --self-update" in howto
+    proc = subprocess.run(
+        ["bash", str(UPDATE_SH), "--dry-run"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    out = proc.stdout
+    assert "brew upgrade --fetch-HEAD" in out or "engine:" in out
+    assert "pip install flexaidds\n" not in out or "unpublished" in out
+    assert "done." in out
+    script = UPDATE_SH.read_text(encoding="utf-8")
+    assert "subdirectory=python" in script
+    assert "brew install --HEAD" in script
+
+
+def test_installer_uv_pipx_release_dry_runs() -> None:
+    for extra in (["--python-only", "--uv"], ["--python-only", "--pipx"],
+                  ["--from-release", "latest"]):
+        proc = subprocess.run(
+            ["bash", str(INSTALL_SH), "--dry-run", *extra],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert proc.returncode == 0, extra + [proc.stderr, proc.stdout]
+    uv = subprocess.run(
+        ["bash", str(INSTALL_SH), "--dry-run", "--python-only", "--uv"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    )
+    assert "uv tool install" in uv.stdout
+    assert "subdirectory=python" in uv.stdout
+    pipx = subprocess.run(
+        ["bash", str(INSTALL_SH), "--dry-run", "--python-only", "--pipx"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    )
+    assert "pipx install" in pipx.stdout
+    rel = subprocess.run(
+        ["bash", str(INSTALL_SH), "--dry-run", "--from-release", "v2.2.0"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    )
+    assert "SHA256SUMS.txt" in rel.stdout
+
+
+def test_from_archive_rejects_bad_hash_and_accepts_good(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    binary = dist / "FlexAIDdS"
+    binary.write_text("#!/bin/sh\necho Usage: stub\n", encoding="utf-8")
+    binary.chmod(0o755)
+    archive = tmp_path / "flexaidds-macos.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(binary, arcname="dist/FlexAIDdS")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    prefix = tmp_path / "prefix"
+
+    bad = subprocess.run(
+        ["bash", str(INSTALL_SH), "--from-archive", str(archive),
+         "--sha256", "0" * 64, "--prefix", str(prefix)],
+        cwd=ROOT, capture_output=True, text=True, check=False,
+    )
+    assert bad.returncode != 0
+    assert "SHA-256 mismatch" in bad.stderr + bad.stdout
+
+    good = subprocess.run(
+        ["bash", str(INSTALL_SH), "--from-archive", str(archive),
+         "--sha256", digest, "--prefix", str(prefix)],
+        cwd=ROOT, capture_output=True, text=True, check=False,
+    )
+    assert good.returncode == 0, good.stderr + good.stdout
+    installed = prefix / "bin" / "FlexAIDdS"
+    assert installed.exists()
+
+
+def test_extra_install_fronts_exist_and_parse() -> None:
+    files = {
+        ROOT / ".github" / "actions" / "setup-flexaidds" / "action.yml",
+        ROOT / ".github" / "workflows" / "ghcr.yml",
+        ROOT / ".github" / "workflows" / "homebrew-bottle.yml",
+        ROOT / ".devcontainer" / "devcontainer.json",
+        ROOT / ".devcontainer" / "Dockerfile",
+        ROOT / "packaging" / "spack" / "package.py",
+        ROOT / "packaging" / "easybuild" / "flexaidds-2.0.3.eb",
+        ROOT / "packaging" / "modulefiles" / "flexaidds.lua",
+        ROOT / "conda" / "conda-forge.md",
+    }
+    for path in files:
+        assert path.is_file(), path
+    action = (
+        ROOT / ".github" / "actions" / "setup-flexaidds" / "action.yml"
+    ).read_text(encoding="utf-8")
+    assert "using: composite" in action
+    assert "pip install" in action
+    json.loads((ROOT / ".devcontainer" / "devcontainer.json").read_text(encoding="utf-8"))
+    ast.parse((ROOT / "packaging" / "spack" / "package.py").read_text(encoding="utf-8"))
+    ast.parse(
+        (ROOT / "packaging" / "easybuild" / "flexaidds-2.0.3.eb").read_text(encoding="utf-8")
+    )
+    formula = FORMULA.read_text(encoding="utf-8")
+    assert re.search(r"^\s*bottle do\b", formula, flags=re.M) is None
+    howto = HOWTO.read_text(encoding="utf-8")
+    assert "wget -qO-" in howto
+    assert "uv tool install" in howto
+    assert "pipx install" in howto
+    assert "ghcr.io/lebonhommepharma/flexaidds" in howto
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "SHA256SUMS.txt" in release
 
 
 def test_setup_py_first_shot_has_no_package_owned_warning_prints() -> None:

@@ -1,0 +1,51 @@
+name: GHCR
+
+# Publish ghcr.io/lebonhommepharma/flexaidds from containers/Dockerfile.locked.
+# First-shot `docker pull` is live only after this workflow has succeeded on
+# a tag or workflow_dispatch. Until then the documented path is `docker build`.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Build and push GHCR image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Build locked image
+        run: |
+          set -euo pipefail
+          COMMIT="$(git rev-parse --short HEAD)"
+          IMAGE="ghcr.io/lebonhommepharma/flexaidds"
+          docker build -f containers/Dockerfile.locked \
+            --build-arg FLEXAIDS_GIT_COMMIT="${COMMIT}" \
+            -t "${IMAGE}:${COMMIT}" \
+            -t "${IMAGE}:${GITHUB_REF_NAME}" \
+            -t "${IMAGE}:latest" \
+            .
+
+      - name: Push
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/lebonhommepharma/flexaidds"
+          docker push "${IMAGE}:${GITHUB_REF_NAME}"
+          docker push "ghcr.io/lebonhommepharma/flexaidds:$(git rev-parse --short HEAD)"
+          docker push "${IMAGE}:latest"

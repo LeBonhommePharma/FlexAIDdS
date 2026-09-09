@@ -1,0 +1,46 @@
+name: Homebrew bottle
+
+# Produce a bottle from `brew install --build-bottle`. Bottles attach to a
+# *stable* tag that can emit provenance JSON. Current stable v2.0.3 cannot
+# (formula odie); this workflow is for the next tag. It never invents a
+# bottle do { } block with a URL that does not exist.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  bottle:
+    name: bottle macOS ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Tap this checkout
+        run: |
+          set -euo pipefail
+          brew tap lebonhommepharma/flexaidds "${GITHUB_WORKSPACE}"
+          brew trust --formula lebonhommepharma/flexaidds/flexaidds || true
+
+      - name: Build bottle from HEAD (until a provenance-capable stable tag)
+        run: |
+          set -euo pipefail
+          brew install --build-bottle --HEAD lebonhommepharma/flexaidds/flexaidds
+          brew bottle --json --skip-relocation lebonhommepharma/flexaidds/flexaidds
+          ls -l flexaidds--*.tar.gz flexaidds--*.json 2>/dev/null || ls -l *.tar.gz
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bottle-${{ matrix.os }}
+          path: |
+            flexaidds*.tar.gz
+            flexaidds*.json
