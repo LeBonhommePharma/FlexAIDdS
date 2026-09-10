@@ -91,7 +91,21 @@ SOURCES = {
         "access": "manual_download",
         "url": "http://www.csardock.org (CSAR-NRC HiQ 2010 / CSAR 2012)",
         "local": None,
-        "doi": "10.1021/ci100366a",
+        # DOI removed 2026-09-10 (dataset identity audit). This field previously read
+        # "10.1021/ci100366a", which is UNREGISTERED: doi.org Handle API responseCode
+        # 100 and CrossRef /works 404, with 10.1021/jm061277y passing as positive
+        # control in the same check. NOT recoverable with confidence, so left empty
+        # rather than guessed: this entry names two different CSAR releases
+        # ("CSAR-NRC HiQ 2010 / CSAR 2012") and no single paper covers both.
+        # Candidates verified as registered but NOT adopted:
+        #   10.1021/ci200082t — Dunbar et al. 2011, "CSAR Benchmark Exercise of 2010:
+        #                       Selection of the Protein-Ligand Complexes",
+        #                       JCIM 51:2036-2046 (covers the 2010/HiQ release only)
+        #   10.1021/ci100036a — resolves, but to Li et al. 2010 "Test MM-PB/SA on True
+        #                       Conformational Ensembles", unrelated to CSAR despite
+        #                       being one digit-transposition from the bad string.
+        # Populate with whichever release this entry is actually meant to cite.
+        "doi": "",
         "notes": "Mostly dG; a subset has ITC dH. Download the affinity table, save as unified CSV.",
     },
     "freire": {
@@ -114,7 +128,17 @@ SOURCES = {
         "access": "http_free",
         "url": "https://zhanggroup.org/BioLiP/download.html",
         "local": None,
-        "doi": "10.1093/nar/g1271",
+        # DOI corrected 2026-09-10 (dataset identity audit). This field previously read
+        # "10.1093/nar/g1271", which is UNREGISTERED: doi.org Handle API responseCode
+        # 100 and CrossRef /works 404, with 10.1021/jm061277y passing as positive
+        # control in the same check. Recovered by CrossRef bibliographic search — exact
+        # title match for the database this entry names: Yang, Roy & Zhang, "BioLiP: a
+        # semi-manually curated database for biologically relevant ligand-protein
+        # interactions", Nucleic Acids Res. 41:D1096-D1103. No DOI was invented.
+        # NOTE: if the BioLiP2 update is the intended source, use 10.1093/nar/gkad630
+        # (Zhang et al., NAR 52:D404-D412) — also verified registered. The entry name,
+        # notes and download URL all say BioLiP, so the original paper is cited here.
+        "doi": "10.1093/nar/gks966",
         "notes": "Has PDB ids + ligand; binding-affinity field is sparse/mixed assay, few ITC dH. "
                  "Use to recover pdb_id/SMILES for affinity-only entries.",
     },

@@ -5048,8 +5048,20 @@ std::vector<DatasetEntry> DatasetRunner::fetch_hap2() {
 
 std::vector<std::string> DatasetRunner::casf2016_codes() {
     // CASF-2016 benchmark: 285 protein-ligand complexes from the PDBbind
-    // core set v2016 (Li et al. 2019, JCIM 59:1105). These are the standard
+    // core set v2016 (Su et al. 2019, JCIM 59(2):895-913,
+    // DOI 10.1021/acs.jcim.8b00545). These are the standard
     // scoring/ranking/docking/screening power test set.
+    //
+    // Citation corrected 2026-09-10 (dataset identity audit). This comment
+    // previously read "Li et al. 2019, JCIM 59:1105" — a MISATTRIBUTION that also
+    // disagreed with both YAML copies of this dataset
+    // (python/flexaidds/dataset_runner/datasets/casf2016.yaml and
+    // benchmarks/datasets/casf2016.yaml), which cite Su et al. Resolved against
+    // CrossRef: 10.1021/acs.jcim.8b00545 is Su et al., "Comparative Assessment of
+    // Scoring Functions: The CASF-2016 Update", J. Chem. Inf. Model. 59:895-913,
+    // and a CrossRef search of JCIM 2018-2019 for CASF returns no Li-first-author
+    // paper and nothing at page 1105. The YAMLs were right; C++ now agrees with
+    // them. (The 285-code list below is a separate defect, tracked under C3.)
     return {
         "1A30", "1B6J", "1B6K", "1BMA", "1C5Z", "1E66", "1EBY",
         "1F8B", "1F8D", "1FEN", "1FKI", "1G2K", "1GKC", "1GNI",

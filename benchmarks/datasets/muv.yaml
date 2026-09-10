@@ -10,7 +10,13 @@
 # matching alone fails.
 #
 # Reference: Rohrer & Baumann (2009) J. Chem. Inf. Model. 49(2):169-184
-#            https://doi.org/10.1021/ci8003380
+#            https://doi.org/10.1021/ci8002649
+#   DOI corrected 2026-09-10 (dataset identity audit). This file previously cited
+#   10.1021/ci8003380, which is UNREGISTERED: doi.org Handle API returns
+#   responseCode 100 and CrossRef /works returns 404, with 10.1021/jm061277y as a
+#   passing positive control in the same check. The real DOI for the paper named on
+#   the line above was recovered by CrossRef bibliographic search (exact title match,
+#   author Rohrer, J. Chem. Inf. Model. 49:169-184, 2009). No DOI was invented.
 #
 # Dataset access: https://www.pharmvip.com/ or https://chemdb.ucsd.edu/muv/
 

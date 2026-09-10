@@ -9,7 +9,13 @@
 # pairing them with the native holo ligand via paired_ligand_path.
 #
 # Reference: Verdonk et al. (2008) J. Chem. Inf. Model. 48(11):2214-2225
-#            https://doi.org/10.1021/ci800224j
+#            https://doi.org/10.1021/ci8002254
+#   DOI corrected 2026-09-10 (dataset identity audit). This file previously cited
+#   10.1021/ci800224j, which is UNREGISTERED: doi.org Handle API returns
+#   responseCode 100 and CrossRef /works returns 404, with 10.1021/jm061277y as a
+#   passing positive control in the same check. The real DOI for the paper named on
+#   the line above was recovered by CrossRef bibliographic search (exact title match,
+#   author Verdonk, J. Chem. Inf. Model. 48:2214-2225, 2008). No DOI was invented.
 
 slug: astex_nonnative
 docking_mode: cross_docking  # validated by validate_dataset_semantics.py

@@ -20,7 +20,13 @@ source structure.
 
 Verdonk ML, Mortenson PN, Hall RJ, et al. (2008)
 "Protein-ligand docking against non-native protein conformers."
-*J Chem Inf Model* 48(11):2214–2225. https://doi.org/10.1021/ci800224j
+*J Chem Inf Model* 48(11):2214–2225. https://doi.org/10.1021/ci8002254
+
+> DOI corrected 2026-09-10 (dataset identity audit). This README previously cited
+> `10.1021/ci800224j`, which is unregistered (doi.org Handle responseCode 100 and
+> CrossRef 404; `10.1021/jm061277y` passed as positive control in the same check).
+> `10.1021/ci8002254` was recovered by CrossRef bibliographic search and is an exact
+> title/author/volume/page match for the paper cited above. No DOI was invented.
 
 ## Contents
 

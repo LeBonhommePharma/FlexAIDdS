@@ -8,7 +8,12 @@ purpose: >
   run is tier-2. Tests receptor flexibility robustness.
 dataset: Astex Non-Native Set (Verdonk et al. 2008 J Chem Inf Model 48:2214-2225)
 dataset_source: https://www.ccdc.cam.ac.uk/
-doi: 10.1021/ci800224j
+# doi corrected 2026-09-10 (dataset identity audit): previously cited 10.1021/ci800224j,
+#   which is unregistered (doi.org Handle responseCode 100 + CrossRef 404, positive
+#   control 10.1021/jm061277y passing). 10.1021/ci8002254 recovered by CrossRef
+#   bibliographic search — exact match for Verdonk et al. 2008 JCIM 48:2214-2225,
+#   the paper named on the `dataset:` line above. No DOI was invented.
+doi: 10.1021/ci8002254
 tier: 1
 tier1_pairs:
   - target: 1hwi
