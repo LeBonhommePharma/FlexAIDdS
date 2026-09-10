@@ -24,7 +24,18 @@ description: >
   for rigorous cross-docking assessment.  Tests VS enrichment and entropy-based
   rescue across three structural states that represent real-world docking scenarios.
 
-zenodo_doi: "10.5281/zenodo.dude37"
+# zenodo_doi: FABRICATED — this field previously read "10.5281/zenodo.dude37".
+#   Zenodo DOIs are 10.5281/zenodo.<numeric record id>; a word suffix is not DOI
+#   syntax and can never resolve — that syntax rule is the dispositive evidence and
+#   holds independently of any resolver. Also confirmed non-resolving 2026-09-10 via
+#   the doi.org Handle System (responseCode 100), with 10.1021/jm061277y passing as
+#   positive control in the same check. CrossRef was NOT consulted for this
+#   identifier and would not be authoritative for it: Zenodo DOIs are minted through
+#   DataCite, not CrossRef. Found by the dataset identity audit
+#   (DATASET_IDENTITY_REPORT.md section 3.6). Left empty deliberately — no
+#   replacement was invented. The DUD-E paper DOI cited above (10.1021/jm300687e)
+#   is registered and correct; only this deposit identifier was fabricated.
+zenodo_doi: ""
 download_url: "https://dude.docking.org/"
 data_format: mol2
 tier: 2

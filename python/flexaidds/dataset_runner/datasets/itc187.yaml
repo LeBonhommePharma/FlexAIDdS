@@ -23,7 +23,18 @@ description: >
   scoring: covers entropy-driven binders (|TΔS| > |ΔH|) that enthalpy-only
   scoring systematically fails to rank correctly.
 
-zenodo_doi: "10.5281/zenodo.itc187"
+# zenodo_doi: FABRICATED — this field previously read "10.5281/zenodo.itc187".
+#   Zenodo DOIs are 10.5281/zenodo.<numeric record id>; a word suffix is not DOI
+#   syntax and can never resolve — that syntax rule is the dispositive evidence and
+#   holds independently of any resolver. Also confirmed non-resolving 2026-09-10 via
+#   the doi.org Handle System (responseCode 100), with 10.1021/jm061277y passing as
+#   positive control in the same check. CrossRef was NOT consulted for this
+#   identifier and would not be authoritative for it: Zenodo DOIs are minted through
+#   DataCite, not CrossRef. Found by the dataset identity audit
+#   (DATASET_IDENTITY_REPORT.md section 3.6). Left empty deliberately — no
+#   replacement was invented. This dataset is declared NRGlab-internal and has no
+#   published deposit; populate only if one is actually deposited.
+zenodo_doi: ""
 download_url: ""
 data_format: pdb
 tier: 2
