@@ -7,6 +7,7 @@
 
 #include <mutex>
 #include <array>
+#include <algorithm>   // std::find / std::min / std::max for the flexbond DOF set
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -219,15 +220,107 @@ static void compute_ligand_dsvib(const FA_Global* FA, const atom* atoms, cfstr* 
 		}
 	}
 
+	// ── DOF SET: THE ENGINE'S OWN FLEXIBLE BONDS, NOT A RE-PERCEPTION ────────
+	// tencm's atom[] overloads perceive the DOF set with a PROXY rule: every
+	// distinct rec[1]--rec[0] pair carried by a recs=='m' ligand atom. recs=='m'
+	// flags every reconstruction-frame atom, not only the atoms whose dihedral is
+	// actually a search variable, so the proxy OVER-COUNTS. Measured on 1JD0:
+	// the proxy gives 3 where the engine's own FA->nflexbonds is 1. An entropy
+	// computed over 3 torsions when the search moves 1 is not the quantity this
+	// term claims to be, and the difference is not a rounding error -- it is a
+	// different coordinate set.
+	//
+	// The engine's authoritative DOF set is the contiguous flexbond gene range
+	// map_par[fb0 .. fb0+nflexbonds-1]: only add2_optimiz_vec.cpp:242 increments
+	// nflexbonds, and it is the one site that sets a real .bnd and uses
+	// delta_flexible. That is the same delimiter gaboom.cpp and the ligtopo
+	// sidecar (top.cpp) already use. Building the topology from it makes
+	// n_torsion_dofs() == FA->nflexbonds true BY CONSTRUCTION rather than by
+	// agreement, so there is ONE perception in this process instead of two that
+	// have to be cross-checked afterwards.
+	const int fb0 = FA->map_par_flexbond_first_index;
+	const int nfb = (fb0 >= 0) ? FA->nflexbonds : 0;
+	cf->dsvib_nflex = nfb;
+
+	auto is_h3 = [](const atom& a) noexcept {
+		const char* e = a.element;
+		while (*e == ' ') ++e;
+		return e[0] == 'H' && (e[1] == '\0' || e[1] == ' ');
+	};
+
+	// Heavy-atom node array over the ligand span. Same rule and same ordering as
+	// tencm's own perception, so coordinates and topology index the same nodes.
+	const std::size_t lspan = static_cast<std::size_t>(lig_end_incl + 1 - lig_start);
+	std::vector<std::array<float,3>> lxyz;
+	std::vector<int> node_of(lspan, -1);
+	lxyz.reserve(lspan);
+	for (int ai = lig_start; ai <= lig_end_incl; ++ai) {
+		if (is_h3(atoms[ai])) continue;
+		node_of[static_cast<std::size_t>(ai - lig_start)] = static_cast<int>(lxyz.size());
+		lxyz.push_back({ atoms[ai].coor[0], atoms[ai].coor[1], atoms[ai].coor[2] });
+	}
+	const int Na = static_cast<int>(lxyz.size());
+	if (Na < 3) { cf->dsvib_status = 4; return; }
+
+	tencm::TorsionalENM::LigandTopology topo;
+	topo.adjacency.assign(static_cast<std::size_t>(Na), {});
+	for (int ai = lig_start; ai <= lig_end_incl; ++ai) {
+		const int na = node_of[static_cast<std::size_t>(ai - lig_start)];
+		if (na < 0) continue;
+		for (int t = 1; t <= atoms[ai].bond[0] && t < 7; ++t) {
+			const int nb = atoms[ai].bond[t];
+			if (nb < lig_start || nb > lig_end_incl) continue;
+			const int nn = node_of[static_cast<std::size_t>(nb - lig_start)];
+			if (nn >= 0) topo.adjacency[static_cast<std::size_t>(na)].push_back(nn);
+		}
+	}
+
+	// Rotatable bonds straight off the engine's gene range. The typ/bnd test is
+	// the ligtopo sidecar's own secondary discriminator: a real flexible bond
+	// carries typ==2 and bnd>=0, while a rigid-body placement pseudo-dihedral
+	// carries bnd=-1. If either test fires the contiguous-range assumption has
+	// broken, and the honest response is to refuse rather than assemble a DOF set
+	// that is neither the engine's nor the proxy's.
+	int n_range_bad = 0, n_unmapped = 0;
+	for (int p = fb0; fb0 >= 0 && p < fb0 + nfb; ++p) {
+		if (FA->map_par[p].typ != 2 || FA->map_par[p].bnd < 0) { ++n_range_bad; continue; }
+		const int a  = FA->map_par[p].atm;
+		const int b0 = atoms[a].rec[0];
+		const int b1 = atoms[a].rec[1];
+		if (b0 < lig_start || b0 > lig_end_incl ||
+		    b1 < lig_start || b1 > lig_end_incl) { ++n_unmapped; continue; }
+		const int n0 = node_of[static_cast<std::size_t>(b0 - lig_start)];
+		const int n1 = node_of[static_cast<std::size_t>(b1 - lig_start)];
+		if (n0 < 0 || n1 < 0) { ++n_unmapped; continue; }
+		const std::pair<int,int> key{ std::min(n0,n1), std::max(n0,n1) };
+		if (std::find(topo.rot_bonds.begin(), topo.rot_bonds.end(), key)
+		    == topo.rot_bonds.end()) topo.rot_bonds.push_back(key);
+	}
+	if (n_range_bad > 0 || n_unmapped > 0) {
+		cf->dsvib_ndof   = static_cast<int>(topo.rot_bonds.size());
+		cf->dsvib_status = 6;
+		return;
+	}
+
 	// ── the two spectra: SAME DOFs, SAME spring, SAME cutoff, one difference ──
+	// Explicit-topology overloads, so neither state re-perceives anything.
 	tencm::TorsionalENM enm_free, enm_field;
-	enm_free.build_from_ligand_torsional(atoms, lig_start, lig_end_incl + 1, rc);
+	enm_free.build_from_ligand_torsional(lxyz.data(), Na, topo, rc);
 	enm_field.build_from_ligand_torsional_in_field(
-		atoms, lig_start, lig_end_incl + 1,
+		lxyz.data(), Na, topo,
 		field.empty() ? nullptr : field.data(),
 		static_cast<int>(field.size()), rc);
 
 	cf->dsvib_ndof = enm_free.n_torsion_dofs();
+
+	// The by-construction equality, asserted in the output instead of a comment.
+	// Both states must also agree with each other: they are handed the same topo
+	// object, so a difference here would mean the builder mutated it.
+	if (cf->dsvib_ndof != nfb ||
+	    enm_field.n_torsion_dofs() != cf->dsvib_ndof) {
+		cf->dsvib_status = 7;
+		return;
+	}
 
 	// Fewer than 2 rotatable bonds: the builder refuses (the 32-bin Shannon
 	// functional is undefined there), but the THERMODYNAMIC answer is not

@@ -219,10 +219,20 @@ struct cf_str{  // Complementarity Function value structure
 	double dsvib_ds;       // dS_vib = s_field - s_free,                      kcal/mol/K
 	double minus_T_dsvib;  // -T * dS_vib,                                    kcal/mol
 	int    dsvib_ndof;     // M dihedral DOFs the spectra were built over (identical in both states)
+	// The engine's OWN flexible-bond count, FA->nflexbonds, carried alongside
+	// dsvib_ndof so the two can be compared from the emitted pose file rather
+	// than trusted. They are equal BY CONSTRUCTION since the DOF set is built
+	// from the engine's flexbond gene range (ic2cf.cpp), not re-perceived; this
+	// field is the assertion that says so in the output. A difference means the
+	// construction broke and status is set to 7.
+	int    dsvib_nflex;
 	// 0 = gate off (never computed)      1 = ok
 	// 2 = degenerate: fewer than 2 torsional DOFs (rigid ligand; dS_vib is 0 by physics)
 	// 3 = mode-count mismatch between the two states (cancellation precondition violated)
 	// 4 = a model did not build            5 = no run temperature available
+	// 6 = the engine's flexbond gene range is not readable as rotatable bonds
+	//     (a gene with typ!=2 or bnd<0, or an endpoint outside the ligand span)
+	// 7 = assembled M != FA->nflexbonds -- the by-construction equality broke
 	int    dsvib_status;
 	double pb_clash;// PoseBust-basis physical-realism clash penalty (uncapped, severity-scaled; pb_clash_weight * Σ overlap^p). 0 unless FLEXAIDDS_PB_CLASH_WEIGHT set.
 	double totsas; // overall sas of molecule
