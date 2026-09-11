@@ -1,0 +1,90 @@
+{
+  "_comment": [
+    "Retired citation identifiers. Each entry was a live citation in this repository",
+    "until the 2026-09-10 dataset identity remediation (commit C1). They still appear",
+    "in the tree, but only inside comments that document the defect. scripts/check_dois.py",
+    "allows an occurrence of a retired identifier ONLY on a line that marks it as",
+    "documentation; putting one back into service as a live citation fails the gate",
+    "with RETIRED_REVIVED.",
+    "ORACLES, per entry, stated exactly. Every entry here was resolved 2026-09-10 with",
+    "the doi.org Handle System (/api/handles), which is registry-agnostic and therefore",
+    "the authoritative existence check for CrossRef, DataCite, Zenodo and wwPDB alike;",
+    "all seven returned responseCode 100 (handle not found). The four 10.1021/10.1093",
+    "entries were ADDITIONALLY probed against CrossRef /works and returned 404, a second",
+    "independent oracle. The three 10.5281/zenodo.* entries were NOT probed against",
+    "CrossRef and deliberately so: Zenodo DOIs are minted through DataCite, so a CrossRef",
+    "404 would carry no information about them. Their dispositive evidence is syntactic -",
+    "a Zenodo suffix is a numeric record id, so a word suffix is not a DOI at all and",
+    "cannot resolve at any registry. Positive control 10.1021/jm061277y resolved and the",
+    "negative control did not, in the same check, so a blocked or rate-limited host is",
+    "excluded as the cause of the responseCode 100 results."
+  ],
+  "verified_utc": "2026-09-10",
+  "retired": {
+    "10.5281/zenodo.dude37": {
+      "classification": "FABRICATED",
+      "reason": "Zenodo DOIs carry a numeric record id; a word suffix is not DOI syntax and can never resolve.",
+      "was_in": ["python/flexaidds/dataset_runner/datasets/dude37.yaml", "benchmarks/datasets/dude37.yaml"],
+      "action": "emptied; no replacement invented",
+      "replacement": null,
+      "handle_response_code": 100
+    },
+    "10.5281/zenodo.itc187": {
+      "classification": "FABRICATED",
+      "reason": "Zenodo DOIs carry a numeric record id; a word suffix is not DOI syntax and can never resolve.",
+      "was_in": ["python/flexaidds/dataset_runner/datasets/itc187.yaml", "benchmarks/datasets/itc187.yaml"],
+      "action": "emptied; dataset is declared NRGlab-internal with no published deposit",
+      "replacement": null,
+      "handle_response_code": 100
+    },
+    "10.5281/zenodo.muv2009": {
+      "classification": "FABRICATED",
+      "reason": "Zenodo DOIs carry a numeric record id; a word suffix is not DOI syntax and can never resolve.",
+      "was_in": ["python/flexaidds/dataset_runner/datasets/muv.yaml", "benchmarks/datasets/muv.yaml"],
+      "action": "emptied; no replacement invented",
+      "replacement": null,
+      "handle_response_code": 100
+    },
+    "10.1021/ci800224j": {
+      "classification": "UNREGISTERED",
+      "reason": "Valid DOI syntax but not registered: Handle responseCode 100, CrossRef /works 404.",
+      "was_in": [
+        "python/flexaidds/dataset_runner/datasets/astex_nonnative.yaml",
+        "benchmarks/datasets/astex_nonnative.yaml",
+        "benchmarks/astex_nonnative/README.md",
+        "benchmarks/astex_nonnative/manifest.yaml"
+      ],
+      "action": "replaced",
+      "replacement": "10.1021/ci8002254",
+      "replacement_evidence": "CrossRef bibliographic search, exact title match: Verdonk et al., 'Protein-Ligand Docking against Non-Native Protein Conformers', J. Chem. Inf. Model. 48:2214-2225 (2008) - the paper the surrounding citation text names.",
+      "handle_response_code": 100
+    },
+    "10.1021/ci8003380": {
+      "classification": "UNREGISTERED",
+      "reason": "Valid DOI syntax but not registered: Handle responseCode 100, CrossRef /works 404.",
+      "was_in": ["python/flexaidds/dataset_runner/datasets/muv.yaml", "benchmarks/datasets/muv.yaml"],
+      "action": "replaced",
+      "replacement": "10.1021/ci8002649",
+      "replacement_evidence": "CrossRef bibliographic search, exact title match: Rohrer & Baumann, 'Maximum Unbiased Validation (MUV) Data Sets for Virtual Screening Based on PubChem Bioactivity Data', J. Chem. Inf. Model. 49:169-184 (2009).",
+      "handle_response_code": 100
+    },
+    "10.1093/nar/g1271": {
+      "classification": "UNREGISTERED",
+      "reason": "Valid DOI syntax but not registered: Handle responseCode 100, CrossRef /works 404. Not named by the original audit; found by the repo-wide sweep.",
+      "was_in": ["benchmarks/fetch_itc_data.py"],
+      "action": "replaced",
+      "replacement": "10.1093/nar/gks966",
+      "replacement_evidence": "CrossRef bibliographic search, exact title match for the database the entry names: Yang, Roy & Zhang, 'BioLiP: a semi-manually curated database for biologically relevant ligand-protein interactions', Nucleic Acids Res. 41:D1096-D1103. If the BioLiP2 update is intended instead, 10.1093/nar/gkad630 is the verified alternative.",
+      "handle_response_code": 100
+    },
+    "10.1021/ci100366a": {
+      "classification": "UNREGISTERED",
+      "reason": "Valid DOI syntax but not registered: Handle responseCode 100, CrossRef /works 404. Not named by the original audit; found by the repo-wide sweep.",
+      "was_in": ["benchmarks/fetch_itc_data.py"],
+      "action": "emptied; NOT recoverable with confidence",
+      "replacement": null,
+      "replacement_evidence": "The entry names two different CSAR releases ('CSAR-NRC HiQ 2010 / CSAR 2012') and no single paper covers both. Verified-registered candidates considered and rejected: 10.1021/ci200082t (Dunbar et al. 2011, CSAR Benchmark Exercise of 2010, JCIM 51:2036-2046) covers only the 2010/HiQ release; 10.1021/ci100036a resolves but to an unrelated MM-PB/SA paper despite being one digit-transposition away. No DOI was invented.",
+      "handle_response_code": 100
+    }
+  }
+}

@@ -404,10 +404,14 @@ jobs:
         run: python3 scripts/check_repo_hygiene.py
       - name: Root run-artifact guard and diff classifier
         run: python3 -m pytest tests/test_check_root_artifacts.py tests/test_classify_diff.py tests/test_tier1_pr_needs_dock.py tests/test_github_workflows.py tests/test_coverage_gate.py tests/test_site_publish_scripts.py -q --tb=line
+      - name: Citation identifier integrity (offline; refresh with --refresh)
+        run: |
+          python3 scripts/check_dois.py --report
+          python3 scripts/check_dois.py --selftest
       - name: Validate public thermodynamic claims and provenance firewall
         run: |
           python3 scripts/validate_thermo_claims.py
-           python3 -m pytest tests/test_thermo_claim_firewall.py tests/test_check_published_astex_rates.py tests/test_blind_astex85_receipt_protocol.py tests/test_rmsd_five_way_crosscheck.py tests/test_wave4_tencom_ledger_firewall.py -q
+           python3 -m pytest tests/test_thermo_claim_firewall.py tests/test_check_published_astex_rates.py tests/test_blind_astex85_receipt_protocol.py tests/test_rmsd_five_way_crosscheck.py tests/test_wave4_tencom_ledger_firewall.py tests/test_doi_integrity.py -q
       - name: Validate flexaidds skill packaging
         env:
           FLEXAIDDS_REQUIRE_BUILD: '0'

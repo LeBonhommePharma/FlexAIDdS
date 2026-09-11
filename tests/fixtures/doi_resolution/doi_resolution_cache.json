@@ -1,0 +1,461 @@
+{
+  "_comment": "Committed resolution cache for scripts/check_dois.py. Refresh explicitly with --refresh; never hand-edit.",
+  "checked_utc": "2026-09-11T00:04:47Z",
+  "controls": {
+    "negative": "10.9999/flexaidds.nonexistent.control",
+    "negative_registered": false,
+    "positive": "10.1021/jm061277y",
+    "positive_registered": true
+  },
+  "counts": {
+    "distinct": 49,
+    "registered": 42,
+    "unregistered": 7
+  },
+  "dois": {
+    "10.1002/pro.2592": {
+      "container": "Protein Science",
+      "first_author": "Frappier",
+      "page": "474-483",
+      "registered": true,
+      "response_code": 1,
+      "title": "Vibrational entropy differences between mesophile and thermophile proteins and their use in protein engineering",
+      "volume": "24",
+      "year": 2014
+    },
+    "10.1002/prot.10232": {
+      "container": "Proteins: Structure, Function, and Bioinformatics",
+      "first_author": "Nissink",
+      "page": "457-471",
+      "registered": true,
+      "response_code": 1,
+      "title": "A new test set for validating predictions of protein\u2013ligand interaction",
+      "volume": "49",
+      "year": 2002
+    },
+    "10.1002/prot.24922": {
+      "container": "Proteins: Structure, Function, and Bioinformatics",
+      "first_author": "Lee",
+      "page": "2052-2066",
+      "registered": true,
+      "response_code": 1,
+      "title": "Prediction of the substrate for nonribosomal peptide synthetase (<scp>NRPS</scp>) adenylation domains by virtual screening",
+      "volume": "83",
+      "year": 2015
+    },
+    "10.1007/s10822-018-0170-6": {
+      "container": "Journal of Computer-Aided Molecular Design",
+      "first_author": "Rizzi",
+      "page": "937-963",
+      "registered": true,
+      "response_code": 1,
+      "title": "Overview of the SAMPL6 host\u2013guest binding affinity prediction challenge",
+      "volume": "32",
+      "year": 2018
+    },
+    "10.1016/j.bpj.2025.11.2689": {
+      "container": "Biophysical Journal",
+      "first_author": "Zavrtanik",
+      "page": "305-316",
+      "registered": true,
+      "response_code": 1,
+      "title": "Backbone conformational entropy change in helix folding",
+      "volume": "125",
+      "year": 2026
+    },
+    "10.1016/j.drudis.2008.07.005": {
+      "container": "Drug Discovery Today",
+      "first_author": "Freire",
+      "page": "869-874",
+      "registered": true,
+      "response_code": 1,
+      "title": "Do enthalpy and entropy distinguish first in class from best in class?",
+      "volume": "13",
+      "year": 2008
+    },
+    "10.1016/j.jmb.2008.09.073": {
+      "container": "Journal of Molecular Biology",
+      "first_author": "Olsson",
+      "page": "1002-1017",
+      "registered": true,
+      "response_code": 1,
+      "title": "The Thermodynamics of Protein\u2013Ligand Interaction and Solvation: Insights for Ligand Design",
+      "volume": "384",
+      "year": 2008
+    },
+    "10.1021/acs.jcim.3c00817": {
+      "container": "Journal of Chemical Information and Modeling",
+      "first_author": "Perez",
+      "page": "5727-5733",
+      "registered": true,
+      "response_code": 1,
+      "title": "AggBERT: Best in Class Prediction of Hexapeptide Amyloidogenesis with a Semi-Supervised ProtBERT Model",
+      "volume": "63",
+      "year": 2023
+    },
+    "10.1021/acs.jcim.5b00078": {
+      "container": "Journal of Chemical Information and Modeling",
+      "first_author": "Gaudreault",
+      "page": "1323-1336",
+      "registered": true,
+      "response_code": 1,
+      "title": "FlexAID: Revisiting Docking on Non-Native-Complex Structures",
+      "volume": "55",
+      "year": 2015
+    },
+    "10.1021/acs.jcim.6c00123": {
+      "container": "Journal of Chemical Information and Modeling",
+      "first_author": "Flores-Trujillo",
+      "page": "6453-6467",
+      "registered": true,
+      "response_code": 1,
+      "title": "Fast Fourier Transform Enables Automated Parametrization of Complex Dihedral Potentials in All-Atom and Coarse-Grained Force Fields",
+      "volume": "66",
+      "year": 2026
+    },
+    "10.1021/acs.jcim.8b00545": {
+      "container": "Journal of Chemical Information and Modeling",
+      "first_author": "Su",
+      "page": "895-913",
+      "registered": true,
+      "response_code": 1,
+      "title": "Comparative Assessment of Scoring Functions: The CASF-2016 Update",
+      "volume": "59",
+      "year": 2018
+    },
+    "10.1021/bi9809425": {
+      "container": "Biochemistry",
+      "first_author": "Xia",
+      "page": "14719-14735",
+      "registered": true,
+      "response_code": 1,
+      "title": "Thermodynamic Parameters for an Expanded Nearest-Neighbor Model for Formation of RNA Duplexes with Watson\u2212Crick Base Pairs",
+      "volume": "37",
+      "year": 1998
+    },
+    "10.1021/ci100036a": {
+      "container": "Journal of Chemical Information and Modeling",
+      "first_author": "Li",
+      "page": "1682-1692",
+      "registered": true,
+      "response_code": 1,
+      "title": "Test MM-PB/SA on True Conformational Ensembles of Protein\u2212Ligand Complexes",
+      "volume": "50",
+      "year": 2010
+    },
+    "10.1021/ci100366a": {
+      "registered": false,
+      "response_code": 100
+    },
+    "10.1021/ci200082t": {
+      "container": "Journal of Chemical Information and Modeling",
+      "first_author": "Dunbar",
+      "page": "2036-2046",
+      "registered": true,
+      "response_code": 1,
+      "title": "CSAR Benchmark Exercise of 2010: Selection of the Protein\u2013Ligand Complexes",
+      "volume": "51",
+      "year": 2011
+    },
+    "10.1021/ci800224j": {
+      "registered": false,
+      "response_code": 100
+    },
+    "10.1021/ci8002254": {
+      "container": "Journal of Chemical Information and Modeling",
+      "first_author": "Verdonk",
+      "page": "2214-2225",
+      "registered": true,
+      "response_code": 1,
+      "title": "Protein\u2212Ligand Docking against Non-Native Protein Conformers",
+      "volume": "48",
+      "year": 2008
+    },
+    "10.1021/ci8002649": {
+      "container": "Journal of Chemical Information and Modeling",
+      "first_author": "Rohrer",
+      "page": "169-184",
+      "registered": true,
+      "response_code": 1,
+      "title": "Maximum Unbiased Validation (MUV) Data Sets for Virtual Screening Based on PubChem Bioactivity Data",
+      "volume": "49",
+      "year": 2009
+    },
+    "10.1021/ci8003380": {
+      "registered": false,
+      "response_code": 100
+    },
+    "10.1021/ja077231r": {
+      "container": "Journal of the American Chemical Society",
+      "first_author": "Meier",
+      "page": "1017-1024",
+      "registered": true,
+      "response_code": 1,
+      "title": "Length Dependence of the Coil \u21c6 \u03b2-Sheet Transition in a Membrane Environment",
+      "volume": "130",
+      "year": 2007
+    },
+    "10.1021/ja9726769": {
+      "container": "Journal of the American Chemical Society",
+      "first_author": "Maynard",
+      "page": "1996-2007",
+      "registered": true,
+      "response_code": 1,
+      "title": "Origin of \u03b2-Hairpin Stability in Solution:\u2009 Structural and Thermodynamic Analysis of the Folding of a Model Peptide Supports Hydrophobic Stabilization in Water",
+      "volume": "120",
+      "year": 1998
+    },
+    "10.1021/jm048957q": {
+      "container": "Journal of Medicinal Chemistry",
+      "first_author": "Wang",
+      "page": "4111-4119",
+      "registered": true,
+      "response_code": 1,
+      "title": "The PDBbind Database:\u2009 Methodologies and Updates",
+      "volume": "48",
+      "year": 2005
+    },
+    "10.1021/jm061277y": {
+      "container": "Journal of Medicinal Chemistry",
+      "first_author": "Hartshorn",
+      "page": "726-741",
+      "registered": true,
+      "response_code": 1,
+      "title": "Diverse, High-Quality Test Set for the Validation of Protein\u2212Ligand Docking Performance",
+      "volume": "50",
+      "year": 2007
+    },
+    "10.1021/jm300687e": {
+      "container": "Journal of Medicinal Chemistry",
+      "first_author": "Mysinger",
+      "page": "6582-6594",
+      "registered": true,
+      "response_code": 1,
+      "title": "Directory of Useful Decoys, Enhanced (DUD-E): Better Ligands and Decoys for Better Benchmarking",
+      "volume": "55",
+      "year": 2012
+    },
+    "10.1021/jp109255g": {
+      "container": "The Journal of Physical Chemistry C",
+      "first_author": "Werner",
+      "page": "5063-5072",
+      "registered": true,
+      "response_code": 1,
+      "title": "Improved Working Model for Interpreting the Excitation Wavelength- and Fluence-Dependent Response in Pulsed Laser-Induced Size Reduction of Aqueous Gold Nanoparticles",
+      "volume": "115",
+      "year": 2010
+    },
+    "10.1038/nature02611": {
+      "container": "Nature",
+      "first_author": "Deechongkit",
+      "page": "101-105",
+      "registered": true,
+      "response_code": 1,
+      "title": "Context-dependent contributions of backbone hydrogen bonding to \u03b2-sheet folding energetics",
+      "volume": "430",
+      "year": 2004
+    },
+    "10.1038/s41598-017-17408-9": {
+      "container": "Scientific Reports",
+      "first_author": "Gro\u00dfmann",
+      "page": null,
+      "registered": true,
+      "response_code": 1,
+      "title": "Model-based genome-wide determination of RNA chain elongation rates in Escherichia coli",
+      "volume": "7",
+      "year": 2017
+    },
+    "10.1039/d3sc04185a": {
+      "container": "Chemical Science",
+      "first_author": "Buttenschoen",
+      "page": "3130-3139",
+      "registered": true,
+      "response_code": 1,
+      "title": "PoseBusters: AI-based docking methods fail to generate physically valid poses or generalise to novel sequences",
+      "volume": "15",
+      "year": 2024
+    },
+    "10.1063/1.3671644": {
+      "container": "The Journal of Chemical Physics",
+      "first_author": "Zhao",
+      "page": null,
+      "registered": true,
+      "response_code": 1,
+      "title": "Cotranscriptional folding kinetics of ribonucleic acid secondary structures",
+      "volume": "135",
+      "year": 2011
+    },
+    "10.1073/pnas.88.7.2854": {
+      "container": "Proceedings of the National Academy of Sciences",
+      "first_author": "Scholtz",
+      "page": "2854-2858",
+      "registered": true,
+      "response_code": 1,
+      "title": "Calorimetric determination of the enthalpy change for the alpha-helix to coil transition of an alanine peptide in water.",
+      "volume": "88",
+      "year": 1991
+    },
+    "10.1073/pnas.95.4.1460": {
+      "container": "Proceedings of the National Academy of Sciences",
+      "first_author": "SantaLucia",
+      "page": "1460-1465",
+      "registered": true,
+      "response_code": 1,
+      "title": "A unified view of polymer, dumbbell, and oligonucleotide DNA nearest-neighbor\u2009thermodynamics",
+      "volume": "95",
+      "year": 1998
+    },
+    "10.1093/bioinformatics/btab189": {
+      "container": "Bioinformatics",
+      "first_author": "Mailhot",
+      "page": "3369-3371",
+      "registered": true,
+      "response_code": 1,
+      "title": "The NRGTEN Python package: an extensible toolkit for coarse-grained normal mode analysis of proteins, nucleic acids, small molecules and their complexes",
+      "volume": "37",
+      "year": 2021
+    },
+    "10.1093/bioinformatics/btv458": {
+      "container": "Bioinformatics",
+      "first_author": "Gaudreault",
+      "page": "3856-3858",
+      "registered": true,
+      "response_code": 1,
+      "title": "NRGsuite: a PyMOL plugin to perform docking simulations in real time using FlexAID",
+      "volume": "31",
+      "year": 2015
+    },
+    "10.1093/nar/g1271": {
+      "registered": false,
+      "response_code": 100
+    },
+    "10.1093/nar/gkac261": {
+      "container": "Nucleic Acids Research",
+      "first_author": "Zuber",
+      "page": "5251-5262",
+      "registered": true,
+      "response_code": 1,
+      "title": "Nearest neighbor rules for RNA helix folding thermodynamics: improved end effects",
+      "volume": "50",
+      "year": 2022
+    },
+    "10.1093/nar/gkad1004": {
+      "container": "Nucleic Acids Research",
+      "first_author": "Zdrazil",
+      "page": "D1180-D1192",
+      "registered": true,
+      "response_code": 1,
+      "title": "The ChEMBL Database in 2023: a drug discovery platform spanning multiple bioactivity data types and time periods",
+      "volume": "52",
+      "year": 2023
+    },
+    "10.1093/nar/gkad630": {
+      "container": "Nucleic Acids Research",
+      "first_author": "Zhang",
+      "page": "D404-D412",
+      "registered": true,
+      "response_code": 1,
+      "title": "BioLiP2: an updated structure database for biologically relevant ligand\u2013protein interactions",
+      "volume": "52",
+      "year": 2023
+    },
+    "10.1093/nar/gkl472": {
+      "container": "Nucleic Acids Research",
+      "first_author": "Lu",
+      "page": "4912-4924",
+      "registered": true,
+      "response_code": 1,
+      "title": "A set of nearest neighbor parameters for predicting the enthalpy change of RNA secondary structure formation",
+      "volume": "34",
+      "year": 2006
+    },
+    "10.1093/nar/gkp892": {
+      "container": "Nucleic Acids Research",
+      "first_author": "Turner",
+      "page": "D280-D282",
+      "registered": true,
+      "response_code": 1,
+      "title": "NNDB: the nearest neighbor parameter database for predicting stability of nucleic acid secondary structure",
+      "volume": "38",
+      "year": 2009
+    },
+    "10.1093/nar/gks966": {
+      "container": "Nucleic Acids Research",
+      "first_author": "Yang",
+      "page": "D1096-D1103",
+      "registered": true,
+      "response_code": 1,
+      "title": "BioLiP: a semi-manually curated database for biologically relevant ligand\u2013protein interactions",
+      "volume": "41",
+      "year": 2012
+    },
+    "10.1093/nar/gkv1072": {
+      "container": "Nucleic Acids Research",
+      "first_author": "Gilson",
+      "page": "D1045-D1053",
+      "registered": true,
+      "response_code": 1,
+      "title": "BindingDB in 2015: A public database for medicinal chemistry, computational chemistry and systems pharmacology",
+      "volume": "44",
+      "year": 2015
+    },
+    "10.1101/2025.02.17.638675": {
+      "container": null,
+      "first_author": "DesC\u00f4teaux",
+      "page": null,
+      "registered": true,
+      "response_code": 1,
+      "title": "NRGRank: Coarse-grained structurally-informed ultra-massive virtual screening",
+      "volume": null,
+      "year": 2025
+    },
+    "10.1145/304181.304187": {
+      "container": "ACM SIGMOD Record",
+      "first_author": "Ankerst",
+      "page": "49-60",
+      "registered": true,
+      "response_code": 1,
+      "title": "OPTICS",
+      "volume": "28",
+      "year": 1999
+    },
+    "10.1146/annurev.biophys.32.110601.141800": {
+      "container": "Annual Review of Biophysics and Biomolecular Structure",
+      "first_author": "SantaLucia",
+      "page": "415-440",
+      "registered": true,
+      "response_code": 1,
+      "title": "The Thermodynamics of DNA Structural Motifs",
+      "volume": "33",
+      "year": 2004
+    },
+    "10.1371/journal.pcbi.1003569": {
+      "container": "PLoS Computational Biology",
+      "first_author": "Frappier",
+      "page": "e1003569",
+      "registered": true,
+      "response_code": 1,
+      "title": "A Coarse-Grained Elastic Network Atom Contact Model and Its Use in the Simulation of Protein Dynamics and the Prediction of the Effect of Mutations",
+      "volume": "10",
+      "year": 2014
+    },
+    "10.5281/zenodo.16861024": {
+      "crossref": "404",
+      "registered": true,
+      "response_code": 1
+    },
+    "10.5281/zenodo.dude37": {
+      "registered": false,
+      "response_code": 100
+    },
+    "10.5281/zenodo.itc187": {
+      "registered": false,
+      "response_code": 100
+    },
+    "10.5281/zenodo.muv2009": {
+      "registered": false,
+      "response_code": 100
+    }
+  },
+  "oracle": "doi.org Handle System /api/handles (registry-agnostic) + CrossRef /works for metadata"
+}
