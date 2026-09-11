@@ -112,3 +112,19 @@ expected_baselines:
 
 baseline_tolerance: 0.05
 active_label_field: is_active
+
+# ── primary source (dataset-identity gate, rule 7/8) ──────────────────────
+# The PUBLICATION is identified and registered: the DOI below resolves via
+# CrossRef and is cached in tests/fixtures/doi_resolution/. What is NOT
+# verified is that THIS roster was extracted from it -- no table extraction
+# with a recorded locator was performed, so the paper-to-target-list mapping
+# rests on this repository's own comments. That is why verified is false.
+primary_source:
+  doi: 10.1021/jm300687e
+  citation: >-
+    Mysinger et al. (2012) J. Med. Chem. 55:6582-6594, "Directory of Useful Decoys, Enhanced (DUD-E)"
+  verified: false
+  reason: >-
+    Publication identified and DOI registered; the extraction of this target
+    list from it is NOT verified. No locator (table, page, supplementary file)
+    has been recorded for any row. See SYSTEMIC_FIX_REPORT.md.

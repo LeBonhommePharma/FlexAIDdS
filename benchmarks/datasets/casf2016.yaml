@@ -175,3 +175,22 @@ claude_reevaluated_rationale: >
   targets.  Entropy rescue rate left unchanged at 0.35 — this is FlexAIDdS's
   unique discriminator and the claim is modest.
 claude_reevaluated_by: "Claude Opus 4.6 — 2026-04-19"
+
+# ── primary source (dataset-identity gate, rule 7/8) ──────────────────────
+# The PUBLICATION is identified and registered: the DOI below resolves via
+# CrossRef and is cached in tests/fixtures/doi_resolution/. What is NOT
+# verified is that THIS roster was extracted from it -- no table extraction
+# with a recorded locator was performed, so the paper-to-target-list mapping
+# rests on this repository's own comments. That is why verified is false.
+    #   The 2026-09-10 audit reports that only 115 of the 283 codes the engine
+    #   executes overlap the published CASF-2016 core set. That figure is the
+    #   audit's, repeated here, not re-measured. It is the reason this stays false.
+primary_source:
+  doi: 10.1021/acs.jcim.8b00545
+  citation: >-
+    Su et al. (2019) J. Chem. Inf. Model. 59:895-913, "Comparative Assessment of Scoring Functions: The CASF-2016 Update"
+  verified: false
+  reason: >-
+    Publication identified and DOI registered; the extraction of this target
+    list from it is NOT verified. No locator (table, page, supplementary file)
+    has been recorded for any row. See SYSTEMIC_FIX_REPORT.md.

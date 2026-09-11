@@ -153,9 +153,12 @@ def _write(tmp_path: Path, name: str, body: str) -> Path:
 
 
 def test_known_good_fixture_passes(tmp_path, cache):
+    """A clean roster CSV: existing codes, real ligands, no constant column, and a
+    per-row provenance locator (rule 9 fires on a roster that records none, so a
+    fixture without one would fail for a reason this test is not about)."""
     good = [c for c, v in cache.items() if v.get("exists") and v.get("nonpolymer_comp_ids")][:3]
-    body = "pdb_id,ligand_id,resolution_A\n" + "".join(
-        "%s,%s,%s\n" % (c, cache[c]["nonpolymer_comp_ids"][0], 1.4 + 0.1 * i)
+    body = "pdb_id,ligand_id,resolution_A,source_locator\n" + "".join(
+        "%s,%s,%s,row %d\n" % (c, cache[c]["nonpolymer_comp_ids"][0], 1.4 + 0.1 * i, i)
         for i, c in enumerate(good))
     _write(tmp_path, "good_set.csv", body)
     findings, stats = CDI.check(tmp_path, cache, {}, files=["good_set.csv"])
@@ -359,3 +362,112 @@ def test_every_live_mirror_divergence_is_quarantined_with_a_reason(cache):
             unexplained.append(key)
     assert not unexplained, (
         "live mirror divergences with no quarantine reason: %s" % unexplained)
+
+
+# ---------------------------------------------------------------------------
+# S5 - provenance, not just syntax (rules 7-9)
+# ---------------------------------------------------------------------------
+
+def _registry():
+    return CDI.load_doi_registry()
+
+
+def test_doi_registry_loads_and_has_both_polarities():
+    """The resolution arms need a registered AND an unregistered DOI to be real."""
+    reg = _registry()
+    assert reg, "no DOI registry loaded from %s" % CDI.DOI_CACHE_PATH
+    assert any(reg.values()), "no registered DOI in the cache"
+    assert any(not v for v in reg.values()), "no unregistered DOI in the cache"
+
+
+def test_provenance_rule_inspects_a_nonzero_number_of_live_fields():
+    _, stats = CDI.check_provenance(ROOT, _registry())
+    assert stats["definitions_with_a_roster"] >= 20, stats
+    assert stats["primary_sources_inspected"] >= 20, stats
+    assert stats["declared_dois_checked"] >= 1, (
+        "no declared primary_source DOI was checked on the real tree: the "
+        "PRIMARY_SOURCE_UNRESOLVED rule is vacuous here")
+    assert stats["row_provenance_checks"] >= 5, stats
+
+
+def _prov(tmp_path, doc=None, csv_body=None):
+    import yaml
+    files = []
+    if doc is not None:
+        (tmp_path / "probe.yaml").write_text(yaml.safe_dump(doc))
+        files.append("probe.yaml")
+    if csv_body is not None:
+        (tmp_path / "probe_set.csv").write_text(csv_body)
+        files.append("probe_set.csv")
+    return CDI.check_provenance(tmp_path, _registry(), files)[0]
+
+
+def test_a_roster_with_no_primary_source_fails(tmp_path):
+    f = _prov(tmp_path, {"name": "p", "slug": "p", "targets": ["1T46"]})
+    assert [x for x in f if x.kind == "PRIMARY_SOURCE_UNDECLARED"], f
+
+
+def test_prose_naming_a_paper_is_not_a_primary_source(tmp_path):
+    """published_source held 'Gaudreault & Najmanovich 2015 JCIM Table 2' on six
+    definitions. It names a paper; nothing can check it, and nothing did."""
+    f = _prov(tmp_path, {"name": "p", "slug": "p", "targets": ["1T46"],
+                         "published_source": "Hartshorn et al. 2007 JCIM Table 2"})
+    assert [x for x in f if x.kind == "PRIMARY_SOURCE_UNDECLARED"], f
+
+
+def test_an_explicit_unverified_admission_with_a_reason_passes(tmp_path):
+    """A dataset with no verifiable source is not a failure -- but it must say so."""
+    f = _prov(tmp_path, {"name": "p", "slug": "p", "targets": ["1T46"],
+                         "primary_source": {"status": "UNVERIFIED", "reason": "none known"}})
+    assert not f, f
+
+
+def test_an_unverified_admission_without_a_reason_fails(tmp_path):
+    f = _prov(tmp_path, {"name": "p", "slug": "p", "targets": ["1T46"],
+                         "primary_source": {"status": "UNVERIFIED"}})
+    assert [x for x in f if x.kind == "PRIMARY_SOURCE_UNDECLARED"], f
+
+
+def test_a_registered_doi_passes_and_an_unregistered_one_fails(tmp_path):
+    reg = _registry()
+    good = next(d for d, v in reg.items() if v)
+    bad = next(d for d, v in reg.items() if not v)
+    base = {"name": "p", "slug": "p", "targets": ["1T46"]}
+    assert not _prov(tmp_path, dict(base, primary_source={"doi": good}))
+    f = _prov(tmp_path, dict(base, primary_source={"doi": bad}))
+    assert [x for x in f if x.kind == "PRIMARY_SOURCE_UNRESOLVED"], f
+
+
+def test_a_doi_absent_from_the_crossref_cache_fails(tmp_path):
+    """Never doi.org -L: it returns HTTP 000 for valid DOIs and 404 for fakes."""
+    absent = "10.9999" + "/" + "absent.control"   # assembled: see the gate's selftest
+    ps = {"doi": absent}
+    f = _prov(tmp_path, {"name": "p", "slug": "p", "targets": ["1T46"],
+                         "primary_source": ps})
+    assert [x for x in f if x.kind == "PRIMARY_SOURCE_UNRESOLVED"], f
+
+
+def test_a_roster_csv_with_no_per_row_provenance_fails(tmp_path):
+    f = _prov(tmp_path, csv_body="pdb_id,rmsd_threshold_A\n1T46,2.0\n2BSM,2.5\n")
+    assert [x for x in f if x.kind == "ROW_PROVENANCE_UNDECLARED"], f
+
+
+def test_a_roster_csv_with_per_row_provenance_passes(tmp_path):
+    f = _prov(tmp_path, csv_body="pdb_id,source_locator\n1T46,table 2 p734\n2BSM,table 2 p735\n")
+    assert not f, f
+
+
+def test_a_provenance_column_empty_on_every_row_is_not_provenance(tmp_path):
+    f = _prov(tmp_path, csv_body="pdb_id,source_locator\n1T46,\n2BSM,\n")
+    assert [x for x in f if x.kind == "ROW_PROVENANCE_UNDECLARED"], f
+
+
+def test_every_live_provenance_finding_is_quarantined_with_a_reason():
+    import json
+    raw = CDI.check_provenance(ROOT, _registry())[0]
+    ledger = json.loads(CDI.DEFECTS_PATH.read_text())["quarantined"]
+    unexplained = [
+        "%s::%s::%s" % (f.path, f.kind, f.kind) for f in raw
+        if not ledger.get("%s::%s::%s" % (f.path, f.kind, f.kind), {}).get("reason")]
+    assert not unexplained, (
+        "live provenance findings with no quarantine reason: %s" % unexplained)

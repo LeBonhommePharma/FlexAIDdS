@@ -421,6 +421,10 @@
    "quarantined_utc": "2026-09-11T00:54:51Z",
    "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
   },
+  "benchmarks/datasets/astex_diverse.yaml::PRIMARY_SOURCE_UNDECLARED::PRIMARY_SOURCE_UNDECLARED": {
+   "quarantined_utc": "2026-09-11T02:59:09Z",
+   "reason": "FROZEN: this definition must stay byte-identical while a docking lane reads it (dataset identity audit C2), so the primary_source: block could not be added. It is the ONE definition that most needs the label: its 85-code roster is 72/85 of the Hartshorn 2007 published set with 13 substitutions, and its published_source field is free prose naming a baselines table. The corrected definition astex_diverse_hartshorn85.yaml carries a full, verified primary_source with doi 10.1021/jm061277y and a per-row locator. DELETE THIS ENTRY and add the block when the freeze lifts."
+  },
   "benchmarks/datasets/competition_example.yaml::MIRROR_UNPAIRED::file": {
    "quarantined_utc": "2026-09-11T02:39:25Z",
    "reason": "Exists only in benchmarks/datasets; python/flexaidds/dataset_runner/datasets has no copy, so that runtime cannot see this dataset. Pre-existing asymmetry, not new drift. Quarantined so a NEWLY unpaired definition fails. DELETE THIS ENTRY when the pair exists or the definition is removed."
@@ -428,6 +432,10 @@
   "benchmarks/datasets/crossdock_modern.yaml::MIRROR_UNPAIRED::file": {
    "quarantined_utc": "2026-09-11T02:39:25Z",
    "reason": "Exists only in benchmarks/datasets; python/flexaidds/dataset_runner/datasets has no copy, so that runtime cannot see this dataset. Pre-existing asymmetry, not new drift. Quarantined so a NEWLY unpaired definition fails. DELETE THIS ENTRY when the pair exists or the definition is removed."
+  },
+  "python/flexaidds/dataset_runner/datasets/astex_diverse.yaml::PRIMARY_SOURCE_UNDECLARED::PRIMARY_SOURCE_UNDECLARED": {
+   "quarantined_utc": "2026-09-11T02:59:09Z",
+   "reason": "FROZEN: this definition must stay byte-identical while a docking lane reads it (dataset identity audit C2), so the primary_source: block could not be added. It is the ONE definition that most needs the label: its 85-code roster is 72/85 of the Hartshorn 2007 published set with 13 substitutions, and its published_source field is free prose naming a baselines table. The corrected definition astex_diverse_hartshorn85.yaml carries a full, verified primary_source with doi 10.1021/jm061277y and a per-row locator. DELETE THIS ENTRY and add the block when the freeze lifts."
   },
   "python/flexaidds/dataset_runner/datasets/astex_nonnative.yaml::MIRROR_VALUE_DIVERGENCE::data_format": {
    "quarantined_utc": "2026-09-11T02:39:25Z",

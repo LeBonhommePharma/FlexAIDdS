@@ -116,6 +116,29 @@ _SELF = {
 # That is the surface the 85 codes drifted across. Collapsing it to one file is not
 # safe today -- see SYSTEMIC_FIX_REPORT.md for the four decisions it needs -- so it
 # is gated instead of guessed.
+# ── S5: provenance, not just syntax ──────────────────────────────────────────
+# A dataset definition that names no verifiable source is not automatically a
+# failure -- plenty of this repository's rosters genuinely have no published
+# origin. But it must SAY SO, in the definition, where the next person to read it
+# will see it. "It's in a report somewhere" is how the 72/85 Astex roster kept its
+# published-set label for months.
+#
+# Accepted declarations, both under a ``primary_source:`` mapping:
+#   doi: 10.xxxx/yyy    checked for registration against the CrossRef-backed cache
+#                       that scripts/check_dois.py maintains. Never doi.org -L:
+#                       that returns HTTP 000 for valid DOIs and 404 for fakes.
+#   status: UNVERIFIED  an explicit admission, which must carry a reason.
+#
+# Free prose naming a paper (``published_source: "Gaudreault & Najmanovich 2015
+# JCIM Table 2"``) is NOT a primary-source declaration. It names a paper; nothing
+# can check it, and nothing did.
+_PROV_COLUMNS = re.compile(r"provenance|_basis|source|reference|citation|derived_from|sha256",
+                           re.I)
+_UNVERIFIED = "UNVERIFIED"
+DOI_CACHE_PATH = (Path(__file__).resolve().parents[1]
+                  / "tests" / "fixtures" / "doi_resolution" / "doi_resolution_cache.json")
+_DOI_SYNTAX = re.compile(r"^10\.\d{4,9}/\S+$")
+
 CANONICAL_DATASET_DIR = "benchmarks/datasets"
 MIRROR_DATASET_DIR = "python/flexaidds/dataset_runner/datasets"
 
@@ -433,6 +456,150 @@ def refresh(root: Path) -> int:
 # Offline gate
 # ---------------------------------------------------------------------------
 
+def load_doi_registry(path: Optional[Path] = None) -> Dict[str, bool]:
+    """doi -> registered, from the cache scripts/check_dois.py writes via CrossRef.
+
+    Offline by construction: this gate never resolves a DOI itself. It reads the
+    same committed cache the citation gate reads, so the two cannot disagree about
+    whether an identifier is real.
+    """
+    p = path or DOI_CACHE_PATH
+    if not p.exists():
+        return {}
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+    return {k: bool(v.get("registered")) for k, v in (doc.get("dois") or {}).items()
+            if isinstance(v, dict)}
+
+
+def check_provenance(root: Path, doi_registry: Dict[str, bool],
+                     files: Optional[Iterable[str]] = None
+                     ) -> Tuple[List[Finding], Dict[str, int]]:
+    """Every roster must name a source that resolves, or admit it cannot."""
+    findings: List[Finding] = []
+    stats = {"definitions_with_a_roster": 0, "primary_sources_inspected": 0,
+             "declared_dois_checked": 0, "row_provenance_checks": 0}
+    try:
+        import yaml
+    except ImportError:
+        return findings, stats
+
+    if files is None:
+        files = list_files(root)
+
+    owned_unverified: Dict[str, str] = {}   # csv path -> owning definition
+    for rel in sorted(files):
+        rel_norm = rel.replace(os.sep, "/")
+        if rel_norm in _SELF or rel_norm.startswith("tests/fixtures/dataset_identity/"):
+            continue
+        if any(part in _SKIP_DIR_PARTS for part in Path(rel_norm).parts[:-1]):
+            continue
+        p = root / rel_norm
+        if p.suffix.lower() not in {".yaml", ".yml"} or not p.is_file():
+            continue
+        try:
+            doc = yaml.safe_load(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(doc, dict):
+            continue
+        if not (isinstance(doc.get("targets"), list) and doc["targets"]):
+            continue
+        stats["definitions_with_a_roster"] += 1
+
+        ps = doc.get("primary_source")
+        stats["primary_sources_inspected"] += 1
+        if not isinstance(ps, dict) or not ps:
+            findings.append(Finding(
+                "PRIMARY_SOURCE_UNDECLARED", rel_norm,
+                "declares %d targets and no primary_source: mapping. Give it a doi: that "
+                "resolves, or status: %s with a reason. Prose in published_source names a "
+                "paper but nothing can check it."
+                % (len(doc["targets"]), _UNVERIFIED)))
+            continue
+
+        doi = str(ps.get("doi") or "").strip()
+        status = str(ps.get("status") or "").strip().upper()
+        if doi:
+            stats["declared_dois_checked"] += 1
+            if not _DOI_SYNTAX.match(doi):
+                findings.append(Finding("PRIMARY_SOURCE_UNRESOLVED", rel_norm,
+                                        "primary_source.doi %r is not DOI syntax" % doi))
+            elif doi not in doi_registry:
+                findings.append(Finding(
+                    "PRIMARY_SOURCE_UNRESOLVED", rel_norm,
+                    "primary_source.doi %s has no cached CrossRef resolution. Run "
+                    "scripts/check_dois.py --refresh; an unresolved DOI is not a source."
+                    % doi))
+            elif not doi_registry[doi]:
+                findings.append(Finding(
+                    "PRIMARY_SOURCE_UNRESOLVED", rel_norm,
+                    "primary_source.doi %s is NOT REGISTERED with any DOI registry" % doi))
+        elif status == _UNVERIFIED:
+            if not str(ps.get("reason") or "").strip():
+                findings.append(Finding(
+                    "PRIMARY_SOURCE_UNDECLARED", rel_norm,
+                    "primary_source.status is %s with no reason:. An unlabelled admission "
+                    "is not a label." % _UNVERIFIED))
+        else:
+            findings.append(Finding(
+                "PRIMARY_SOURCE_UNDECLARED", rel_norm,
+                "primary_source has neither a doi: nor status: %s (keys: %s)"
+                % (_UNVERIFIED, sorted(ps))))
+
+        if str(doc.get("row_provenance") or "").strip().upper() == _UNVERIFIED:
+            def walk(node):
+                if isinstance(node, dict):
+                    for v in node.values():
+                        walk(v)
+                elif isinstance(node, list):
+                    for v in node:
+                        walk(v)
+                elif isinstance(node, str) and node.strip().endswith(".csv"):
+                    owned_unverified.setdefault(node.strip().lstrip("./"), rel_norm)
+            walk(doc)
+
+    # Per-row provenance on every roster CSV the sweep collects.
+    for rel in sorted(files):
+        rel_norm = rel.replace(os.sep, "/")
+        if any(part in _SKIP_DIR_PARTS for part in Path(rel_norm).parts[:-1]):
+            continue
+        p = root / rel_norm
+        low = p.name.lower()
+        if not (low.endswith(".csv") or low.endswith(".csv.orig")) or not p.is_file():
+            continue
+        try:
+            with p.open(newline="", encoding="utf-8") as fh:
+                rows = list(csv.DictReader(fh))
+        except (OSError, UnicodeDecodeError, csv.Error):
+            continue
+        if not rows or not rows[0]:
+            continue
+        headers = [h for h in rows[0].keys() if h]
+        if not any(h.strip().lower() in _PDB_COLUMNS for h in headers):
+            continue
+        stats["row_provenance_checks"] += 1
+        prov = [h for h in headers if _PROV_COLUMNS.search(h)]
+        if not prov:
+            if rel_norm not in owned_unverified:
+                findings.append(Finding(
+                    "ROW_PROVENANCE_UNDECLARED", rel_norm,
+                    "%d rows and no per-row provenance column (columns: %s). Add one, or "
+                    "declare row_provenance: %s in the definition that names this file."
+                    % (len(rows), headers, _UNVERIFIED)))
+            continue
+        empty = {h: sum(1 for r in rows if not (r.get(h) or "").strip()) for h in prov}
+        blank = {h: n for h, n in empty.items() if n == len(rows)}
+        if blank and rel_norm not in owned_unverified:
+            findings.append(Finding(
+                "ROW_PROVENANCE_UNDECLARED", rel_norm,
+                "provenance column(s) %s are empty on all %d rows: a column that records "
+                "nothing is not provenance" % (sorted(blank), len(rows))))
+    return findings, stats
+
+
 def compare_mirror(root: Path) -> Tuple[List[Finding], Dict[str, int]]:
     """Compare the two live dataset-definition trees key by key.
 
@@ -574,6 +741,14 @@ def check(root: Path, cache: Dict[str, dict], defects: Dict[str, dict],
                         "ligand %r is declared for %s, which has components %s"
                         % (lig, entry_code, entry.get("nonpolymer_comp_ids") or [])))
 
+    # Rules 7-9 - a roster must name a source that resolves, or admit it cannot
+    prov_findings, prov_stats = check_provenance(root, load_doi_registry(), files)
+    for f in prov_findings:
+        detail_key = f.kind
+        if not quarantined(f.path, f.kind, detail_key):
+            findings.append(f)
+    stats.update(prov_stats)
+
     # Rule 6 - the two live copies of a dataset definition must agree
     mirror_findings, mirror_stats = compare_mirror(root)
     for f in mirror_findings:
@@ -636,19 +811,26 @@ def selftest(root: Path) -> int:
     # cannot drift into the cache and silently disarm the arm.
     fake_lig = "Z" + "ZZ"
 
-    rows_ok = ["pdb_id,ligand_id,resolution_A"]
+    # Every fixture carries a per-row source_locator with DISTINCT values. Rule 9
+    # (ROW_PROVENANCE_UNDECLARED) fires on a roster CSV with no provenance column,
+    # so a fixture without one would make the known-good arm fail for the wrong
+    # reason; distinct values keep rule 2 (CONSTANT_COLUMN) out of it too. Each arm
+    # must fail for the defect it encodes and nothing else.
+    _HDR = "pdb_id,ligand_id,resolution_A,source_locator"
+    rows_ok = [_HDR]
     for i, c in enumerate([good_code] + other):
         lig = cache[c]["nonpolymer_comp_ids"][0]
-        rows_ok.append("%s,%s,%s" % (c, lig, 1.5 + 0.1 * i))
+        rows_ok.append("%s,%s,%s,row %d" % (c, lig, 1.5 + 0.1 * i, i))
     good_csv = "\n".join(rows_ok) + "\n"
 
     bad_fixtures = {
-        "absent_code": "pdb_id,ligand_id,resolution_A\n%s,%s,1.5\n%s,%s,1.7\n"
+        "absent_code": _HDR + "\n%s,%s,1.5,row 0\n%s,%s,1.7,row 1\n"
                        % (bad_code, good_lig, good_code, good_lig),
-        "constant_column": "pdb_id,ligand_id,resolution_A\n"
-                           + "".join("%s,%s,2.0\n" % (c, cache[c]["nonpolymer_comp_ids"][0])
-                                     for c in ([good_code] + other)),
-        "absent_ligand": "pdb_id,ligand_id,resolution_A\n%s,%s,1.5\n%s,%s,1.7\n"
+        "constant_column": _HDR + "\n"
+                           + "".join("%s,%s,2.0,row %d\n"
+                                     % (c, cache[c]["nonpolymer_comp_ids"][0], i)
+                                     for i, c in enumerate([good_code] + other)),
+        "absent_ligand": _HDR + "\n%s,%s,1.5,row 0\n%s,%s,1.7,row 1\n"
                          % (good_code, fake_lig, other[0] if other else good_code, good_lig),
     }
 
@@ -735,6 +917,71 @@ def selftest(root: Path) -> int:
     print("[selftest] quarantined defect         -> %d findings (expected 0)"
           % len(results["_quarantine_suppresses"]))
 
+    # Provenance arms (rules 7-9). A resolving DOI and an explicit UNVERIFIED
+    # admission must both PASS; silence, an admission with no reason, an
+    # unregistered DOI and a roster CSV with no per-row provenance must all FAIL.
+    registry = load_doi_registry()
+    good_doi = next((d for d, reg in registry.items() if reg), None)
+    bad_doi = next((d for d, reg in registry.items() if not reg), None)
+    if not good_doi or not bad_doi:
+        print("VOID: the DOI cache has no registered/unregistered pair; the "
+              "PRIMARY_SOURCE_UNRESOLVED arm cannot be exercised in both directions.")
+        return 2
+
+    import yaml as _yaml
+    # Assembled at runtime, and referenced as a NAME rather than a quoted value on
+    # a "doi": line. Both matter: scripts/check_dois.py scans source text, so a
+    # contiguous DOI literal here is reported UNCACHED against this file, and a
+    # quoted value after a doi key is parsed as a citation field and reported
+    # NOT_DOI_SYNTAX. Same rationale as fake_lig above.
+    absent_doi = "10.9999" + "/" + "absent.control"
+    roster = {"name": "probe", "slug": "probe", "targets": [good_code]}
+    prov_arms = {
+        "source_doi_resolves": (dict(roster, primary_source={"doi": good_doi}), None, None),
+        "source_unverified_with_reason": (
+            dict(roster, primary_source={"status": "UNVERIFIED", "reason": "none known"}),
+            None, None),
+        "source_silent": (dict(roster), None, "PRIMARY_SOURCE_UNDECLARED"),
+        "source_unverified_without_reason": (
+            dict(roster, primary_source={"status": "UNVERIFIED"}),
+            None, "PRIMARY_SOURCE_UNDECLARED"),
+        "source_doi_not_registered": (
+            dict(roster, primary_source={"doi": bad_doi}), None, "PRIMARY_SOURCE_UNRESOLVED"),
+        "source_doi_not_in_cache": (
+            dict(roster, primary_source={"doi": absent_doi}),
+            None, "PRIMARY_SOURCE_UNRESOLVED"),
+        "row_provenance_missing": (
+            None, "pdb_id,rmsd_threshold_A\n%s,2.0\n%s,2.5\n" % (good_code, other[0]),
+            "ROW_PROVENANCE_UNDECLARED"),
+        "row_provenance_present": (
+            None, "pdb_id,source_locator\n%s,table 2 p734\n%s,table 2 p735\n"
+                  % (good_code, other[0]), None),
+    }
+    prov_ok = True
+    prov_denoms = 0
+    for name, (doc, csv_body, want) in prov_arms.items():
+        with tempfile.TemporaryDirectory() as td3:
+            t3 = Path(td3)
+            files = []
+            if doc is not None:
+                (t3 / "probe.yaml").write_text(_yaml.safe_dump(doc), encoding="utf-8")
+                files.append("probe.yaml")
+            if csv_body is not None:
+                (t3 / "probe_set.csv").write_text(csv_body, encoding="utf-8")
+                files.append("probe_set.csv")
+            f, s = check_provenance(t3, registry, files)
+            kinds = {x.kind for x in f}
+            hit = (not f) if want is None else (want in kinds)
+            prov_ok = prov_ok and hit
+            prov_denoms += s["primary_sources_inspected"] + s["row_provenance_checks"]
+            print("[selftest] provenance %-34s -> %d findings, %s: %s%s"
+                  % (name, len(f), want or "no findings", hit,
+                     "" if hit else "   *** INTENDED RULE DID NOT FIRE ***"))
+    if prov_denoms == 0:
+        print("VOID: the provenance arms inspected ZERO fields.")
+        prov_ok = False
+    arms_ok = arms_ok and prov_ok
+
     for name, (f, s, want) in sorted(mirror_results.items()):
         kinds = {x.kind for x in f}
         hit = (not f) if want is None else (want in kinds)
@@ -762,11 +1009,19 @@ def selftest(root: Path) -> int:
           "live dataset trees, %d unpaired"
           % (live_stats.get("mirror_pairs", 0), live_stats.get("mirror_keys_compared", 0),
              live_stats.get("mirror_unpaired", 0)))
+    print("[selftest] live provenance: %d definitions with a roster, %d primary_source fields "
+          "inspected, %d declared DOIs checked, %d roster CSVs checked for per-row provenance"
+          % (live_stats.get("definitions_with_a_roster", 0),
+             live_stats.get("primary_sources_inspected", 0),
+             live_stats.get("declared_dois_checked", 0),
+             live_stats.get("row_provenance_checks", 0)))
     for name, key in (("PDB_CODE_ABSENT/UNCACHED", "code_checks"),
                       ("CONSTANT_COLUMN", "column_checks"),
                       ("LIGAND_CODE_ABSENT", "ligand_checks"),
                       ("MIRROR_VALUE_DIVERGENCE/MIRROR_ONLY_KEY/CANONICAL_ONLY_KEY",
-                       "mirror_keys_compared")):
+                       "mirror_keys_compared"),
+                      ("PRIMARY_SOURCE_UNDECLARED/UNRESOLVED", "primary_sources_inspected"),
+                      ("ROW_PROVENANCE_UNDECLARED", "row_provenance_checks")):
         if live_stats[key] == 0:
             print("VOID: rule %s inspected ZERO fields on the real tree. It is vacuous." % name)
             ok = False
@@ -775,9 +1030,11 @@ def selftest(root: Path) -> int:
         print("VOID: the gate did not produce BOTH a pass on known-good and a failure on every "
               "known-bad arm with non-zero live denominators. It proves nothing in this state.")
         return 2
-    print("[selftest] NON-VACUOUS: passes known-good, fails all %d known-bad arms and all %d "
-          "mirror arms, quarantine suppresses, and every rule inspects a non-zero number of "
-          "live fields." % (len(arms), sum(1 for _, (_, _, w) in mirror_results.items() if w)))
+    print("[selftest] NON-VACUOUS: passes known-good, fails all %d known-bad arms, all %d "
+          "mirror arms and all %d provenance arms, passes both provenance arms that should, "
+          "quarantine suppresses, and every rule inspects a non-zero number of live fields."
+          % (len(arms), sum(1 for _, (_, _, w) in mirror_results.items() if w),
+             sum(1 for _, _, w in prov_arms.values() if w)))
     return 0
 
 
@@ -817,6 +1074,13 @@ def main(argv: Optional[List[str]] = None) -> int:
              stats["column_checks"], stats["ligand_checks"],
              stats.get("mirror_keys_compared", 0), stats.get("mirror_pairs", 0),
              stats.get("mirror_unpaired", 0), stats["cached"], stats["quarantined"]))
+    print("provenance: %d definitions with a roster, %d primary_source fields inspected, "
+          "%d declared DOIs checked against the CrossRef cache, %d roster CSVs checked for "
+          "per-row provenance"
+          % (stats.get("definitions_with_a_roster", 0),
+             stats.get("primary_sources_inspected", 0),
+             stats.get("declared_dois_checked", 0),
+             stats.get("row_provenance_checks", 0)))
     print("cache checked_utc=%s oracle=%s" % (cache_doc.get("checked_utc"), cache_doc.get("oracle")))
 
     if args.report:

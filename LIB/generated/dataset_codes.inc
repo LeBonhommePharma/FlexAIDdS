@@ -10,7 +10,7 @@
 //                  sha256=a6384bdda9ba5a73d58284149287f584452805b549b0ea665be944f6e6497708
 //                  n=85 provenance=ROSTER_CSV primary_source=10.1021/jm061277y
 //   hap2           benchmarks/datasets/hap2.yaml
-//                  sha256=e6bc9d3e83505d6827c383fcac3dc6cd639f7a67c5ee8282a0a9adc29ac8c45e
+//                  sha256=8dcf34e6a025093587d066dd8ecc110bcf02d7d48df7ef05b329d8b4f52cbda1
 //                  n=59 provenance=DEFINITION_YAML primary_source=10.1021/acs.jcim.5b00078
 //   casf2016       benchmarks/datasets/casf2016_core_codes.csv
 //                  sha256=c90f591e09fb3c2edeb808a19ba2d9b4f96b6f5b9bd726009de91d17c88a1b1a
@@ -130,7 +130,7 @@ inline const std::vector<DatasetCodeSource>& dataset_code_sources() {
          "ROSTER_CSV", "10.1021/jm061277y", 85},
         {"hap2", "DatasetRunner::hap2_codes",
          "benchmarks/datasets/hap2.yaml",
-         "e6bc9d3e83505d6827c383fcac3dc6cd639f7a67c5ee8282a0a9adc29ac8c45e",
+         "8dcf34e6a025093587d066dd8ecc110bcf02d7d48df7ef05b329d8b4f52cbda1",
          "DEFINITION_YAML", "10.1021/acs.jcim.5b00078", 59},
         {"casf2016", "DatasetRunner::casf2016_codes",
          "benchmarks/datasets/casf2016_core_codes.csv",

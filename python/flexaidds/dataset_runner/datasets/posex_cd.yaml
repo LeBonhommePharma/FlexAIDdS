@@ -43,3 +43,14 @@ targets:
 - 7GLF_KG9
 - 7UU0_7UM
 - 7BC9_AXV
+
+# ── primary source (dataset-identity gate, rule 7/8) ──────────────────────
+# Labelled UNVERIFIED rather than left blank. The gate accepts this; it does
+# not accept silence. Replace status with a doi: that resolves when one is
+# established, and delete this block only together with that change.
+primary_source:
+  status: UNVERIFIED
+  reason: >-
+    No published primary source has been established for this roster in this
+    repository. The origin of the target list is not recorded anywhere that
+    can be checked, so no DOI is claimed. See SYSTEMIC_FIX_REPORT.md.
