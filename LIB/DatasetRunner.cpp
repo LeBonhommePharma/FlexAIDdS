@@ -6032,6 +6032,58 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
 #endif
 
+        // ── The roster this run is about to execute ────────────────────────
+        // Recorded from `entries`, i.e. what the runner ENUMERATED after
+        // preparation -- not from the code list it started with. Those two
+        // differ whenever preparation drops a target, and the difference is
+        // exactly what a receipt has to be able to show. The declared count
+        // comes from the generated source record, so
+        // executed_codes_count < declared_codes_count is visible in the receipt
+        // without reading any log.
+        {
+            receipt.executed_codes.reserve(entries.size());
+            for (const auto& e : entries) {
+                std::string code = e.pdb_id;
+                for (auto& ch : code) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                receipt.executed_codes.push_back(code);
+            }
+            // Sidecar first, then hash the sidecar: the digest is then over a
+            // real file anyone can rehash with shasum, by the same code path as
+            // matrix_sha256/binary_sha256, instead of an in-process digest of a
+            // string nobody can see.
+            const std::string codes_txt = config.output_dir + "/executed_codes.txt";
+            {
+                std::error_code mkec;
+                fs::create_directories(config.output_dir, mkec);
+                std::ofstream cf(codes_txt, std::ios::trunc);
+                if (cf) {
+                    for (const auto& c : receipt.executed_codes) cf << c << "\n";
+                    cf.close();
+                    receipt.executed_codes_file = codes_txt;
+                    receipt.executed_codes_sha256 = sha256_of(codes_txt);
+                } else {
+                    std::cerr << "[WARN] Could not write executed_codes.txt to "
+                              << config.output_dir << "; the receipt will carry the list "
+                              << "but no sha256\n";
+                }
+            }
+            // What that list CLAIMS to implement. Only datasets whose code list
+            // is generated have a declared source; for the others the fields stay
+            // empty and the validator reports NO_DECLARED_SOURCE rather than
+            // inventing one.
+            try {
+                const auto& src = flexaids::generated::dataset_code_source(report.dataset_name);
+                receipt.dataset_source_path = src.source_path;
+                receipt.dataset_source_sha256 = src.source_sha256;
+                receipt.dataset_source_provenance = src.provenance;
+                receipt.dataset_source_primary = src.primary_source;
+                receipt.declared_codes_count = src.count;
+            } catch (const std::exception&) {
+                // Not an error: astex_nonnative, dude37 and friends build their
+                // rosters from tables that this codegen does not cover yet.
+            }
+        }
+
         if (flexaids::write_run_receipt(config.output_dir, receipt,
                                         /*also_write_provenance_json=*/true)) {
             std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Wrote RUN_RECEIPT.json + provenance.json → "

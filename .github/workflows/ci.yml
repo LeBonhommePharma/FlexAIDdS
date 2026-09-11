@@ -413,6 +413,18 @@ jobs:
           python3 scripts/check_dataset_identity.py --report
           python3 scripts/check_dataset_identity.py --selftest
           python3 -m pytest tests/test_dataset_identity.py -q --tb=line
+      # Runs on `pull_request`, so a branch that reverts the generated code list or
+      # reintroduces a withdrawn PDB code fails HERE, on the merge result, before
+      # the revert can land. That is the only automatic protection against a stale
+      # worktree being merged -- see SYSTEMIC_FIX_REPORT.md.
+      - name: Dataset code lists are generated, not hand-maintained
+        run: |
+          python3 scripts/gen_dataset_codes.py --check
+          python3 -m pytest tests/test_dataset_codes_codegen.py -q --tb=line
+      - name: Run receipts record a checkable executed roster
+        run: |
+          python3 scripts/check_run_receipt_codes.py --selftest
+          python3 -m pytest tests/test_run_receipt_codes.py -q --tb=line
       - name: Validate public thermodynamic claims and provenance firewall
         run: |
           python3 scripts/validate_thermo_claims.py

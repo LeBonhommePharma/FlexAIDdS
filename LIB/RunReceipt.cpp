@@ -77,6 +77,28 @@ std::string build_run_receipt_json(const RunReceiptInput& in) {
     o << "  \"git_commit\": \"" << json_escape(in.git_commit) << "\",\n";
     o << "  \"oracle_site_dir\": \"" << json_escape(in.oracle_site_dir) << "\",\n";
     o << "  \"oracle_site_dir_set\": " << (in.oracle_site_dir_set ? "true" : "false") << ",\n";
+    // ── executed roster (schema 2) ─────────────────────────────────────────
+    // Emitted unconditionally, including when empty: a schema-2 receipt with no
+    // executed_codes is a runner that did not record what it ran, and the
+    // validator must be able to say so rather than find the key missing and
+    // guess. The array is written even for large rosters (283 for casf2016) --
+    // the point is that the executed set is recoverable from the receipt alone.
+    o << "  \"executed_codes_count\": " << in.executed_codes.size() << ",\n";
+    o << "  \"declared_codes_count\": " << in.declared_codes_count << ",\n";
+    o << "  \"executed_codes_file\": \"" << json_escape(in.executed_codes_file) << "\",\n";
+    o << "  \"executed_codes_sha256\": \"" << json_escape(in.executed_codes_sha256) << "\",\n";
+    o << "  \"dataset_source_path\": \"" << json_escape(in.dataset_source_path) << "\",\n";
+    o << "  \"dataset_source_sha256\": \"" << json_escape(in.dataset_source_sha256) << "\",\n";
+    o << "  \"dataset_source_provenance\": \"" << json_escape(in.dataset_source_provenance) << "\",\n";
+    o << "  \"dataset_source_primary\": \"" << json_escape(in.dataset_source_primary) << "\",\n";
+    o << "  \"executed_codes\": [";
+    for (std::size_t i = 0; i < in.executed_codes.size(); ++i) {
+        if (i) o << ", ";
+        if (i % 12 == 0) o << "\n    ";
+        o << "\"" << json_escape(in.executed_codes[i]) << "\"";
+    }
+    if (!in.executed_codes.empty()) o << "\n  ";
+    o << "],\n";
     // Embed ProtocolConfig snapshot as a nested object (already JSON object text).
     o << "  \"protocol_config\": " << in.protocol.to_json() << "\n";
     o << "}";
