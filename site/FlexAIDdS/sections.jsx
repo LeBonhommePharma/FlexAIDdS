@@ -149,11 +149,11 @@ function ArchSection() {
         </div>
         <div className="arch-sub-grid">
           <div className="arch-sub-card">
-            <h4>Flexibility</h4>
+            <h3>Flexibility</h3>
             <p><span className="kw">Torsions</span> · Ring conformers · Chirality · <span className="kw">tENCoM backbone</span></p>
           </div>
           <div className="arch-sub-card">
-            <h4>Binding Modes</h4>
+            <h3>Binding Modes</h3>
             <p><span className="kw">Clustering</span> + <span className="kw">ΔG, ΔH, −TΔS</span>, Cv, Boltzmann weights</p>
           </div>
         </div>
