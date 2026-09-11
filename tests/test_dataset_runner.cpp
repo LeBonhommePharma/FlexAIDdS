@@ -23,6 +23,8 @@
 #include "DatasetThermoLog.h"
 #include "rmsd_crosscheck_engine.h"   // engine calc_Hungarian_RMSD, for the cross-check
 #undef private
+#include "generated/dataset_codes.inc"  // declared source records for the generated rosters
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <chrono>
@@ -173,9 +175,44 @@ TEST(DatasetRunnerCodes, AstexDiverse85SpecificCodes) {
     EXPECT_TRUE(has("2BM2"));
 }
 
+// This repository's casf2016 roster is 283 codes. a0fef2bf removed "3QGS" and
+// "3RP3" from a 285-code list after both resolved as WDRN against data.rcsb.org:
+// an ID was reserved, the deposition was withdrawn before release, no
+// coordinates were ever published. Neither appears in the removed-entry list, so
+// there is no successor code to substitute and removal was the only option.
+//
+// 283 is asserted here as the size of THIS REPOSITORY'S roster. It is NOT
+// asserted to be the published CASF-2016 core set, and the two are not the same
+// list: a prior audit measured only 115 of these 283 overlapping the published
+// core set, and the generator records this roster's own provenance as
+// EXTRACTED_FROM_CODE / primary_source=UNVERIFIED -- i.e. the declared source
+// was lifted out of the C++ literal and proves only what the code already said.
+// Roster identity is an open question tracked separately; nothing in this test
+// speaks to it.
 TEST(DatasetRunnerCodes, CASF2016Count) {
     auto codes = DatasetRunner::casf2016_codes();
-    EXPECT_EQ(codes.size(), 285u);
+    EXPECT_EQ(codes.size(), 283u);
+
+    // The compiled list must agree with the count its OWN generated source
+    // record declares. A hand-edit to LIB/generated/dataset_codes.inc that adds
+    // or drops a code without rerunning scripts/gen_dataset_codes.py fails here
+    // even if someone also updates the literal above.
+    EXPECT_EQ(codes.size(),
+              flexaids::generated::dataset_code_source("casf2016").count);
+}
+
+// Withdrawn depositions must stay out BY NAME. A count assertion alone cannot
+// see 3QGS being re-added while some other code is dropped -- the size is
+// conserved and the roster is still wrong.
+TEST(DatasetRunnerCodes, CASF2016ExcludesWithdrawnDepositions) {
+    auto codes = DatasetRunner::casf2016_codes();
+    for (const char* withdrawn : {"3QGS", "3RP3"}) {
+        const bool present =
+            std::find(codes.begin(), codes.end(), withdrawn) != codes.end();
+        EXPECT_FALSE(present)
+            << withdrawn << " is a WDRN deposition (never released; removed in "
+            << "a0fef2bf) and must not appear in the executed roster";
+    }
 }
 
 TEST(DatasetRunnerCodes, CASF2016NoDuplicates) {
