@@ -13,10 +13,18 @@ BUILD_DIR="${ROOT_DIR}/build"
 MANIFEST="${SCRIPT_DIR}/manifest.yaml"
 
 # Tier-1 pairs: target_pdb ligand_pdb ligand_id target_name
+#
+# REPLACED 2026-09-11 (dataset identity audit, C4). The previous three pairs
+# were "1hwi 1hww STU CDK2", "1t40 1t46 2AN p38alpha" and
+# "2c68 2c69 PLN thymidine_kinase". The first two join two DIFFERENT proteins
+# (P04035 vs Q24451; P15121 vs P10721) so they are not cross-docking pairs at
+# all, and all three target names and ligand codes were contradicted by RCSB.
+# These three are same-protein pairs whose ligand entry has a determinable
+# cognate ligand; they match manifest.yaml tier1_pairs.
 PAIRS=(
-    "1hwi 1hww STU CDK2"
-    "1t40 1t46 2AN p38alpha"
-    "2c68 2c69 PLN thymidine_kinase"
+    "2c68 2c69 CT8 cyclin_dependent_kinase_2"
+    "2e9p 2e9u A25 checkpoint_kinase_1"
+    "2vd0 2vd1 D28 prostaglandin_D_synthase"
 )
 
 parse_baseline() {

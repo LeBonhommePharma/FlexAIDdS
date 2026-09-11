@@ -32,7 +32,7 @@ Verdonk ML, Mortenson PN, Hall RJ, et al. (2008)
 
 | File | Description |
 |:-----|:------------|
-| `astex_non_native_set.csv` | Cross-docking pairs: target_pdb, ligand_pdb, ligand_id, threshold, target_name |
+| `astex_non_native_set.csv` | Cross-docking pairs: target_pdb, ligand_pdb, ligand_id, ligand_id_basis, target_name, ligand_pdb_name, target_uniprot, ligand_uniprot, pair_status |
 | `manifest.yaml` | Tier-1 bundle spec (3 pairs, baselines, entrypoint) |
 | `run.sh` | Download + cross-dock + report script |
 | `download.sh` | Fetch all required PDB files from RCSB |
@@ -45,12 +45,39 @@ The CSV lists pairs as `(target_pdb, ligand_pdb, ligand_id)`:
 
 - **target_pdb**: receptor structure used for docking (non-native conformation)
 - **ligand_pdb**: where the ligand coordinates come from (native co-crystal)
-- **ligand_id**: three-letter heteroatom code
+- **ligand_id**: CCD code of the cognate ligand of `ligand_pdb`, or empty when
+  no cognate ligand is determinable
+- **ligand_id_basis**: why that code was chosen, or why the field is empty
+- **target_name** / **ligand_pdb_name**: RCSB polymer-entity descriptions
+- **target_uniprot** / **ligand_uniprot**: UniProt accessions of each member
+- **pair_status**: `SAME_PROTEIN`, `CROSS_PROTEIN_INVALID`, or
+  `UNDETERMINED_MEMBER_NOT_IN_PDB`
 
-The full set covers 65 protein families grouped by ligand scaffold. The CSV in
-this bundle contains 73 representative pairs across 8 target families (CDK2,
-ERK2, PPARγ, p38α, thymidine kinase, factor Xa, CDK2-staurosporine, CDK2-BRL,
-CDK2-IDS).
+### This roster is largely unusable, and the CSV now says so per row
+
+Corrected 2026-09-11 (dataset identity audit, C2/C4). Measured against RCSB,
+all 74 rows checked, denominators printed:
+
+| Check | Result |
+|:--|:--|
+| Pairs whose two members are the **same protein** (UniProt overlap) | **6 / 74** |
+| Pairs joining two **different** proteins — not cross-docking at all | **66 / 74** |
+| Pairs with a member absent from the PDB (`2FXX`) | **2 / 74** |
+| Rows where the *previous* `ligand_id` matched either member | **0 / 74** |
+| Rows where a cognate ligand for `ligand_pdb` is now determinable | **56 / 74** |
+| Distinct `target_name` values (was 9 for a set claiming 65 targets) | **65** |
+
+The previous `target_name` column asserted protein identities RCSB contradicts —
+`1hwi`/`1hww` were both labelled CDK2 when they are HMG-CoA reductase and
+alpha-mannosidase II. `rmsd_threshold_A` was dropped: it was `2.0` on all 74
+rows, a protocol parameter rather than a property of the pair, and the only
+consumer already took its threshold from the command line.
+
+`tests/benchmarks/astex_nonnative/run_astex_nonnative.py` and
+`benchmarks/astex_entropy/prep.py` now REFUSE any row that is not
+`SAME_PROTEIN`. **Any cross-docking success rate previously quoted against this
+roster was computed over a denominator that is 89% not cross-docking**, and is
+not comparable to Verdonk 2008 or to anything else.
 
 ## Published Reference Success Rates (RMSD < 2 Å)
 

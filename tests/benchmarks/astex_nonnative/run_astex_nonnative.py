@@ -28,23 +28,69 @@ RMSD_THRESHOLD_2A = 2.0
 RMSD_THRESHOLD_3A = 3.0
 
 
-def load_nonnative_csv(csv_path: str) -> List[Dict]:
+def load_nonnative_csv(csv_path: str, include_invalid: bool = False) -> List[Dict]:
     """Load cross-docking pairs from the canonical CSV.
 
     Returns list of dicts with keys:
-      target_pdb, ligand_pdb, ligand_id, rmsd_threshold_A, target_name
+      target_pdb, ligand_pdb, ligand_id, target_name, ligand_pdb_name,
+      target_uniprot, ligand_uniprot, pair_status
+
+    Schema changed 2026-09-11 (dataset identity audit, C2/C4):
+
+    - ``rmsd_threshold_A`` REMOVED. It was 2.0 on all 74 rows -- a protocol
+      parameter, not a property of the pair -- and this module never used the
+      column anyway: the threshold it reports comes from ``--threshold``.
+      A constant column invites a reader to treat the default as a measurement.
+    - ``target_name`` / ``ligand_id`` were REPLACED, not edited. Both were
+      fabricated: ``target_name`` said CDK2 for the 1hwi/1hww pair (RCSB: HMG-CoA
+      reductase and alpha-mannosidase II), and the stated ``ligand_id`` matched
+      neither member of its pair on 0/74 rows. They now hold the RCSB polymer
+      description of ``target_pdb`` and the cognate CCD code of ``ligand_pdb``.
+    - ``pair_status`` ADDED. A cross-docking pair must be two structures of the
+      SAME protein. Measured by UniProt accession overlap, 66 of the 74 pairs
+      are two DIFFERENT proteins and cannot be cross-docked at all. Those rows
+      are REFUSED here rather than silently entering a success-rate denominator.
+
+    Pass ``include_invalid=True`` only to inspect the refused rows.
     """
-    pairs = []
+    pairs: List[Dict] = []
+    refused: Dict[str, int] = {}
     with open(csv_path, newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
-            pairs.append({
+            status = (row.get("pair_status") or "").strip()
+            rec = {
                 "target_pdb": row["target_pdb"].strip(),
                 "ligand_pdb": row["ligand_pdb"].strip(),
                 "ligand_id": row["ligand_id"].strip(),
-                "rmsd_threshold_A": float(row["rmsd_threshold_A"]),
                 "target_name": row["target_name"].strip(),
-            })
+                "ligand_pdb_name": (row.get("ligand_pdb_name") or "").strip(),
+                "target_uniprot": (row.get("target_uniprot") or "").strip(),
+                "ligand_uniprot": (row.get("ligand_uniprot") or "").strip(),
+                "pair_status": status,
+            }
+            if status != "SAME_PROTEIN" and not include_invalid:
+                refused[status or "MISSING_PAIR_STATUS"] = refused.get(status or "MISSING_PAIR_STATUS", 0) + 1
+                continue
+            pairs.append(rec)
+    if refused:
+        total = sum(refused.values())
+        print(
+            f"[REFUSED] {total} of {total + len(pairs)} rows in {csv_path} are not "
+            f"cross-docking pairs and were excluded: "
+            + ", ".join(f"{k}={v}" for k, v in sorted(refused.items()))
+        )
+        print(
+            "          A cross-docking pair must be two structures of the same "
+            "protein. Running them would put a protein-A receptor against a "
+            "protein-B ligand and report the result as a cross-docking failure."
+        )
+    if not pairs:
+        raise SystemExit(
+            f"ERROR: no valid cross-docking pairs in {csv_path} "
+            f"(all {sum(refused.values())} rows refused). Refusing to report a "
+            f"success rate over an empty denominator."
+        )
     return pairs
 
 

@@ -15,19 +15,44 @@ dataset_source: https://www.ccdc.cam.ac.uk/
 #   the paper named on the `dataset:` line above. No DOI was invented.
 doi: 10.1021/ci8002254
 tier: 1
+# tier1_pairs REPLACED 2026-09-11 (dataset identity audit, C4). Two of the three
+# previous pairs were not cross-docking pairs at all, and the third was correctly
+# paired but mislabelled. Measured by UniProt accession overlap against RCSB:
+#   1hwi <- 1hww : P04035 (HMG-CoA reductase) vs Q24451 (alpha-mannosidase II)
+#                  -> DIFFERENT PROTEINS. Labelled "CDK2"; ligand_id STU appears
+#                  in neither entry.
+#   1t40 <- 1t46 : P15121 (aldose reductase) vs P10721 (c-Kit)
+#                  -> DIFFERENT PROTEINS. Labelled "p38alpha".
+#   2c68 <- 2c69 : P24941 / P24941 -> same protein, but labelled
+#                  "thymidine_kinase" when RCSB says cyclin-dependent kinase 2,
+#                  and ligand_id PLN is not a component of 2c69.
+# The roster holds 6 SAME_PROTEIN pairs. FOUR of them also have a determinable
+# cognate ligand in the ligand entry:
+#   2c68 <- 2c69  P24941  CT8
+#   2e9p <- 2e9u  O14757  A25
+#   2vd0 <- 2vd1  O60760  D28
+#   2vci <- 2vcj  P07900  2EQ   (qualifies; NOT selected -- tier-1 is 3 pairs)
+# The other two (2cnk <- 2cnl, 2cnn <- 2cno, both P42574) are excluded because
+# the ligand entry has NO non-polymer component at all.
+# The three selected below are the first three qualifying pairs in roster order;
+# 2vci <- 2vcj is the available substitute. Each ligand_id is the sole
+# non-additive non-polymer component of ligand_from, read from RCSB.
 tier1_pairs:
-  - target: 1hwi
-    ligand_from: 1hww
-    ligand_id: STU
-    target_name: CDK2
-  - target: 1t40
-    ligand_from: 1t46
-    ligand_id: 2AN
-    target_name: p38alpha
   - target: 2c68
     ligand_from: 2c69
-    ligand_id: PLN
-    target_name: thymidine_kinase
+    ligand_id: CT8
+    target_name: Cyclin-dependent kinase 2
+    uniprot: P24941
+  - target: 2e9p
+    ligand_from: 2e9u
+    ligand_id: A25
+    target_name: Serine/threonine-protein kinase Chk1
+    uniprot: O14757
+  - target: 2vd0
+    ligand_from: 2vd1
+    ligand_id: D28
+    target_name: Glutathione-requiring prostaglandin D synthase
+    uniprot: O60760
 
 entrypoint: bash benchmarks/astex_nonnative/run.sh
 data_file: benchmarks/astex_nonnative/astex_non_native_set.csv

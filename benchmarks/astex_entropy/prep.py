@@ -194,6 +194,25 @@ def prepare_non_native(
         target_pdb = row["target_pdb"].strip().lower()
         ligand_pdb = row["ligand_pdb"].strip().lower()
         ligand_id = row["ligand_id"].strip().upper()
+        # Dataset identity audit 2026-09-11 (C2/C4). Two columns added to
+        # astex_non_native_set.csv gate this loop:
+        #   pair_status != SAME_PROTEIN -> the two members are different
+        #     proteins (66 of 74 rows), so the row is not a cross-docking pair.
+        #   ligand_id == ""             -> ligand_pdb has no determinable
+        #     cognate ligand (no non-polymer component, additives only, or the
+        #     code is not in the PDB), so there is nothing to transplant.
+        # Both are SKIPPED with a reason instead of producing a record whose
+        # failure would be indistinguishable from a docking failure.
+        pair_status = (row.get("pair_status") or "").strip()
+        if pair_status and pair_status != "SAME_PROTEIN":
+            skipped.append({"pair": f"{target_pdb}_x_{ligand_pdb}", "reason": f"pair_status={pair_status}"})
+            continue
+        if not ligand_id:
+            skipped.append({
+                "pair": f"{target_pdb}_x_{ligand_pdb}",
+                "reason": "no cognate ligand for %s (%s)" % (ligand_pdb, row.get("ligand_id_basis", "")),
+            })
+            continue
         pair_id = f"{target_pdb.upper()}_x_{ligand_pdb.upper()}_{ligand_id}"
         target_raw = raw_root / f"{target_pdb}.pdb"
         ligand_raw = raw_root / f"{ligand_pdb}.pdb"
