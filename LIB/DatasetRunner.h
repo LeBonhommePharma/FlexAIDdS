@@ -635,8 +635,23 @@ public:
     /// Get the Astex Diverse 85 PDB codes
     static std::vector<std::string> astex_diverse_codes();
 
-    /// Get the CASF-2016 PDB codes (285)
+    /// Get the CASF-2016 PDB codes.
+    ///
+    /// 283 codes as of 2026-09-11: the list held 285, of which `3QGS` and `3RP3`
+    /// were removed because neither is a retrievable PDB entry (both are WDRN
+    /// withdrawn depositions; see the evidence block at the removal site).
+    /// The published CASF-2016 core set is 285 complexes — this list is NOT
+    /// equal to it, and that discrepancy is a separate open defect.
     static std::vector<std::string> casf2016_codes();
+
+    /// Codes that exist in the PDB but cannot be docked as protein-ligand
+    /// complexes, with the reason. Returns true and fills `reason` when the
+    /// code is registered as non-dockable.
+    ///
+    /// A dataset definition that lists such a code makes the runner emit an
+    /// empty result that is indistinguishable from a docking failure. Entries
+    /// here are REFUSED loudly instead.
+    static bool is_non_dockable(const std::string& pdb_id, std::string* reason = nullptr);
 
     /// Get the DUD-E target list (102)
     static std::vector<std::string> dude_targets();

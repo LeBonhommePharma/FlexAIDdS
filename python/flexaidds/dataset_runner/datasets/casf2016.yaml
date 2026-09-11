@@ -30,39 +30,86 @@ structural_states:
 # Tier-1 subset: 5 well-studied complexes spanning diverse protein families
 # Full 285-target list is fetched during dataset acquisition.
 targets:
-  - 1a30   # Neuraminidase
-  - 1gpk   # Carbonic anhydrase II
-  - 1hvr   # HIV protease
-  - 2cgr   # CDK2
-  - 2hb1   # Thrombin
-  - 1mq6   # p38 MAP kinase
-  - 1n2j   # EGFR
-  - 2cet   # Factor Xa
-  - 3arp   # Aldose reductase
-  - 3acw   # PTP1B
-  - 1owi   # Estrogen receptor α
-  - 1ydt   # Farnesyltransferase
-  - 2cbj   # Src kinase
-  - 3coy   # Aurora kinase A
-  - 2obj   # Checkpoint kinase 1
-  - 2qmj   # HSP90
-  - 2weg   # Glucokinase
-  - 2zyc   # Adenosine A2A receptor
-  - 3d4z   # β-secretase 1 (BACE-1)
-  - 3ge7   # Syk kinase
-  - 3lka   # Renin
-  - 3mss   # Vasopressin V2 receptor
-  - 4agp   # Androgen receptor
-  - 4bkt   # BTK kinase
-  - 4cra   # Colony-stimulating factor 1 receptor
-  - 4e5w   # Acetylcholinesterase
-  - 4gfm   # IDH1
-  - 4hjr   # PI3Kδ
-  - 4roe   # BRD4
-  - 5cpp   # CDK4/6
+  # Tier-1 subset actually held in this repository (the full CASF-2016 core set
+  # is 285 complexes and is NOT enumerated here).
+  #
+  # IDENTITY COMMENTS CORRECTED 2026-09-11 (dataset identity audit, C3b).
+  # Every inline name below was previously a DIFFERENT protein from the one the
+  # PDB code denotes. Measured against data.rcsb.org in one batch: of the 30
+  # codes, a token-overlap test against the RCSB polymer descriptions flagged
+  # 27 CONTRADICTED; of the 3 it passed, only 1hvr is genuinely consistent on
+  # reading (2obj and 4cra passed on a generic shared token: "kinase",
+  # "factor"). Examples: 1a30 was labelled "Neuraminidase", RCSB says HIV-1
+  # protease; 2hb1 was "Thrombin", RCSB says PTP1B; 5cpp was "CDK4/6", RCSB says
+  # cytochrome P450-cam. The names below are the RCSB polymer-entity
+  # descriptions, fetched per code, not recalled.
+  #
+  # 1a30 is commented out: it carries no non-polymer component, so the runner
+  # now REFUSES it (DatasetRunner::is_non_dockable).
+  # - 1a30  # TRIPEPTIDE GLU-ASP-LEU + HIV-1 PROTEASE  -- REMOVED: NON-DOCKABLE (no non-polymer component)
+  - 1gpk   # ACETYLCHOLINESTERASE
+  - 1hvr   # HIV-1 PROTEASE
+  - 2cgr   # IGG2B-KAPPA NC6.8 FAB (HEAVY CHAIN) + IGG2B-KAPPA NC6.8 FAB (LIGHT CHAIN)
+  - 2hb1   # Tyrosine-protein phosphatase non-receptor type 1
+  - 1mq6   # COAGULATION FACTOR X LIGHT CHAIN + COAGULATION FACTOR X HEAVY CHAIN
+  - 1n2j   # pantothenate synthetase
+  - 2cet   # BETA-GLUCOSIDASE A
+  - 3arp   # Chitinase A
+  - 3acw   # Dehydrosqualene synthase
+  - 1owi   # Urokinase-type plasminogen activator
+  - 1ydt   # PROTEIN KINASE INHIBITOR PEPTIDE + C-AMP-DEPENDENT PROTEIN KINASE
+  - 2cbj   # HYALURONIDASE
+  - 3coy   # Pantothenate synthetase
+  - 2obj   # Proto-oncogene serine/threonine-protein kinase Pim-1
+  - 2qmj   # Maltase-glucoamylase, intestinal
+  - 2weg   # CARBONIC ANHYDRASE 2
+  - 2zyc   # Peptidoglycan hydrolase FlgJ
+  - 3d4z   # Alpha-mannosidase 2
+  - 3ge7   # Queuine tRNA-ribosyltransferase
+  - 3lka   # Macrophage metalloelastase
+  - 3mss   # Tyrosine-protein kinase ABL1
+  - 4agp   # CELLULAR TUMOR ANTIGEN P53
+  - 4bkt   # VON HIPPEL-LINDAU DISEASE TUMOR SUPPRESSOR + TRANSCRIPTION ELONGATION FACTOR B
+  - 4cra   # Coagulation factor XIa light chain
+  - 4e5w   # Tyrosine-protein kinase JAK1
+  - 4gfm   # Tyrosine-protein kinase JAK2
+  - 4hjr   # Tyrosine-tRNA ligase
+  - 4roe   # Non-template strand + Template strand + ...
+  - 5cpp   # CYTOCHROME P450-CAM
   # NOTE: Full list of 285 targets is provided in the CASF-2016 data package.
   # Set data_dir to the extracted CASF-2016/structures/ directory.
 
+
+# ── Codes that cannot be docked, and codes that do not exist ────────────────
+# Added 2026-09-11 (dataset identity audit, C3). Enforced in code by
+# DatasetRunner::is_non_dockable(), which REFUSES these with a message rather
+# than letting the runner emit an empty result that looks like a docking failure.
+#
+# Measured against data.rcsb.org, denominators and controls in the same call:
+#   8 codes claimed ligand-free -> all 8 have nonpolymer_entity_count == 0
+#   controls 1T46 (2 components) and 1G9V (3) are non-zero, so the 0 is a real
+#   absence and not an empty-field artifact.
+non_dockable:
+  1A30: "no non-polymer component; ligand is the tripeptide GLU-ASP-LEU written as a polymer entity"
+  1PSO: "no non-polymer component; ligand is PEPSTATIN written as a polymer entity"
+  2WHB: "no non-polymer component; ligand is the peptide ARG-ARG-L3O-PFF written as a polymer entity"
+  2YLB: "no non-polymer component, single polymer entity (protein Hfq) - no binding partner"
+  2YPL: "no non-polymer component; 5 polymer entities (TCR/peptide-MHC) - protein-protein interface"
+  3UAH: "no non-polymer component, single polymer entity (Shq1 domain) - no binding partner"
+  3UPV: "no non-polymer component; 2 polymer entities (Hsp70/Sti1) - protein-protein interface"
+  4KEL: "no non-polymer component; 2 polymer entities (KLK4 + SFTI peptide) - protein-peptide interface"
+
+# Removed from LIB/DatasetRunner.cpp casf2016_codes() on 2026-09-11: 3QGS and
+# 3RP3. Neither is a retrievable PDB entry. core/entry/ returns HTTP 404 for
+# both (control 1T46 -> 200); neither appears in holdings/removed/entry_ids
+# (n=6123, membership control 116L present), so neither is an obsoleted entry
+# with a successor; holdings/unreleased reports status_code WDRN for both, i.e.
+# depositions withdrawn before release. The C++ list went 285 -> 283 codes.
+# NOTE: neither code ever appeared in this YAML (grep count 0 in both copies) -
+# the defect was C++-only.
+removed_nonexistent_codes:
+  - "3QGS"  # WDRN, deposited 2011-01-24, never released
+  - "3RP3"  # WDRN, deposited 2011-04-26, never released
 metrics:
   - scoring_power_pearson_r
   - scoring_power_spearman_r

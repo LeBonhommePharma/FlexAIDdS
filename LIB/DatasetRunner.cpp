@@ -4552,6 +4552,23 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
     std::transform(upper_id.begin(), upper_id.end(), upper_id.begin(),
                    [](unsigned char c) { return std::toupper(c); });
 
+    // REFUSE non-dockable codes before touching the network or the cache.
+    // Emitting an empty result here would be indistinguishable from a docking
+    // failure and would silently enter the denominator of any success rate.
+    {
+        std::string why;
+        if (is_non_dockable(upper_id, &why)) {
+            std::cerr << "  [REFUSED] " << upper_id << " is registered NON-DOCKABLE in dataset '"
+                      << dataset_name << "': " << why << "\n"
+                      << "            No entry is produced. Remove it from the dataset "
+                         "definition or dock it as a protein-protein / peptide case.\n";
+            DatasetEntry refused;
+            refused.pdb_id = upper_id;
+            refused.source = dataset_name;
+            return refused;  // receptor_path empty -> caller must skip
+        }
+    }
+
     std::string entry_dir = cache_dir_ + "/" + dataset_name + "/" + upper_id;
     ensure_dir(entry_dir);
 
@@ -5043,7 +5060,58 @@ std::vector<DatasetEntry> DatasetRunner::fetch_hap2() {
 }
 
 // =============================================================================
-// CASF-2016 — 285 complexes from PDBbind core set v2016
+// Non-dockable registry
+// =============================================================================
+//
+// These PDB entries EXIST and download fine, but contain no non-polymer
+// component at all, so ligand extraction yields nothing and the runner emits
+// an empty result that a reader cannot distinguish from a docking failure.
+//
+// Measured 2026-09-11 against data.rcsb.org GraphQL in one batch, denominators
+// and positive controls in the same call:
+//   n checked = 8 claimed + 2 controls
+//   nonpolymer_entity_count == 0 for all 8 below
+//   controls: 1T46 -> 2 components (STI, PO4); 1G9V -> 3 (SO4, RQ3, HEM)
+// So the zero is a real absence, not an empty-field artifact.
+//
+// Each entry's polymer content was read in the same call, which is what the
+// reason strings below record: three carry a PEPTIDE ligand written as polymer
+// records (ligand-identity Rule 4b — a multi-residue ligand, not a CCD
+// component), three are protein-protein or peptide-MHC complexes, and two are
+// single-chain structures with no binding partner of any kind.
+bool DatasetRunner::is_non_dockable(const std::string& pdb_id, std::string* reason) {
+    static const std::vector<std::pair<std::string, std::string>> kNonDockable = {
+        {"1A30", "no non-polymer component; ligand is the tripeptide GLU-ASP-LEU "
+                 "written as a polymer entity (HIV-1 protease complex)"},
+        {"1PSO", "no non-polymer component; ligand is PEPSTATIN written as a "
+                 "polymer entity (pepsin complex)"},
+        {"2WHB", "no non-polymer component; ligand is the peptide ARG-ARG-L3O-PFF "
+                 "written as a polymer entity (CDK2/cyclin-A complex)"},
+        {"2YLB", "no non-polymer component and a single polymer entity (protein Hfq, "
+                 "1.15 A) — no binding partner of any kind"},
+        {"2YPL", "no non-polymer component; 5 polymer entities (T-cell receptor / "
+                 "peptide-MHC complex) — a protein-protein interface, not a ligand"},
+        {"3UAH", "no non-polymer component and a single polymer entity (Shq1 domain, "
+                 "1.6 A) — no binding partner of any kind"},
+        {"3UPV", "no non-polymer component; 2 polymer entities (Hsp70/Sti1 TPR2B "
+                 "complex) — a protein-protein interface, not a ligand"},
+        {"4KEL", "no non-polymer component; 2 polymer entities (kallikrein-4 with a "
+                 "modified SFTI peptide inhibitor) — a protein-peptide interface"},
+    };
+    std::string up = pdb_id;
+    std::transform(up.begin(), up.end(), up.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+    for (const auto& kv : kNonDockable) {
+        if (kv.first == up) {
+            if (reason) *reason = kv.second;
+            return true;
+        }
+    }
+    return false;
+}
+
+// =============================================================================
+// CASF-2016 — PDBbind core set v2016 list as held by this repository
 // =============================================================================
 
 std::vector<std::string> DatasetRunner::casf2016_codes() {
@@ -5093,8 +5161,23 @@ std::vector<std::string> DatasetRunner::casf2016_codes() {
         "3L7B", "3LKA", "3MFV", "3MNA", "3MUZ", "3MY5", "3N7A",
         "3N86", "3NW9", "3NZK", "3OAF", "3OOF", "3OUP", "3OZS",
         "3OZT", "3P3G", "3P5O", "3PCG", "3PE2", "3PFQ", "3PRS",
-        "3PWW", "3QAA", "3QBH", "3QGS", "3QGW", "3QGY", "3QQK",
-        "3QTI", "3R88", "3RLQ", "3RP3", "3RT4", "3RUX", "3RYJ",
+        // 3QGS and 3RP3 REMOVED 2026-09-11 (dataset identity audit, C3).
+        // Neither code is a retrievable PDB entry, so neither can be docked.
+        // Measured in one cell with controls, against data.rcsb.org:
+        //   core/entry/3QGS        -> HTTP 404   (control core/entry/1T46 -> 200)
+        //   core/entry/3RP3        -> HTTP 404
+        //   holdings/removed/entry_ids (n=6123) -> NEITHER code present
+        //                           (membership test positive control: 116L present)
+        //   holdings/unreleased/3QGS -> status_code WDRN, deposited 2011-01-24,
+        //                           "Crystal Structure of Ureidoglycolate dehydrog..."
+        //   holdings/unreleased/3RP3 -> status_code WDRN, deposited 2011-04-26
+        // So these are WITHDRAWN depositions: an ID was reserved, the deposition
+        // was withdrawn before release, and no coordinates were ever published.
+        // They are NOT obsoleted/superseded entries (absent from the removed list),
+        // so there is no successor code to substitute. A set declared as a subset
+        // of PDBbind cannot contain them.
+        "3PWW", "3QAA", "3QBH", "3QGW", "3QGY", "3QQK",
+        "3QTI", "3R88", "3RLQ", "3RT4", "3RUX", "3RYJ",
         "3S8O", "3SXR", "3SYR", "3U5J", "3U5L", "3UAH", "3UAJ",
         "3UIB", "3UP2", "3UPV", "3UTU", "3UWK", "3VD4", "3VF5",
         "3VHE", "3VRI", "3WMC", "3ZSO", "3ZYX", "4AGM", "4AGN",
@@ -5108,19 +5191,31 @@ std::vector<std::string> DatasetRunner::casf2016_codes() {
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_casf2016() {
-    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset() << " Preparing CASF-2016 dataset (285 complexes)\n";
     auto codes = casf2016_codes();
+    std::cout << tui::strawberry() << "[DatasetRunner]" << tui::reset()
+              << " Preparing CASF-2016 dataset (" << codes.size() << " codes in this repository's list;"
+              << " the published core set is 285)\n";
     std::vector<DatasetEntry> entries;
     entries.reserve(codes.size());
 
+    size_t refused = 0;
     for (const auto& pdb : codes) {
+        if (is_non_dockable(pdb)) {
+            std::string why;
+            is_non_dockable(pdb, &why);
+            std::cerr << "  [REFUSED] " << pdb << " excluded from casf2016: " << why << "\n";
+            ++refused;
+            continue;
+        }
         auto entry = prepare_pdb_entry(pdb, "casf2016");
         entry.conc_M = 1.0; // P3 explicit; from dataset yaml later
         entries.push_back(std::move(entry));
     }
 
     std::cout << tui::mint() << "  Prepared " << tui::reset() << entries.size() << " / " << codes.size()
-              << " entries\n";
+              << " entries";
+    if (refused) std::cout << " (" << refused << " refused as non-dockable)";
+    std::cout << "\n";
     return entries;
 }
 
