@@ -1,5 +1,48 @@
 # Canonical benchmark datasets (Astex and related)
 
+## Dataset definition YAMLs — which of the two trees is canonical
+
+There are **two live copies** of most dataset definitions:
+
+| Tree | Read by | Status |
+|------|---------|--------|
+| `benchmarks/datasets/*.yaml` | benchmark harness, launchers, `benchmarks/run_*.py --datasets-dir` | **CANONICAL** |
+| `python/flexaidds/dataset_runner/datasets/*.yaml` | `flexaidds.dataset_runner` (`runner.py`: `datasets_dir` defaults to this directory) | **MIRROR** |
+
+Neither can simply be deleted: both are opened at runtime by different
+consumers. That duplication is the surface the Astex 85 codes drifted across, so
+it is **gated** rather than left to discipline —
+`scripts/check_dataset_identity.py` fails on:
+
+- `MIRROR_VALUE_DIVERGENCE` — a key present in both copies with different values.
+- `MIRROR_ONLY_KEY` — a key present only in the mirror. A mirror carrying data the
+  canonical copy lacks is a second source of truth, so this fires
+  **unconditionally** — the annotation prefixes below are no excuse in this
+  direction.
+- `CANONICAL_ONLY_KEY` — a key declared in the canonical copy and absent from the
+  mirror, so the Python runner silently resolves the `DatasetConfig` dataclass
+  default instead of the declared value. Exempt **only** for the declared
+  annotation prefixes `claude_reevaluated_*`, `deck_2017_*`,
+  `structure_recovery_*`, which the Python package has no use for.
+- `MIRROR_UNPAIRED` — a definition that exists in only one tree, so one of the two
+  runtimes cannot see that dataset at all.
+
+The allowance is therefore one-directional and applies to the **canonical** side
+only. Adding a key to a definition means adding it to both copies, or giving it
+one of the three declared annotation prefixes.
+
+Outstanding divergences are enumerated with dated reasons in
+`tests/fixtures/dataset_identity/known_defects.json`; the gate fails on anything
+new. **Collapsing the two trees to one file was NOT done** — see
+`SYSTEMIC_FIX_REPORT.md` for the four decisions it requires, none of which is a
+mechanical sync.
+
+**The PDB code lists the engine executes are not in either tree.** They are
+generated into `LIB/generated/dataset_codes.inc` by
+`scripts/gen_dataset_codes.py` from one declared canonical source per dataset,
+and `--check` fails if the committed header disagrees with that source.
+
+
 This note resolves **duplicate Astex directory trees** and documents which
 path agents, launchers, and `benchmark_datasets` should treat as authoritative.
 

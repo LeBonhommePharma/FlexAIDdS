@@ -420,6 +420,102 @@
   "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::pass_fail": {
    "quarantined_utc": "2026-09-11T00:54:51Z",
    "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/competition_example.yaml::MIRROR_UNPAIRED::file": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Exists only in benchmarks/datasets; python/flexaidds/dataset_runner/datasets has no copy, so that runtime cannot see this dataset. Pre-existing asymmetry, not new drift. Quarantined so a NEWLY unpaired definition fails. DELETE THIS ENTRY when the pair exists or the definition is removed."
+  },
+  "benchmarks/datasets/crossdock_modern.yaml::MIRROR_UNPAIRED::file": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Exists only in benchmarks/datasets; python/flexaidds/dataset_runner/datasets has no copy, so that runtime cannot see this dataset. Pre-existing asymmetry, not new drift. Quarantined so a NEWLY unpaired definition fails. DELETE THIS ENTRY when the pair exists or the definition is removed."
+  },
+  "python/flexaidds/dataset_runner/datasets/astex_nonnative.yaml::MIRROR_VALUE_DIVERGENCE::data_format": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical='mmcif' mirror='pdb'"
+  },
+  "python/flexaidds/dataset_runner/datasets/bindingdb_itc.yaml::MIRROR_UNPAIRED::file": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Exists only in python/flexaidds/dataset_runner/datasets; benchmarks/datasets has no copy, so that runtime cannot see this dataset. Pre-existing asymmetry, not new drift. Quarantined so a NEWLY unpaired definition fails. DELETE THIS ENTRY when the pair exists or the definition is removed."
+  },
+  "python/flexaidds/dataset_runner/datasets/itc187.yaml::MIRROR_VALUE_DIVERGENCE::expected_baselines": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical={'scoring_power_pearson_r': 0.93, 'scoring_power_spearman_r': 0.9, 'scoring_power_rmse': 1.4, 'scoring_power_m mirror={'scoring_power_pearson_r': 0.93, 'scoring_power_spearman_r': 0.9, 'scoring_power_rmse': 1.4, 'scoring_power_m"
+  },
+  "python/flexaidds/dataset_runner/datasets/itc187.yaml::MIRROR_VALUE_DIVERGENCE::metrics": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical=['scoring_power_pearson_r', 'scoring_power_spearman_r', 'scoring_power_rmse', 'scoring_power_mae', 'entropy_re mirror=['scoring_power_pearson_r', 'scoring_power_spearman_r', 'scoring_power_rmse', 'scoring_power_mae', 'entropy_re"
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::baseline_tolerance": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. THIS KEY CHANGES THE RESOLVED CONFIG: canonical 0.1 vs mirror 0.05 (dataclass default)"
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::data_format": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. This key resolves to the same value on both sides today."
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::download_url": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. This key resolves to the same value on both sides today."
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::expected_baselines": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. THIS KEY CHANGES THE RESOLVED CONFIG: canonical declares entropy_rescue_rate/shannon_* thresholds; mirror resolves to {}"
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::ligands": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. This key resolves to the same value on both sides today."
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::structural_states": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. This key resolves to the same value on both sides today."
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::tier": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. This key resolves to the same value on both sides today."
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::tier1_subset_size": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. THIS KEY CHANGES THE RESOLVED CONFIG: canonical 3 vs mirror 5 (dataclass default)"
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::CANONICAL_ONLY_KEY::zenodo_doi": {
+   "quarantined_utc": "2026-09-11T02:52:31Z",
+   "reason": "The mirror copy of naloxone_ss omits nine keys the canonical copy declares, so DatasetConfig.from_yaml substitutes the dataclass default for each. Measured on the RESOLVED configs: 3 of the 9 actually change behaviour, the other 6 happen to equal the default. Reconciling requires deciding which side is intended for a dataset whose regression thresholds exist on one side only -- not a mechanical sync. DELETE THIS ENTRY when the pair is reconciled. This key resolves to the same value on both sides today."
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::MIRROR_ONLY_KEY::ligand_files": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "The mirror declares ligand_files and the canonical copy does not, so the Python runner resolves ligand paths from a key no canonical definition carries. Removing it would break that runner; adding it to the canonical copy would assert paths nobody verified. Needs a decision, not a sync. DELETE THIS ENTRY when resolved."
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::MIRROR_VALUE_DIVERGENCE::description": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical='Targeted docking set for Naloxone repurposing ideas in Serotonin Syndrome. Focuses on 5-HT2A (primary mediato mirror='5-HT focused repurposing set for Naloxone ideas in Serotonin Syndrome. Uses entropy collapse, thermodynamic i"
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::MIRROR_VALUE_DIVERGENCE::metrics": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical=['entropy_rescue_rate', 'shannon_energy_collapse', 'ensemble_shannon_nats', 'TdS_shannon', 'docking_power_top1 mirror=['entropy_rescue_rate', 'shannon_energy_collapse', 'posebusters_pass_rate', 'g_bind']"
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::MIRROR_VALUE_DIVERGENCE::name": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical='Naloxone for Serotonin Syndrome Repurposing' mirror='Naloxone SS Repurposing'"
+  },
+  "python/flexaidds/dataset_runner/datasets/naloxone_ss.yaml::MIRROR_VALUE_DIVERGENCE::notes": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical='- Primary scientific question: Does Naloxone (or derivatives) show\\n  meaningful interaction/entropy signatur mirror='Primary targets for SS: 5-HT2A driven. Compare entropy signatures.\\nSee benchmarks/datasets/naloxone_ss.yaml "
+  },
+  "python/flexaidds/dataset_runner/datasets/posex_cd.yaml::MIRROR_ONLY_KEY::targets": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "THE SHARPEST CASE OF THE ROOT CAUSE STILL OPEN: the mirror declares a targets roster and the canonical copy declares none at all, so from the benchmarks side posex_cd has no roster declaration whatsoever. Copying the roster across would change what the benchmark harness runs, which is exactly the unreviewed guess this work exists to remove. DELETE THIS ENTRY when the posex_cd roster is declared canonically."
+  },
+  "python/flexaidds/dataset_runner/datasets/posex_cd.yaml::MIRROR_VALUE_DIVERGENCE::description": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical='Cross-docking benchmark from the PoseX suite: 1312 tasks on recent (post-2021) protein-ligand complexes. Rece mirror='Cross-docking benchmark from the PoseX suite: 1312 tasks on recent (post-2021) protein-ligand complexes. Rece"
+  },
+  "python/flexaidds/dataset_runner/datasets/posex_cd.yaml::MIRROR_VALUE_DIVERGENCE::tier1_subset_size": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Two live copies of this definition disagree. Collapsing the mirror to one file is NOT safe here and was not guessed: the mirror is what the Python DatasetRunner loads by default (runner.py datasets_dir), the canonical copy is what the benchmark harness reads, and neither set of values can be declared correct without knowing which consumer's behaviour is intended. DELETE THIS ENTRY when the pair is reconciled. See SYSTEMIC_FIX_REPORT.md. canonical=5 mirror=20"
+  },
+  "python/flexaidds/dataset_runner/datasets/scorpio.yaml::MIRROR_UNPAIRED::file": {
+   "quarantined_utc": "2026-09-11T02:39:25Z",
+   "reason": "Exists only in python/flexaidds/dataset_runner/datasets; benchmarks/datasets has no copy, so that runtime cannot see this dataset. Pre-existing asymmetry, not new drift. Quarantined so a NEWLY unpaired definition fails. DELETE THIS ENTRY when the pair exists or the definition is removed."
   }
  }
 }

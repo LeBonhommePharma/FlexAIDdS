@@ -109,6 +109,22 @@ _SELF = {
     "tests/test_dataset_identity.py",
 }
 
+# Two LIVE copies of every dataset definition. benchmarks/datasets is canonical
+# (benchmarks/datasets/CANONICAL.md); the package directory is what the Python
+# DatasetRunner loads by default (runner.py: Path(__file__).parent / "datasets"),
+# so BOTH are read at runtime and neither can be deleted without moving consumers.
+# That is the surface the 85 codes drifted across. Collapsing it to one file is not
+# safe today -- see SYSTEMIC_FIX_REPORT.md for the four decisions it needs -- so it
+# is gated instead of guessed.
+CANONICAL_DATASET_DIR = "benchmarks/datasets"
+MIRROR_DATASET_DIR = "python/flexaidds/dataset_runner/datasets"
+
+# Keys the canonical copy is allowed to carry alone. These are annotation blocks
+# the benchmark harness reads and the Python package has no use for. The asymmetry
+# is deliberate and one-directional: a key in the MIRROR that the canonical copy
+# lacks is a second source of truth, which is the defect, and fires MIRROR_ONLY_KEY.
+_CANONICAL_ONLY_PREFIXES = ("claude_reevaluated_", "deck_2017_", "structure_recovery_")
+
 _SKIP_DIR_PARTS = {
     ".git", "build", "build-ci-fix", "build-audit", "node_modules", "__pycache__",
     ".venv", "venv", ".mypy_cache", ".pytest_cache", ".claude", ".cursor", ".gemini",
@@ -417,6 +433,83 @@ def refresh(root: Path) -> int:
 # Offline gate
 # ---------------------------------------------------------------------------
 
+def compare_mirror(root: Path) -> Tuple[List[Finding], Dict[str, int]]:
+    """Compare the two live dataset-definition trees key by key.
+
+    Returns findings keyed on the MIRROR path, because that is the copy a reader
+    would not think to check. Counts every comparison it performs: a rule that
+    compares nothing is vacuous no matter how its fixture behaves.
+    """
+    findings: List[Finding] = []
+    canon_dir = root / CANONICAL_DATASET_DIR
+    mirror_dir = root / MIRROR_DATASET_DIR
+    stats = {"mirror_pairs": 0, "mirror_keys_compared": 0, "mirror_unpaired": 0}
+    if not canon_dir.is_dir() or not mirror_dir.is_dir():
+        return findings, stats
+
+    try:
+        import yaml
+    except ImportError:
+        return findings, stats
+
+    canon = {p.name: p for p in sorted(canon_dir.glob("*.yaml"))}
+    mirror = {p.name: p for p in sorted(mirror_dir.glob("*.yaml"))}
+
+    for name in sorted(set(canon) ^ set(mirror)):
+        stats["mirror_unpaired"] += 1
+        where = CANONICAL_DATASET_DIR if name in canon else MIRROR_DATASET_DIR
+        other = MIRROR_DATASET_DIR if name in canon else CANONICAL_DATASET_DIR
+        findings.append(Finding(
+            "MIRROR_UNPAIRED", "%s/%s" % (where, name),
+            "this dataset definition exists only in %s; %s has no copy, so one of the "
+            "two runtimes cannot see this dataset at all" % (where, other)))
+
+    for name in sorted(set(canon) & set(mirror)):
+        try:
+            a = yaml.safe_load(canon[name].read_text(encoding="utf-8"))
+            b = yaml.safe_load(mirror[name].read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 - a malformed YAML is another gate's problem
+            continue
+        if not isinstance(a, dict) or not isinstance(b, dict):
+            continue
+        stats["mirror_pairs"] += 1
+        mpath = "%s/%s" % (MIRROR_DATASET_DIR, name)
+        for key in sorted(set(a) & set(b)):
+            stats["mirror_keys_compared"] += 1
+            if a[key] != b[key]:
+                findings.append(Finding(
+                    "MIRROR_VALUE_DIVERGENCE", mpath,
+                    "%r disagrees with %s/%s. Two live copies with different values "
+                    "means every consumer reads whichever one it happened to open."
+                    % (key, CANONICAL_DATASET_DIR, name)))
+        # Key presence is checked in BOTH directions, with the allowance on the
+        # canonical side only. A mirror holding data the canonical copy lacks is a
+        # second source of truth and always fires -- including for the annotation
+        # prefixes, which have no business in the mirror at all. A canonical-only
+        # key fires too, unless it is one of the declared annotation prefixes the
+        # Python package deliberately does not carry; leaving that direction
+        # unchecked would have let a definition drop nine config keys from the
+        # mirror in silence, which is exactly what naloxone_ss did.
+        for key in sorted(set(b) - set(a)):
+            stats["mirror_keys_compared"] += 1
+            findings.append(Finding(
+                "MIRROR_ONLY_KEY", mpath,
+                "%r exists only in the mirror; %s/%s does not declare it. A mirror that "
+                "carries data the canonical copy lacks is a second source of truth."
+                % (key, CANONICAL_DATASET_DIR, name)))
+        for key in sorted(set(a) - set(b)):
+            if key.startswith(_CANONICAL_ONLY_PREFIXES):
+                continue
+            stats["mirror_keys_compared"] += 1
+            findings.append(Finding(
+                "CANONICAL_ONLY_KEY", mpath,
+                "%r is declared in %s/%s and absent from the mirror, and is not one of the "
+                "declared annotation prefixes %s. The Python runner reads its default for "
+                "this key instead of the declared value."
+                % (key, CANONICAL_DATASET_DIR, name, list(_CANONICAL_ONLY_PREFIXES))))
+    return findings, stats
+
+
 def _is_measurement_column(col: str) -> bool:
     c = col.strip().lower()
     if not c:
@@ -480,6 +573,14 @@ def check(root: Path, cache: Dict[str, dict], defects: Dict[str, dict],
                         "LIGAND_CODE_ABSENT", d.path,
                         "ligand %r is declared for %s, which has components %s"
                         % (lig, entry_code, entry.get("nonpolymer_comp_ids") or [])))
+
+    # Rule 6 - the two live copies of a dataset definition must agree
+    mirror_findings, mirror_stats = compare_mirror(root)
+    for f in mirror_findings:
+        detail_key = f.detail.split("'")[1] if "'" in f.detail else "file"
+        if not quarantined(f.path, f.kind, detail_key):
+            findings.append(f)
+    stats.update(mirror_stats)
 
     # Rule 5 - the quarantine ledger must not outlive the defect
     for key, meta in defects.items():
@@ -570,6 +671,45 @@ def selftest(root: Path) -> int:
                          files=["constant_column_set.csv"])
         results["_quarantine_suppresses"] = quiet
 
+    # Mirror arms need a second temp tree: the rule is driven by the two dataset
+    # DIRECTORIES, not by the file list, so it must not see the arms above.
+    def _mirror_tree(td: Path, canon: dict, mirror: dict) -> None:
+        import yaml as _y
+        (td / CANONICAL_DATASET_DIR).mkdir(parents=True, exist_ok=True)
+        (td / MIRROR_DATASET_DIR).mkdir(parents=True, exist_ok=True)
+        for name, doc in canon.items():
+            (td / CANONICAL_DATASET_DIR / name).write_text(_y.safe_dump(doc), encoding="utf-8")
+        for name, doc in mirror.items():
+            (td / MIRROR_DATASET_DIR / name).write_text(_y.safe_dump(doc), encoding="utf-8")
+
+    agreeing = {"name": "probe", "slug": "probe", "targets": [good_code]}
+    mirror_arms = {
+        "mirror_agrees": (agreeing, dict(agreeing), None),
+        "mirror_value_divergence": (
+            agreeing, dict(agreeing, slug="probe_other"), "MIRROR_VALUE_DIVERGENCE"),
+        "mirror_only_key": (
+            agreeing, dict(agreeing, ligand_files=["x.sdf"]), "MIRROR_ONLY_KEY"),
+        # Both directions of key presence, and the allowance that separates them.
+        "canonical_only_key": (
+            dict(agreeing, tier=2), agreeing, "CANONICAL_ONLY_KEY"),
+        "canonical_only_declared_prefix_is_allowed": (
+            dict(agreeing, claude_reevaluated_by="probe"), agreeing, None),
+        "mirror_only_prefix_is_NOT_allowed": (
+            agreeing, dict(agreeing, claude_reevaluated_by="probe"), "MIRROR_ONLY_KEY"),
+    }
+    mirror_results: Dict[str, Tuple[List[Finding], dict, Optional[str]]] = {}
+    for name, (ca, mi, want) in mirror_arms.items():
+        with tempfile.TemporaryDirectory() as td2:
+            t2 = Path(td2)
+            _mirror_tree(t2, {"probe.yaml": ca}, {"probe.yaml": mi})
+            f, s = check(t2, cache, {}, files=[])
+            mirror_results[name] = (f, s, want)
+    with tempfile.TemporaryDirectory() as td2:
+        t2 = Path(td2)
+        _mirror_tree(t2, {"probe.yaml": agreeing}, {})
+        f, s = check(t2, cache, {}, files=[])
+        mirror_results["mirror_unpaired"] = (f, s, "MIRROR_UNPAIRED")
+
     print("[selftest] known-good fixture         -> %d findings (expected 0)"
           % len(results["known_good"]))
     # Each arm must fire its INTENDED rule. Counting findings is not enough: an
@@ -595,6 +735,15 @@ def selftest(root: Path) -> int:
     print("[selftest] quarantined defect         -> %d findings (expected 0)"
           % len(results["_quarantine_suppresses"]))
 
+    for name, (f, s, want) in sorted(mirror_results.items()):
+        kinds = {x.kind for x in f}
+        hit = (not f) if want is None else (want in kinds)
+        arms_ok = arms_ok and hit
+        print("[selftest] mirror     %-18s -> %d findings, pairs=%s keys=%s, %s: %s%s"
+              % (name, len(f), s.get("mirror_pairs"), s.get("mirror_keys_compared"),
+                 want or "no findings", hit,
+                 "" if hit else "   *** INTENDED RULE DID NOT FIRE ***"))
+
     ok = (not results["known_good"]
           and all(len(v) > 0 for v in arms.values())
           and arms_ok
@@ -609,9 +758,15 @@ def selftest(root: Path) -> int:
           % (live_stats["code_checks"], live_stats["column_checks"], live_stats["ligand_checks"],
              live_stats["declarations"], live_stats["csv_rosters"],
              live_stats["yaml_definitions"], live_stats["cpp_lists"]))
+    print("[selftest] live mirror: %d paired definitions, %d keys compared across the two "
+          "live dataset trees, %d unpaired"
+          % (live_stats.get("mirror_pairs", 0), live_stats.get("mirror_keys_compared", 0),
+             live_stats.get("mirror_unpaired", 0)))
     for name, key in (("PDB_CODE_ABSENT/UNCACHED", "code_checks"),
                       ("CONSTANT_COLUMN", "column_checks"),
-                      ("LIGAND_CODE_ABSENT", "ligand_checks")):
+                      ("LIGAND_CODE_ABSENT", "ligand_checks"),
+                      ("MIRROR_VALUE_DIVERGENCE/MIRROR_ONLY_KEY/CANONICAL_ONLY_KEY",
+                       "mirror_keys_compared")):
         if live_stats[key] == 0:
             print("VOID: rule %s inspected ZERO fields on the real tree. It is vacuous." % name)
             ok = False
@@ -620,8 +775,9 @@ def selftest(root: Path) -> int:
         print("VOID: the gate did not produce BOTH a pass on known-good and a failure on every "
               "known-bad arm with non-zero live denominators. It proves nothing in this state.")
         return 2
-    print("[selftest] NON-VACUOUS: passes known-good, fails all %d known-bad arms, "
-          "quarantine suppresses, and every rule inspects a non-zero number of live fields." % len(arms))
+    print("[selftest] NON-VACUOUS: passes known-good, fails all %d known-bad arms and all %d "
+          "mirror arms, quarantine suppresses, and every rule inspects a non-zero number of "
+          "live fields." % (len(arms), sum(1 for _, (_, _, w) in mirror_results.items() if w)))
     return 0
 
 
@@ -655,10 +811,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     findings, stats = check(ROOT, cache, defects)
     print("Dataset identity sweep - %d declarations (%d csv rosters, %d yaml definitions, "
           "%d cpp lists), %d distinct codes, %d code checks, %d column checks, %d ligand checks, "
-          "%d cached, %d quarantined"
+          "%d mirror keys over %d paired definitions (%d unpaired), %d cached, %d quarantined"
           % (stats["declarations"], stats["csv_rosters"], stats["yaml_definitions"],
              stats["cpp_lists"], stats["distinct_codes"], stats["code_checks"],
-             stats["column_checks"], stats["ligand_checks"], stats["cached"], stats["quarantined"]))
+             stats["column_checks"], stats["ligand_checks"],
+             stats.get("mirror_keys_compared", 0), stats.get("mirror_pairs", 0),
+             stats.get("mirror_unpaired", 0), stats["cached"], stats["quarantined"]))
     print("cache checked_utc=%s oracle=%s" % (cache_doc.get("checked_utc"), cache_doc.get("oracle")))
 
     if args.report:

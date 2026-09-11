@@ -243,3 +243,119 @@ def test_pdb_code_pattern_is_anchored():
 
 def test_selftest_entrypoint_reports_non_vacuous():
     assert CDI.selftest(ROOT) == 0
+
+# ---------------------------------------------------------------------------
+# MIRROR_DIVERGENCE - the two live copies of every dataset definition
+# ---------------------------------------------------------------------------
+
+def _mirror_tree(root, canon: dict, mirror: dict) -> None:
+    import yaml
+    (root / CDI.CANONICAL_DATASET_DIR).mkdir(parents=True, exist_ok=True)
+    (root / CDI.MIRROR_DATASET_DIR).mkdir(parents=True, exist_ok=True)
+    for name, doc in canon.items():
+        (root / CDI.CANONICAL_DATASET_DIR / name).write_text(yaml.safe_dump(doc))
+    for name, doc in mirror.items():
+        (root / CDI.MIRROR_DATASET_DIR / name).write_text(yaml.safe_dump(doc))
+
+
+def test_mirror_rule_inspects_a_nonzero_number_of_live_keys(cache):
+    """The C1c defect was a rule whose regex matched ZERO fields while passing its
+    own fixture. This asserts the mirror rule is not that on the real tree."""
+    findings, stats = CDI.check(ROOT, cache, {})
+    assert stats["mirror_pairs"] >= 10, stats
+    assert stats["mirror_keys_compared"] >= 100, (
+        "mirror rule compared only %s keys on the real tree" % stats.get("mirror_keys_compared"))
+
+
+def test_agreeing_copies_produce_no_mirror_finding(tmp_path):
+    doc = {"name": "probe", "slug": "probe", "targets": ["1T46"]}
+    _mirror_tree(tmp_path, {"probe.yaml": doc}, {"probe.yaml": dict(doc)})
+    findings, stats = CDI.compare_mirror(tmp_path)
+    assert not findings, findings
+    assert stats["mirror_keys_compared"] == 3, stats
+
+
+def test_a_diverging_value_fails(tmp_path):
+    doc = {"name": "probe", "slug": "probe", "targets": ["1T46"]}
+    _mirror_tree(tmp_path, {"probe.yaml": doc},
+                 {"probe.yaml": dict(doc, targets=["1T46", "2BSM"])})
+    findings, _ = CDI.compare_mirror(tmp_path)
+    assert [f for f in findings if f.kind == "MIRROR_VALUE_DIVERGENCE"], findings
+
+
+def test_a_key_only_in_the_mirror_fails(tmp_path):
+    """A mirror carrying data the canonical copy lacks is a second source of truth."""
+    doc = {"name": "probe", "slug": "probe"}
+    _mirror_tree(tmp_path, {"probe.yaml": doc}, {"probe.yaml": dict(doc, targets=["1T46"])})
+    findings, _ = CDI.compare_mirror(tmp_path)
+    assert [f for f in findings if f.kind == "MIRROR_ONLY_KEY"], findings
+
+
+def test_an_annotation_key_only_in_the_canonical_copy_is_allowed(tmp_path):
+    """The asymmetry is deliberate and applies to the CANONICAL side only."""
+    doc = {"name": "probe", "slug": "probe"}
+    _mirror_tree(tmp_path,
+                 {"probe.yaml": dict(doc, claude_reevaluated_baselines={"a": 1})},
+                 {"probe.yaml": dict(doc)})
+    findings, _ = CDI.compare_mirror(tmp_path)
+    assert not findings, findings
+
+
+def test_a_non_annotation_key_only_in_the_canonical_copy_fails(tmp_path):
+    """The Python runner resolves a dataclass default for it, silently. Leaving this
+    direction unchecked let naloxone_ss drop nine declared keys from the mirror,
+    three of which change the resolved config."""
+    doc = {"name": "probe", "slug": "probe"}
+    _mirror_tree(tmp_path, {"probe.yaml": dict(doc, baseline_tolerance=0.1)},
+                 {"probe.yaml": dict(doc)})
+    findings, _ = CDI.compare_mirror(tmp_path)
+    assert [f for f in findings if f.kind == "CANONICAL_ONLY_KEY"], findings
+
+
+def test_an_annotation_key_only_in_the_MIRROR_is_not_excused(tmp_path):
+    """The allowance is one-directional: the prefixes excuse nothing in the mirror."""
+    doc = {"name": "probe", "slug": "probe"}
+    _mirror_tree(tmp_path, {"probe.yaml": dict(doc)},
+                 {"probe.yaml": dict(doc, claude_reevaluated_by="probe")})
+    findings, _ = CDI.compare_mirror(tmp_path)
+    assert [f for f in findings if f.kind == "MIRROR_ONLY_KEY"], findings
+
+
+def test_the_documented_allowance_matches_the_code():
+    """CANONICAL.md described this allowance in the opposite direction to the code
+    once; a reader trusting the doc believed the gate covered a case it skipped."""
+    doc = (ROOT / "benchmarks" / "datasets" / "CANONICAL.md").read_text(encoding="utf-8")
+    assert "CANONICAL_ONLY_KEY" in doc, "CANONICAL.md does not document the rule"
+    for pfx in CDI._CANONICAL_ONLY_PREFIXES:
+        assert pfx.rstrip("_") in doc, "CANONICAL.md does not name the prefix %r" % pfx
+    canon_idx = doc.index("CANONICAL_ONLY_KEY")
+    mirror_idx = doc.index("MIRROR_ONLY_KEY")
+    # The exemption sentence must sit under CANONICAL_ONLY_KEY, not MIRROR_ONLY_KEY.
+    exempt_idx = doc.index("Exempt **only** for the declared")
+    assert canon_idx < exempt_idx, "the exemption is not documented under CANONICAL_ONLY_KEY"
+    assert "unconditionally" in doc[mirror_idx:canon_idx], (
+        "MIRROR_ONLY_KEY is not documented as firing unconditionally")
+
+
+def test_an_unpaired_definition_fails(tmp_path):
+    _mirror_tree(tmp_path, {"probe.yaml": {"name": "probe"}}, {})
+    findings, stats = CDI.compare_mirror(tmp_path)
+    assert [f for f in findings if f.kind == "MIRROR_UNPAIRED"], findings
+    assert stats["mirror_unpaired"] == 1, stats
+
+
+def test_every_live_mirror_divergence_is_quarantined_with_a_reason(cache):
+    """Nothing about the two live trees may be tolerated silently. Each open
+    divergence must carry a dated reason in the ledger."""
+    import json
+    raw = CDI.compare_mirror(ROOT)[0]
+    assert raw, "the mirror rule found nothing on the real tree -- it would be vacuous"
+    ledger = json.loads(CDI.DEFECTS_PATH.read_text())["quarantined"]
+    unexplained = []
+    for f in raw:
+        key_part = f.detail.split("'")[1] if "'" in f.detail else "file"
+        key = "%s::%s::%s" % (f.path, f.kind, key_part)
+        if key not in ledger or not ledger[key].get("reason"):
+            unexplained.append(key)
+    assert not unexplained, (
+        "live mirror divergences with no quarantine reason: %s" % unexplained)
