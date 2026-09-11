@@ -1,0 +1,3947 @@
+{
+ "_comment": "Committed PDB-entry cache for scripts/check_dataset_identity.py. Refresh explicitly with --refresh; never hand-edit.",
+ "checked_utc": "2026-09-11T01:01:29Z",
+ "controls": {
+  "negative": "3QGS",
+  "negative_resolved": false,
+  "positive": "1T46",
+  "positive_ligand": "STI",
+  "positive_ok": true
+ },
+ "counts": {
+  "absent": 2,
+  "distinct": 437,
+  "present": 435
+ },
+ "entries": {
+  "1A28": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "STR"
+   ],
+   "resolution_A": 1.8
+  },
+  "1A30": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.0
+  },
+  "1A4G": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "NAG",
+    "ZMR"
+   ],
+   "resolution_A": 2.2
+  },
+  "1A4Q": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "DPC",
+    "NAG"
+   ],
+   "resolution_A": 1.9
+  },
+  "1A9M": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "U0E"
+   ],
+   "resolution_A": 2.3
+  },
+  "1ADB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CND",
+    "EOH",
+    "ZN"
+   ],
+   "resolution_A": 2.4
+  },
+  "1AI4": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "DHY"
+   ],
+   "resolution_A": 2.35
+  },
+  "1AI5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "MNP"
+   ],
+   "resolution_A": 2.36
+  },
+  "1B6J": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SO4"
+   ],
+   "resolution_A": 1.85
+  },
+  "1B6K": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PI5",
+    "SO4"
+   ],
+   "resolution_A": 1.85
+  },
+  "1B6M": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PI6",
+    "SO4"
+   ],
+   "resolution_A": 1.85
+  },
+  "1B9V": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "NAG",
+    "RA2"
+   ],
+   "resolution_A": 2.35
+  },
+  "1BMA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0QH",
+    "CA",
+    "SO4"
+   ],
+   "resolution_A": 1.8
+  },
+  "1BYQ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ADP",
+    "MG"
+   ],
+   "resolution_A": 1.5
+  },
+  "1C1B": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GCA"
+   ],
+   "resolution_A": 2.5
+  },
+  "1C5C": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "TK4"
+   ],
+   "resolution_A": 1.61
+  },
+  "1C5Z": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BEN",
+    "FLC"
+   ],
+   "resolution_A": 1.85
+  },
+  "1C83": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "OAI"
+   ],
+   "resolution_A": 1.8
+  },
+  "1CBG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.15
+  },
+  "1CBX": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BZS",
+    "ZN"
+   ],
+   "resolution_A": 2.0
+  },
+  "1CIL": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ETS",
+    "ZN"
+   ],
+   "resolution_A": 1.6
+  },
+  "1D3H": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "A26",
+    "ACT",
+    "FMN",
+    "ORO",
+    "SO4"
+   ],
+   "resolution_A": 1.8
+  },
+  "1D4P": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BPP",
+    "NA",
+    "NAG"
+   ],
+   "resolution_A": 2.07
+  },
+  "1DBB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "STR"
+   ],
+   "resolution_A": 2.7
+  },
+  "1DWD": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MID"
+   ],
+   "resolution_A": 3.0
+  },
+  "1E66": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HUX",
+    "NAG"
+   ],
+   "resolution_A": 2.1
+  },
+  "1EBY": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BEB"
+   ],
+   "resolution_A": 2.294
+  },
+  "1EED": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0EO"
+   ],
+   "resolution_A": 2.0
+  },
+  "1ETA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "T44"
+   ],
+   "resolution_A": 1.7
+  },
+  "1ETR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MIT"
+   ],
+   "resolution_A": 2.2
+  },
+  "1F0R": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "815",
+    "CA"
+   ],
+   "resolution_A": 2.1
+  },
+  "1F0S": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "PR2"
+   ],
+   "resolution_A": 2.1
+  },
+  "1F8B": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "DAN",
+    "NAG"
+   ],
+   "resolution_A": 1.8
+  },
+  "1F8D": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "9AM",
+    "CA",
+    "NAG"
+   ],
+   "resolution_A": 1.4
+  },
+  "1FCX": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "184",
+    "LMU"
+   ],
+   "resolution_A": 1.47
+  },
+  "1FEN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AZE"
+   ],
+   "resolution_A": 1.9
+  },
+  "1FKI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SB1"
+   ],
+   "resolution_A": 2.2
+  },
+  "1FL3": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SPB"
+   ],
+   "resolution_A": 2.45
+  },
+  "1FPC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0ZI"
+   ],
+   "resolution_A": 2.3
+  },
+  "1G2K": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NM1"
+   ],
+   "resolution_A": 1.95
+  },
+  "1G9V": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HEM",
+    "RQ3",
+    "SO4"
+   ],
+   "resolution_A": 1.85
+  },
+  "1GKC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "NFH",
+    "ZN"
+   ],
+   "resolution_A": 2.3
+  },
+  "1GM8": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "SOX"
+   ],
+   "resolution_A": 2.0
+  },
+  "1GNI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "OLA"
+   ],
+   "resolution_A": 2.4
+  },
+  "1GNM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "U0E"
+   ],
+   "resolution_A": 2.3
+  },
+  "1GPK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HUP",
+    "NAG"
+   ],
+   "resolution_A": 2.1
+  },
+  "1HFS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "L04",
+    "ZN"
+   ],
+   "resolution_A": 1.7
+  },
+  "1HNN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SAH",
+    "SKF"
+   ],
+   "resolution_A": 2.4
+  },
+  "1HP0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AD3",
+    "CA"
+   ],
+   "resolution_A": 2.1
+  },
+  "1HPV": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "478"
+   ],
+   "resolution_A": 1.9
+  },
+  "1HQ2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "APC",
+    "CL",
+    "MG",
+    "PH2"
+   ],
+   "resolution_A": 1.25
+  },
+  "1HTF": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "G26"
+   ],
+   "resolution_A": 2.2
+  },
+  "1HVR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "XK2"
+   ],
+   "resolution_A": 1.8
+  },
+  "1HVY": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BME",
+    "D16",
+    "UMP"
+   ],
+   "resolution_A": 1.9
+  },
+  "1HWI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "115",
+    "ADP"
+   ],
+   "resolution_A": 2.3
+  },
+  "1HWW": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MRD",
+    "NAG",
+    "SWA",
+    "ZN"
+   ],
+   "resolution_A": 1.87
+  },
+  "1IA1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NDP",
+    "PO4",
+    "TQ3"
+   ],
+   "resolution_A": 1.7
+  },
+  "1IDA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0PO"
+   ],
+   "resolution_A": 1.7
+  },
+  "1IG3": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SO4",
+    "VIB"
+   ],
+   "resolution_A": 1.9
+  },
+  "1IGJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DGX"
+   ],
+   "resolution_A": 2.5
+  },
+  "1IMB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GD",
+    "LIP"
+   ],
+   "resolution_A": 2.2
+  },
+  "1IVC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "ST2"
+   ],
+   "resolution_A": 2.4
+  },
+  "1J3J": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CP6",
+    "NDP",
+    "UMP"
+   ],
+   "resolution_A": 2.3
+  },
+  "1J4R": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "001",
+    "GOL",
+    "SO4"
+   ],
+   "resolution_A": 1.8
+  },
+  "1JD0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AZM",
+    "ZN"
+   ],
+   "resolution_A": 1.5
+  },
+  "1JJE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "BYS",
+    "ZN"
+   ],
+   "resolution_A": 1.8
+  },
+  "1JLA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "TNK"
+   ],
+   "resolution_A": 2.5
+  },
+  "1K1J": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "FD2",
+    "SO4"
+   ],
+   "resolution_A": 2.2
+  },
+  "1K3U": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IAD",
+    "NA",
+    "PLP"
+   ],
+   "resolution_A": 1.7
+  },
+  "1KE5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "LS1"
+   ],
+   "resolution_A": 2.2
+  },
+  "1KZK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "EDO",
+    "JE2"
+   ],
+   "resolution_A": 1.09
+  },
+  "1L2S": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "STC"
+   ],
+   "resolution_A": 1.94
+  },
+  "1L7F": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BCZ",
+    "CA",
+    "GOL",
+    "NAG"
+   ],
+   "resolution_A": 1.8
+  },
+  "1LAM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CO3",
+    "MRD",
+    "ZN"
+   ],
+   "resolution_A": 1.6
+  },
+  "1LPM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "MPA",
+    "NAG"
+   ],
+   "resolution_A": 2.18
+  },
+  "1LPZ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "CMB"
+   ],
+   "resolution_A": 2.4
+  },
+  "1LRH": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NLA",
+    "ZN"
+   ],
+   "resolution_A": 1.9
+  },
+  "1M2Z": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BOG",
+    "DEX"
+   ],
+   "resolution_A": 2.5
+  },
+  "1MEH": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IMP",
+    "K",
+    "MOA"
+   ],
+   "resolution_A": 1.95
+  },
+  "1MLD": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CIT"
+   ],
+   "resolution_A": 1.83
+  },
+  "1MMV": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "3AR",
+    "ACT",
+    "H4B",
+    "HEM",
+    "ZN"
+   ],
+   "resolution_A": 2.0
+  },
+  "1MQ6": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "GOL",
+    "XLD"
+   ],
+   "resolution_A": 2.1
+  },
+  "1MRK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FMC"
+   ],
+   "resolution_A": 1.6
+  },
+  "1MTS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BX3",
+    "CA"
+   ],
+   "resolution_A": 1.9
+  },
+  "1MZC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BNE",
+    "FPP",
+    "ZN"
+   ],
+   "resolution_A": 2.0
+  },
+  "1N1M": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "A3M",
+    "HG",
+    "NAG"
+   ],
+   "resolution_A": 2.5
+  },
+  "1N2J": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BAL",
+    "EOH",
+    "GOL",
+    "PAF",
+    "SO4"
+   ],
+   "resolution_A": 1.8
+  },
+  "1N2V": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BDI",
+    "ZN"
+   ],
+   "resolution_A": 2.1
+  },
+  "1N46": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PFA"
+   ],
+   "resolution_A": 2.2
+  },
+  "1NAV": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IH5",
+    "SO4"
+   ],
+   "resolution_A": 2.5
+  },
+  "1OF1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SCT",
+    "SO4"
+   ],
+   "resolution_A": 1.95
+  },
+  "1OF6": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DTY",
+    "MN"
+   ],
+   "resolution_A": 2.1
+  },
+  "1OKL": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HG",
+    "MNS",
+    "ZN"
+   ],
+   "resolution_A": 2.1
+  },
+  "1OPK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "MYR",
+    "P16"
+   ],
+   "resolution_A": 1.8
+  },
+  "1OQ5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CEL",
+    "ZN"
+   ],
+   "resolution_A": 1.5
+  },
+  "1OWE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "675",
+    "SO4"
+   ],
+   "resolution_A": 1.6
+  },
+  "1OWI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "426"
+   ],
+   "resolution_A": 2.93
+  },
+  "1OYT": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "FSN",
+    "NA"
+   ],
+   "resolution_A": 1.67
+  },
+  "1P2Y": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HEM",
+    "NCT"
+   ],
+   "resolution_A": 2.3
+  },
+  "1P62": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ADP",
+    "GEO",
+    "MG"
+   ],
+   "resolution_A": 1.9
+  },
+  "1PHD": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HEM",
+    "PIW"
+   ],
+   "resolution_A": 1.6
+  },
+  "1PMN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "984"
+   ],
+   "resolution_A": 2.2
+  },
+  "1POC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "GEL"
+   ],
+   "resolution_A": 2.0
+  },
+  "1PSO": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.0
+  },
+  "1Q1G": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IPA",
+    "MTI",
+    "SO4"
+   ],
+   "resolution_A": 2.02
+  },
+  "1Q41": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IXM"
+   ],
+   "resolution_A": 2.1
+  },
+  "1Q4G": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BFL",
+    "BOG",
+    "GOL",
+    "HEM"
+   ],
+   "resolution_A": 2.0
+  },
+  "1QPJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SO4",
+    "STU"
+   ],
+   "resolution_A": 2.2
+  },
+  "1QYF": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EDO",
+    "MG"
+   ],
+   "resolution_A": 1.5
+  },
+  "1R1H": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BIR",
+    "NAG",
+    "ZN"
+   ],
+   "resolution_A": 1.95
+  },
+  "1R55": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "097",
+    "CA",
+    "CL",
+    "ZN"
+   ],
+   "resolution_A": 1.58
+  },
+  "1R58": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AO5",
+    "MN"
+   ],
+   "resolution_A": 1.9
+  },
+  "1R9O": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FLP",
+    "GOL",
+    "HEM"
+   ],
+   "resolution_A": 2.0
+  },
+  "1RBP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "RTL"
+   ],
+   "resolution_A": 2.0
+  },
+  "1S19": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MC9"
+   ],
+   "resolution_A": 2.1
+  },
+  "1S3V": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SO4",
+    "TQD"
+   ],
+   "resolution_A": 1.8
+  },
+  "1SG0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FAD",
+    "STL",
+    "ZN"
+   ],
+   "resolution_A": 1.5
+  },
+  "1SJ0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "E4D"
+   ],
+   "resolution_A": 1.9
+  },
+  "1SQ5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ADP",
+    "PAU"
+   ],
+   "resolution_A": 2.2
+  },
+  "1SQN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NDR"
+   ],
+   "resolution_A": 1.451
+  },
+  "1STP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BTN"
+   ],
+   "resolution_A": 2.6
+  },
+  "1T3R": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "017",
+    "PO4"
+   ],
+   "resolution_A": 1.2
+  },
+  "1T40": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ID5",
+    "NAP"
+   ],
+   "resolution_A": 1.8
+  },
+  "1T46": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PO4",
+    "STI"
+   ],
+   "resolution_A": 1.6
+  },
+  "1T49": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "892",
+    "MG"
+   ],
+   "resolution_A": 1.9
+  },
+  "1T9B": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1CS",
+    "FAD",
+    "K",
+    "MG",
+    "NSP",
+    "P22",
+    "P25",
+    "YF3"
+   ],
+   "resolution_A": 2.2
+  },
+  "1TLP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "RDF",
+    "ZN"
+   ],
+   "resolution_A": 2.3
+  },
+  "1TMN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0ZN",
+    "CA",
+    "ZN"
+   ],
+   "resolution_A": 1.9
+  },
+  "1TNI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "PBN"
+   ],
+   "resolution_A": 1.9
+  },
+  "1TOW": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CRZ"
+   ],
+   "resolution_A": 2.0
+  },
+  "1TT1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "KAI"
+   ],
+   "resolution_A": 1.93
+  },
+  "1TVR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "TB9"
+   ],
+   "resolution_A": 3.0
+  },
+  "1TW6": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BTB",
+    "EDO",
+    "LI",
+    "ZN"
+   ],
+   "resolution_A": 1.713
+  },
+  "1TZ8": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "CO3",
+    "DES",
+    "DMS",
+    "GOL"
+   ],
+   "resolution_A": 1.85
+  },
+  "1U1B": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PAX"
+   ],
+   "resolution_A": 2.0
+  },
+  "1U1C": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BAU",
+    "K",
+    "PO4"
+   ],
+   "resolution_A": 2.2
+  },
+  "1U4D": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "DBQ"
+   ],
+   "resolution_A": 2.1
+  },
+  "1ULB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GUN",
+    "SO4"
+   ],
+   "resolution_A": 2.75
+  },
+  "1UML": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FR4",
+    "ZN"
+   ],
+   "resolution_A": 2.5
+  },
+  "1UNL": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "RRC"
+   ],
+   "resolution_A": 2.2
+  },
+  "1UOU": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CMU"
+   ],
+   "resolution_A": 2.11
+  },
+  "1V0P": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PVB"
+   ],
+   "resolution_A": 2.0
+  },
+  "1V48": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HA1",
+    "MG",
+    "ZN"
+   ],
+   "resolution_A": 2.2
+  },
+  "1V4S": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GLC",
+    "MRK",
+    "NA"
+   ],
+   "resolution_A": 2.3
+  },
+  "1VCJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IBA"
+   ],
+   "resolution_A": 2.4
+  },
+  "1W1P": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GIO",
+    "GOL",
+    "SO4"
+   ],
+   "resolution_A": 2.1
+  },
+  "1W2G": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "THM"
+   ],
+   "resolution_A": 2.1
+  },
+  "1X8D": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "RNS"
+   ],
+   "resolution_A": 1.8
+  },
+  "1X8X": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SO4",
+    "TYR"
+   ],
+   "resolution_A": 2.0
+  },
+  "1XD0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ARE",
+    "CA",
+    "CL",
+    "NAG"
+   ],
+   "resolution_A": 2.0
+  },
+  "1XGJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HTC"
+   ],
+   "resolution_A": 1.97
+  },
+  "1XM6": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "5RM",
+    "MG",
+    "ZN"
+   ],
+   "resolution_A": 1.92
+  },
+  "1XOQ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EDO",
+    "MG",
+    "ROF",
+    "ZN"
+   ],
+   "resolution_A": 1.83
+  },
+  "1XOZ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CIA",
+    "MG",
+    "ZN"
+   ],
+   "resolution_A": 1.37
+  },
+  "1XRJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ADP",
+    "C5P",
+    "MG"
+   ],
+   "resolution_A": 2.0
+  },
+  "1Y6B": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AAX"
+   ],
+   "resolution_A": 2.1
+  },
+  "1Y6R": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MTM"
+   ],
+   "resolution_A": 2.2
+  },
+  "1YDR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IQP"
+   ],
+   "resolution_A": 2.2
+  },
+  "1YDT": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IQB"
+   ],
+   "resolution_A": 2.3
+  },
+  "1YGC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "905",
+    "CA",
+    "SO4"
+   ],
+   "resolution_A": 2.0
+  },
+  "1YQY": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "915",
+    "ZN"
+   ],
+   "resolution_A": 2.3
+  },
+  "1YV3": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ADP",
+    "BIT",
+    "EDO",
+    "MG",
+    "VO4"
+   ],
+   "resolution_A": 2.0
+  },
+  "1YVF": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "GOL",
+    "PH7",
+    "PO4"
+   ],
+   "resolution_A": 2.5
+  },
+  "1YWR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "LI9"
+   ],
+   "resolution_A": 1.95
+  },
+  "1Z95": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "198",
+    "SO4"
+   ],
+   "resolution_A": 1.8
+  },
+  "2AL5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "4MP",
+    "FWD"
+   ],
+   "resolution_A": 1.65
+  },
+  "2BG9": {
+   "exists": true,
+   "experimental_method": "EM",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 4.0
+  },
+  "2BM2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PM2"
+   ],
+   "resolution_A": 2.2
+  },
+  "2BR1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PFP",
+    "SO4"
+   ],
+   "resolution_A": 2.0
+  },
+  "2BSM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BSM"
+   ],
+   "resolution_A": 2.05
+  },
+  "2BV9": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.5
+  },
+  "2BYS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "LOB"
+   ],
+   "resolution_A": 2.05
+  },
+  "2C3I": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IYZ"
+   ],
+   "resolution_A": 1.9
+  },
+  "2C5N": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CK8"
+   ],
+   "resolution_A": 2.1
+  },
+  "2C68": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CT6"
+   ],
+   "resolution_A": 1.95
+  },
+  "2C69": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CT8"
+   ],
+   "resolution_A": 2.1
+  },
+  "2CBJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "OAN"
+   ],
+   "resolution_A": 2.35
+  },
+  "2CET": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "CA",
+    "PGI"
+   ],
+   "resolution_A": 1.97
+  },
+  "2CGR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GAS"
+   ],
+   "resolution_A": 2.2
+  },
+  "2CK3": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ADP",
+    "ANP",
+    "AZI",
+    "MG",
+    "PO4"
+   ],
+   "resolution_A": 1.95
+  },
+  "2CL7": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GTP",
+    "MG",
+    "XY2"
+   ],
+   "resolution_A": 1.25
+  },
+  "2CN0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "F25",
+    "NA"
+   ],
+   "resolution_A": 1.3
+  },
+  "2CNJ": {
+   "exists": true,
+   "experimental_method": "NMR",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": null
+  },
+  "2CNK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.75
+  },
+  "2CNL": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.67
+  },
+  "2CNM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "COA"
+   ],
+   "resolution_A": 2.6
+  },
+  "2CNN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.7
+  },
+  "2CNO": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.95
+  },
+  "2CNP": {
+   "exists": true,
+   "experimental_method": "NMR",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": null
+  },
+  "2CQZ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NI"
+   ],
+   "resolution_A": 2.6
+  },
+  "2CR4": {
+   "exists": true,
+   "experimental_method": "NMR",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": null
+  },
+  "2CS2": {
+   "exists": true,
+   "experimental_method": "NMR",
+   "nonpolymer_comp_ids": [
+    "ZN"
+   ],
+   "resolution_A": null
+  },
+  "2CSO": {
+   "exists": true,
+   "experimental_method": "NMR",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": null
+  },
+  "2D3U": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CCT"
+   ],
+   "resolution_A": 2.0
+  },
+  "2DRI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "RIP"
+   ],
+   "resolution_A": 1.6
+  },
+  "2E9P": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "77A"
+   ],
+   "resolution_A": 2.6
+  },
+  "2E9U": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "A25"
+   ],
+   "resolution_A": 2.0
+  },
+  "2FVD": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "LIA"
+   ],
+   "resolution_A": 1.85
+  },
+  "2FXS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "RDA"
+   ],
+   "resolution_A": 2.0
+  },
+  "2FXT": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 3.2
+  },
+  "2FXX": {
+   "exists": false,
+   "experimental_method": null,
+   "nonpolymer_comp_ids": [],
+   "resolution_A": null
+  },
+  "2G70": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HNT",
+    "PO4",
+    "SAM"
+   ],
+   "resolution_A": 2.4
+  },
+  "2GBP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BGC",
+    "CA"
+   ],
+   "resolution_A": 1.9
+  },
+  "2GQG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1N1",
+    "GOL"
+   ],
+   "resolution_A": 2.4
+  },
+  "2GSS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EAA",
+    "MES",
+    "SO4"
+   ],
+   "resolution_A": 1.9
+  },
+  "2GTV": {
+   "exists": true,
+   "experimental_method": "NMR",
+   "nonpolymer_comp_ids": [
+    "TSA"
+   ],
+   "resolution_A": null
+  },
+  "2H4N": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AZM",
+    "ZN"
+   ],
+   "resolution_A": 1.9
+  },
+  "2HB1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "512"
+   ],
+   "resolution_A": 2.0
+  },
+  "2HFW": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ZN"
+   ],
+   "resolution_A": 2.5
+  },
+  "2HNX": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACY",
+    "PLM",
+    "PO4"
+   ],
+   "resolution_A": 1.5
+  },
+  "2HR7": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "NAG",
+    "P33",
+    "SO4"
+   ],
+   "resolution_A": 2.32
+  },
+  "2HS1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "017",
+    "CL",
+    "DMS"
+   ],
+   "resolution_A": 0.84
+  },
+  "2HZ4": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "4ST"
+   ],
+   "resolution_A": 2.8
+  },
+  "2I0E": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PDS"
+   ],
+   "resolution_A": 2.6
+  },
+  "2I40": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BLZ"
+   ],
+   "resolution_A": 2.8
+  },
+  "2I78": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "KIQ"
+   ],
+   "resolution_A": 2.5
+  },
+  "2IOK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IOK"
+   ],
+   "resolution_A": 2.4
+  },
+  "2IW1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "U2F"
+   ],
+   "resolution_A": 1.5
+  },
+  "2J62": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "GSZ"
+   ],
+   "resolution_A": 2.26
+  },
+  "2J78": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "CA",
+    "EDO",
+    "GOX"
+   ],
+   "resolution_A": 1.65
+  },
+  "2J7H": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "AZF",
+    "CA"
+   ],
+   "resolution_A": 1.95
+  },
+  "2J94": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "G15"
+   ],
+   "resolution_A": 2.1
+  },
+  "2JDM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "FUC",
+    "MFU",
+    "SO4"
+   ],
+   "resolution_A": 1.7
+  },
+  "2JDU": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "GOL",
+    "MFU",
+    "SO4"
+   ],
+   "resolution_A": 1.5
+  },
+  "2JDY": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "MMA"
+   ],
+   "resolution_A": 1.7
+  },
+  "2OBF": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "F83",
+    "SAH"
+   ],
+   "resolution_A": 2.3
+  },
+  "2OBJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "VRV"
+   ],
+   "resolution_A": 2.5
+  },
+  "2OJE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PO4"
+   ],
+   "resolution_A": 3.0
+  },
+  "2OJG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "19A",
+    "SO4"
+   ],
+   "resolution_A": 2.0
+  },
+  "2OSM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HTS",
+    "ZN"
+   ],
+   "resolution_A": 1.6
+  },
+  "2P4Y": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "C03",
+    "TRS"
+   ],
+   "resolution_A": 2.25
+  },
+  "2PQ9": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FMT",
+    "GG9"
+   ],
+   "resolution_A": 1.6
+  },
+  "2QBP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "527"
+   ],
+   "resolution_A": 2.5
+  },
+  "2QBQ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "4B3"
+   ],
+   "resolution_A": 2.1
+  },
+  "2QBR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "910"
+   ],
+   "resolution_A": 2.3
+  },
+  "2QBS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "024"
+   ],
+   "resolution_A": 2.1
+  },
+  "2QMJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "NAG",
+    "SO4"
+   ],
+   "resolution_A": 1.9
+  },
+  "2R9W": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "23C",
+    "PO4"
+   ],
+   "resolution_A": 1.8
+  },
+  "2RH1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "12P",
+    "ACM",
+    "BU1",
+    "CAU",
+    "CLR",
+    "PLM",
+    "SO4"
+   ],
+   "resolution_A": 2.4
+  },
+  "2V00": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "GOL",
+    "V15"
+   ],
+   "resolution_A": 1.55
+  },
+  "2VCI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "2GJ"
+   ],
+   "resolution_A": 2.0
+  },
+  "2VCJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "2EQ"
+   ],
+   "resolution_A": 2.5
+  },
+  "2VD0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "D27",
+    "GOL",
+    "GSH"
+   ],
+   "resolution_A": 2.2
+  },
+  "2VD1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "D28",
+    "GSH",
+    "MG"
+   ],
+   "resolution_A": 2.25
+  },
+  "2VO5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BR",
+    "CL",
+    "EDO",
+    "VBZ"
+   ],
+   "resolution_A": 2.3
+  },
+  "2VVN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "NH4",
+    "NHT"
+   ],
+   "resolution_A": 1.85
+  },
+  "2VW5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BC6",
+    "SO4"
+   ],
+   "resolution_A": 1.9
+  },
+  "2W4X": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "GOL",
+    "STZ"
+   ],
+   "resolution_A": 2.42
+  },
+  "2W66": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "GOL",
+    "HQ6"
+   ],
+   "resolution_A": 2.27
+  },
+  "2W97": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "MGO",
+    "PGE",
+    "SO4"
+   ],
+   "resolution_A": 2.29
+  },
+  "2WBG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "LGS"
+   ],
+   "resolution_A": 1.85
+  },
+  "2WCA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "NP6"
+   ],
+   "resolution_A": 2.3
+  },
+  "2WEG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FBV",
+    "GOL",
+    "ZN"
+   ],
+   "resolution_A": 1.1
+  },
+  "2WER": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "RDC"
+   ],
+   "resolution_A": 1.6
+  },
+  "2WHB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.9
+  },
+  "2WI2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DMS",
+    "ZZ3"
+   ],
+   "resolution_A": 2.09
+  },
+  "2WN9": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NAG",
+    "ZY5"
+   ],
+   "resolution_A": 1.75
+  },
+  "2WNC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "TKT"
+   ],
+   "resolution_A": 2.2
+  },
+  "2WND": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "ZN"
+   ],
+   "resolution_A": 1.6
+  },
+  "2WNE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.124
+  },
+  "2WT2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NO3"
+   ],
+   "resolution_A": 2.5
+  },
+  "2WTV": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "DMS",
+    "EDO",
+    "ZZL"
+   ],
+   "resolution_A": 2.4
+  },
+  "2WYG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "461"
+   ],
+   "resolution_A": 1.88
+  },
+  "2X00": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GYN"
+   ],
+   "resolution_A": 2.4
+  },
+  "2X0Y": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "X0T"
+   ],
+   "resolution_A": 2.25
+  },
+  "2XB8": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SO4",
+    "TRS",
+    "XNW"
+   ],
+   "resolution_A": 2.4
+  },
+  "2XBV": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "NA",
+    "XBV"
+   ],
+   "resolution_A": 1.66
+  },
+  "2XDL": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "2DL"
+   ],
+   "resolution_A": 1.98
+  },
+  "2XHM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EPE",
+    "K26",
+    "NAG",
+    "ZN"
+   ],
+   "resolution_A": 1.96
+  },
+  "2XJ7": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "GC2"
+   ],
+   "resolution_A": 2.0
+  },
+  "2XJJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "L81"
+   ],
+   "resolution_A": 1.9
+  },
+  "2XNB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "Y8L"
+   ],
+   "resolution_A": 1.85
+  },
+  "2XYS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SY9"
+   ],
+   "resolution_A": 1.909
+  },
+  "2Y5H": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NA",
+    "Y5H"
+   ],
+   "resolution_A": 1.33
+  },
+  "2YFE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "YFE"
+   ],
+   "resolution_A": 2.0
+  },
+  "2YGE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GDM",
+    "GOL"
+   ],
+   "resolution_A": 1.956
+  },
+  "2YLB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.15
+  },
+  "2YMD": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "PO4",
+    "SRO"
+   ],
+   "resolution_A": 1.96
+  },
+  "2YPL": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.4
+  },
+  "2ZB1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GK4",
+    "GOL"
+   ],
+   "resolution_A": 2.5
+  },
+  "2ZFF": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "53U",
+    "NA"
+   ],
+   "resolution_A": 1.47
+  },
+  "2ZXD": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ZXD"
+   ],
+   "resolution_A": 2.15
+  },
+  "2ZYC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PO4"
+   ],
+   "resolution_A": 1.74
+  },
+  "3ACW": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "651"
+   ],
+   "resolution_A": 1.63
+  },
+  "3AGN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "3AM",
+    "CA"
+   ],
+   "resolution_A": 0.96
+  },
+  "3AO4": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "833",
+    "CD",
+    "CL",
+    "SO4"
+   ],
+   "resolution_A": 1.95
+  },
+  "3ARP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DEQ",
+    "GOL"
+   ],
+   "resolution_A": 1.55
+  },
+  "3BL1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BL1",
+    "HG",
+    "ZN"
+   ],
+   "resolution_A": 2.1
+  },
+  "3BV9": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "IOD",
+    "NA"
+   ],
+   "resolution_A": 1.8
+  },
+  "3CJ2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NI",
+    "SX3"
+   ],
+   "resolution_A": 1.75
+  },
+  "3CJ4": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NI",
+    "SX5"
+   ],
+   "resolution_A": 2.07
+  },
+  "3CKZ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "ZMR"
+   ],
+   "resolution_A": 1.9
+  },
+  "3COY": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "53H",
+    "EOH",
+    "GOL"
+   ],
+   "resolution_A": 2.03
+  },
+  "3CYU": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0CR",
+    "1CR",
+    "XE",
+    "ZN"
+   ],
+   "resolution_A": 1.7
+  },
+  "3D4Z": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GIM",
+    "MRD",
+    "ZN"
+   ],
+   "resolution_A": 1.39
+  },
+  "3DD0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EZL",
+    "ZN"
+   ],
+   "resolution_A": 1.48
+  },
+  "3DDQ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "RRC",
+    "SGM"
+   ],
+   "resolution_A": 1.8
+  },
+  "3DXG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "U5P"
+   ],
+   "resolution_A": 1.39
+  },
+  "3DZY": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "9CR",
+    "BRL",
+    "ZN"
+   ],
+   "resolution_A": 3.1
+  },
+  "3EBP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CPB"
+   ],
+   "resolution_A": 2.0
+  },
+  "3EIG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CD",
+    "MTX",
+    "SO4"
+   ],
+   "resolution_A": 1.7
+  },
+  "3EL1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "DR7"
+   ],
+   "resolution_A": 1.7
+  },
+  "3F3A": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BOG",
+    "C14",
+    "NA",
+    "TRP"
+   ],
+   "resolution_A": 2.0
+  },
+  "3F3C": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BOG",
+    "NA",
+    "PFF"
+   ],
+   "resolution_A": 2.1
+  },
+  "3F3D": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BOG",
+    "MET",
+    "NA"
+   ],
+   "resolution_A": 2.3
+  },
+  "3F3E": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BOG",
+    "LEU",
+    "NA"
+   ],
+   "resolution_A": 1.8
+  },
+  "3FV1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DYH",
+    "GOL",
+    "SO4"
+   ],
+   "resolution_A": 1.5
+  },
+  "3FV2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "NDZ",
+    "SO4"
+   ],
+   "resolution_A": 1.5
+  },
+  "3G0E": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "B49"
+   ],
+   "resolution_A": 1.6
+  },
+  "3GBB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MS8"
+   ],
+   "resolution_A": 2.1
+  },
+  "3GE7": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AFQ",
+    "GOL",
+    "ZN"
+   ],
+   "resolution_A": 1.5
+  },
+  "3GEN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "B43"
+   ],
+   "resolution_A": 1.6
+  },
+  "3GI5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "K62",
+    "PO4"
+   ],
+   "resolution_A": 1.8
+  },
+  "3GP0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "EDO",
+    "NIL"
+   ],
+   "resolution_A": 1.9
+  },
+  "3GQL": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GQL"
+   ],
+   "resolution_A": 2.8
+  },
+  "3GV9": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DMS",
+    "GV9",
+    "PEG",
+    "PO4"
+   ],
+   "resolution_A": 1.8
+  },
+  "3GVU": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "STI"
+   ],
+   "resolution_A": 2.05
+  },
+  "3HUC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BOG",
+    "G97",
+    "MES"
+   ],
+   "resolution_A": 1.8
+  },
+  "3IAR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "3D1",
+    "GOL",
+    "NI",
+    "NO3"
+   ],
+   "resolution_A": 1.52
+  },
+  "3JVR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AGX"
+   ],
+   "resolution_A": 1.76
+  },
+  "3JVS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AGY"
+   ],
+   "resolution_A": 1.9
+  },
+  "3JY0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "LYG"
+   ],
+   "resolution_A": 2.4
+  },
+  "3K5V": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "STI",
+    "STJ"
+   ],
+   "resolution_A": 1.74
+  },
+  "3KGP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "4AZ",
+    "SO4"
+   ],
+   "resolution_A": 2.35
+  },
+  "3KMZ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EQO",
+    "GOL"
+   ],
+   "resolution_A": 2.1
+  },
+  "3KR8": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "SO4",
+    "XAV",
+    "ZN"
+   ],
+   "resolution_A": 2.1
+  },
+  "3KWA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "HG",
+    "SPM",
+    "ZN"
+   ],
+   "resolution_A": 2.0
+  },
+  "3L3N": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "LSW",
+    "ZN"
+   ],
+   "resolution_A": 2.3
+  },
+  "3L4U": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DSK",
+    "NAG",
+    "SO4"
+   ],
+   "resolution_A": 1.9
+  },
+  "3L4W": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "MIG",
+    "NAG"
+   ],
+   "resolution_A": 2.0
+  },
+  "3L7B": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DKZ"
+   ],
+   "resolution_A": 2.0
+  },
+  "3LKA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "HAE",
+    "M4S",
+    "ZN"
+   ],
+   "resolution_A": 1.8
+  },
+  "3MFV": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MN",
+    "Z70"
+   ],
+   "resolution_A": 1.9
+  },
+  "3MNA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DWH",
+    "GOL",
+    "ZN"
+   ],
+   "resolution_A": 1.5
+  },
+  "3MSS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MS7",
+    "STI"
+   ],
+   "resolution_A": 1.95
+  },
+  "3MUZ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DMS",
+    "IPT",
+    "MG",
+    "NA"
+   ],
+   "resolution_A": 1.9
+  },
+  "3MY5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FMT",
+    "RFZ",
+    "SGM"
+   ],
+   "resolution_A": 2.1
+  },
+  "3N7A": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FA1",
+    "GOL"
+   ],
+   "resolution_A": 2.0
+  },
+  "3N86": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "RJP"
+   ],
+   "resolution_A": 1.9
+  },
+  "3NW9": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "637",
+    "CL",
+    "MG",
+    "NHE"
+   ],
+   "resolution_A": 1.65
+  },
+  "3NZK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "C90",
+    "GOL",
+    "ZN"
+   ],
+   "resolution_A": 1.8
+  },
+  "3OAF": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "OAG",
+    "SO4"
+   ],
+   "resolution_A": 1.7
+  },
+  "3OOF": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "OOF"
+   ],
+   "resolution_A": 2.29
+  },
+  "3OUP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ZN"
+   ],
+   "resolution_A": 1.65
+  },
+  "3OZS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MG",
+    "OZS"
+   ],
+   "resolution_A": 1.44
+  },
+  "3OZT": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MG",
+    "OZZ"
+   ],
+   "resolution_A": 1.48
+  },
+  "3P3G": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "3P3",
+    "DMS",
+    "SO4",
+    "UKW",
+    "ZN"
+   ],
+   "resolution_A": 1.65
+  },
+  "3P5O": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EAM",
+    "EDO"
+   ],
+   "resolution_A": 1.6
+  },
+  "3PCG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "4HP",
+    "BME",
+    "FE"
+   ],
+   "resolution_A": 1.96
+  },
+  "3PE2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "E1B",
+    "SO4"
+   ],
+   "resolution_A": 1.9
+  },
+  "3PFQ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ANP",
+    "CA",
+    "ZN"
+   ],
+   "resolution_A": 4.0
+  },
+  "3PRS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1PE",
+    "DMS",
+    "GOL",
+    "PGE",
+    "RIT"
+   ],
+   "resolution_A": 1.38
+  },
+  "3PWW": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "ROC"
+   ],
+   "resolution_A": 1.22
+  },
+  "3PXF": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "2AN",
+    "EDO"
+   ],
+   "resolution_A": 1.8
+  },
+  "3QAA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "G04",
+    "GOL",
+    "NA"
+   ],
+   "resolution_A": 1.4
+  },
+  "3QBH": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "QBH"
+   ],
+   "resolution_A": 2.24
+  },
+  "3QGS": {
+   "exists": false,
+   "experimental_method": null,
+   "nonpolymer_comp_ids": [],
+   "resolution_A": null
+  },
+  "3QGW": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "L7A",
+    "PQC"
+   ],
+   "resolution_A": 2.1
+  },
+  "3QGY": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "L7O",
+    "PQC"
+   ],
+   "resolution_A": 2.1
+  },
+  "3QQK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EDO",
+    "X02"
+   ],
+   "resolution_A": 1.86
+  },
+  "3QTI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "3QT",
+    "CL",
+    "GOL"
+   ],
+   "resolution_A": 2.0
+  },
+  "3R88": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "14F",
+    "GOL",
+    "MG",
+    "PRP"
+   ],
+   "resolution_A": 1.73
+  },
+  "3RLQ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "3RQ",
+    "PO4"
+   ],
+   "resolution_A": 1.9
+  },
+  "3RT4": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "LP5",
+    "TLA"
+   ],
+   "resolution_A": 1.7
+  },
+  "3RUX": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BS5"
+   ],
+   "resolution_A": 1.7
+  },
+  "3RYJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "RYJ",
+    "ZN"
+   ],
+   "resolution_A": 1.39
+  },
+  "3S8O": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "NA"
+   ],
+   "resolution_A": 1.85
+  },
+  "3SXR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1N1",
+    "SO4"
+   ],
+   "resolution_A": 2.4
+  },
+  "3SYR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GPK"
+   ],
+   "resolution_A": 2.4
+  },
+  "3U5J": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "08H",
+    "EDO"
+   ],
+   "resolution_A": 1.6
+  },
+  "3U5L": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "08K",
+    "EDO"
+   ],
+   "resolution_A": 1.39
+  },
+  "3UAH": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.6
+  },
+  "3UAJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NAG"
+   ],
+   "resolution_A": 3.232
+  },
+  "3UIB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "SB2"
+   ],
+   "resolution_A": 2.65
+  },
+  "3UP2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0C8",
+    "EDO"
+   ],
+   "resolution_A": 2.3001
+  },
+  "3UPV": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.6
+  },
+  "3UTU": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1TS",
+    "NA"
+   ],
+   "resolution_A": 1.55
+  },
+  "3UWK": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0DF",
+    "MG"
+   ],
+   "resolution_A": 1.91
+  },
+  "3VD4": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DMS",
+    "IPT",
+    "MG",
+    "NA"
+   ],
+   "resolution_A": 2.0
+  },
+  "3VF5": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "031",
+    "ACT",
+    "CL",
+    "GOL",
+    "NA"
+   ],
+   "resolution_A": 1.25
+  },
+  "3VHE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "42Q"
+   ],
+   "resolution_A": 1.55
+  },
+  "3VRI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1KX",
+    "SO4"
+   ],
+   "resolution_A": 1.6
+  },
+  "3WMC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NAG",
+    "NF6"
+   ],
+   "resolution_A": 2.095
+  },
+  "3ZSO": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACY",
+    "NA",
+    "O2N",
+    "SO4"
+   ],
+   "resolution_A": 1.75
+  },
+  "3ZYX": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FAD",
+    "MBT"
+   ],
+   "resolution_A": 2.2
+  },
+  "4AGM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "P86",
+    "ZN"
+   ],
+   "resolution_A": 1.52
+  },
+  "4AGN": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NXG",
+    "ZN"
+   ],
+   "resolution_A": 1.6
+  },
+  "4AGP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "P51",
+    "ZN"
+   ],
+   "resolution_A": 1.5
+  },
+  "4AGQ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "P96",
+    "ZN"
+   ],
+   "resolution_A": 1.42
+  },
+  "4BKT": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ARG",
+    "GLU",
+    "QD0"
+   ],
+   "resolution_A": 2.35
+  },
+  "4CIG": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ACT",
+    "SO4",
+    "X0P"
+   ],
+   "resolution_A": 1.7
+  },
+  "4CRA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GOL",
+    "SO4",
+    "XJ8"
+   ],
+   "resolution_A": 1.8
+  },
+  "4CRC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "OTM",
+    "SO4"
+   ],
+   "resolution_A": 1.6
+  },
+  "4DE1": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0J6",
+    "DMS"
+   ],
+   "resolution_A": 1.26
+  },
+  "4DE2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DMS",
+    "DN3"
+   ],
+   "resolution_A": 1.4
+  },
+  "4DJP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "M73",
+    "PO4"
+   ],
+   "resolution_A": 1.4
+  },
+  "4DLI": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "IRG"
+   ],
+   "resolution_A": 1.91
+  },
+  "4E5W": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0NT",
+    "PEG"
+   ],
+   "resolution_A": 1.86
+  },
+  "4EA2": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MG",
+    "RWZ",
+    "SRT"
+   ],
+   "resolution_A": 2.05
+  },
+  "4EOR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "4SP"
+   ],
+   "resolution_A": 2.2
+  },
+  "4F09": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "JAK"
+   ],
+   "resolution_A": 2.4
+  },
+  "4F2W": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CL",
+    "EDO",
+    "TDI"
+   ],
+   "resolution_A": 2.0
+  },
+  "4F3C": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "BIG",
+    "EDO"
+   ],
+   "resolution_A": 1.93
+  },
+  "4GAM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FE"
+   ],
+   "resolution_A": 2.902
+  },
+  "4GFM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0X2"
+   ],
+   "resolution_A": 2.3
+  },
+  "4GID": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0GH",
+    "LPD"
+   ],
+   "resolution_A": 2.0
+  },
+  "4GIH": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "0X5"
+   ],
+   "resolution_A": 2.0
+  },
+  "4GKM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "683",
+    "DMS",
+    "GOL",
+    "MG",
+    "PRP"
+   ],
+   "resolution_A": 1.6683
+  },
+  "4GR0": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CA",
+    "R4B",
+    "ZN"
+   ],
+   "resolution_A": 1.497
+  },
+  "4HGE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "15V"
+   ],
+   "resolution_A": 2.3
+  },
+  "4HJR": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.5
+  },
+  "4IQJ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MG",
+    "ZN"
+   ],
+   "resolution_A": 3.2
+  },
+  "4IVB": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1J5"
+   ],
+   "resolution_A": 1.9
+  },
+  "4IVC": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1J6"
+   ],
+   "resolution_A": 2.35
+  },
+  "4IVD": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "15T"
+   ],
+   "resolution_A": 1.93
+  },
+  "4J21": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AJ6",
+    "SO4",
+    "ZN"
+   ],
+   "resolution_A": 1.93
+  },
+  "4J28": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "EAT",
+    "GOL",
+    "IMD",
+    "SO4"
+   ],
+   "resolution_A": 1.73
+  },
+  "4JFS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "16Z",
+    "EPE",
+    "GOL",
+    "IMD",
+    "SO4"
+   ],
+   "resolution_A": 2.0
+  },
+  "4JIA": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1K3",
+    "GOL"
+   ],
+   "resolution_A": 1.85
+  },
+  "4JSZ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "FB2",
+    "ZN"
+   ],
+   "resolution_A": 1.9
+  },
+  "4JXS": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "18U",
+    "PO4"
+   ],
+   "resolution_A": 1.9
+  },
+  "4K18": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1OB",
+    "PO4"
+   ],
+   "resolution_A": 2.051
+  },
+  "4K77": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1Q4"
+   ],
+   "resolution_A": 2.4
+  },
+  "4KAW": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "CD"
+   ],
+   "resolution_A": 2.5
+  },
+  "4KEL": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 1.148
+  },
+  "4KNE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "1CY",
+    "ATR"
+   ],
+   "resolution_A": 2.0
+  },
+  "4KZ6": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "PO4",
+    "ZB6"
+   ],
+   "resolution_A": 1.68
+  },
+  "4KZQ": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "DFL",
+    "SO4",
+    "ZN"
+   ],
+   "resolution_A": 2.25
+  },
+  "4N7H": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "GAI"
+   ],
+   "resolution_A": 1.698
+  },
+  "4QXM": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "713",
+    "NAD"
+   ],
+   "resolution_A": 2.196
+  },
+  "4ROE": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "MG"
+   ],
+   "resolution_A": 2.2
+  },
+  "4UYW": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "NAG"
+   ],
+   "resolution_A": 1.7
+  },
+  "4YBV": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.0
+  },
+  "5CPP": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "ADO",
+    "HEM"
+   ],
+   "resolution_A": 2.08
+  },
+  "5HT6": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [],
+   "resolution_A": 2.093
+  },
+  "5WIU": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "AQD",
+    "GOL",
+    "OLA",
+    "PEG",
+    "PO4"
+   ],
+   "resolution_A": 1.962
+  },
+  "6CM4": {
+   "exists": true,
+   "experimental_method": "X-ray",
+   "nonpolymer_comp_ids": [
+    "8NU",
+    "OLA",
+    "PEG"
+   ],
+   "resolution_A": 2.867
+  }
+ },
+ "oracle": "RCSB data API GraphQL entries{rcsb_entry_info, nonpolymer_entities}"
+}

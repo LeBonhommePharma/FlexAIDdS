@@ -1,0 +1,425 @@
+{
+ "_comment": "Known dataset-identity defects that are NOT yet fixed, with the reason each is still open. The gate fails on anything NOT listed here, and also fails when a listed defect stops reproducing (DEFECT_LEDGER_DRIFT), so this ledger cannot silently outlive the defect. Same pattern as tests/fixtures/doi_resolution/known_bad_dois.json.",
+ "quarantined": {
+  "benchmarks/astex_diverse/astex_diverse_set.csv.orig::PDB_CODE_ABSENT::2FXX": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "2FXX is a WITHDRAWN deposition (status_code WDRN, deposited 2006-02-06, never released) carried by this legacy roster. The row is retained with pair_status/ligand_id_basis recording that the member is not in the PDB; deleting the row would hide the defect."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::CONSTANT_COLUMN::ligand_id": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::CONSTANT_COLUMN::reference": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::CONSTANT_COLUMN::resolution_A": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::CONSTANT_COLUMN::rmsd_threshold_A": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1G9V/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1GM8/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1GPK/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1HNN/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1HP0/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1HQ2/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1IA1/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1IGJ/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1J3J/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1JD0/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1JJE/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1K3U/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1KE5/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1KZK/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1L2S/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1L7F/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1LPZ/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1M2Z/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1MEH/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1MQ6/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1N1M/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1N2J/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1N2V/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1N46/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1NAV/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1OF1/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1OF6/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1OPK/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1OQ5/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1OWE/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1P2Y/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1P62/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1PMN/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1Q1G/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1Q41/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1Q4G/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1R1H/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1R55/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1R58/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1R9O/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1S19/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1S3V/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1SG0/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1SJ0/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1SQ5/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1T40/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1T46/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1T9B/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1TT1/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1TW6/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1TZ8/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1U1C/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1U4D/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1UML/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1UNL/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1UOU/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1V0P/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1V48/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1V4S/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1VCJ/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1W1P/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1W2G/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1X8X/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1XM6/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1XOZ/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1Y6B/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1Y6R/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1YGC/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1YQY/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1YV3/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1YVF/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1YWR/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::1Z95/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2BM2/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2BR1/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2BSM/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2BYS/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2C3I/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2CET/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2CGR/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2D3U/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2GBP/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2HB1/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2HR7/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_diverse/astex_diverse_set.csv::LIGAND_CODE_ABSENT::2J62/LIG": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "FROZEN: a docking lane is reading this file, so it was not edited (dataset identity audit C2). The corrected roster is benchmarks/astex_diverse/astex_diverse_hartshorn85.csv; see DATASET_REMEDIATION_C2C7.md for the one-line switch. DELETE THIS ENTRY when the live roster is replaced."
+  },
+  "benchmarks/astex_nonnative/astex_non_native_set.csv::PDB_CODE_ABSENT::2FXX": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "2FXX is a WITHDRAWN deposition (status_code WDRN, deposited 2006-02-06, never released) carried by this legacy roster. The row is retained with pair_status/ligand_id_basis recording that the member is not in the PDB; deleting the row would hide the defect."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::apo_exists": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::coord_match_atoms": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::deposit_exists": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::fix_applied": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::fix_atoms_planned": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::fix_atoms_removed": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::fix_planned": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::ligand_atoms_in_apo": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::ligand_chains_in_apo": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::ligand_exists": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::ligand_hetatm_names": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::ligand_residues_in_apo": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::ligand_source": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  },
+  "benchmarks/datasets/astex_apo_strip_report.csv::CONSTANT_COLUMN::pass_fail": {
+   "quarantined_utc": "2026-09-11T00:54:51Z",
+   "reason": "QC REPORT, not a dataset declaration: this file records the outcome of the apo-strip check, and a column that is constant because every target passed is the measurement, not a default."
+  }
+ }
+}
