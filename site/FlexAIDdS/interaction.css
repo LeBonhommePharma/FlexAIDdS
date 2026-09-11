@@ -6,17 +6,17 @@
    (bundled pages inline this same text, and style.css @imports it).
 
    Interaction colours are pinned to the triad here rather than to each
-   page's local --teal/--violet/--gold, because a few pages carry an older
-   palette (e.g. /entropy-driven/ has --teal:#20808D). Pinning is what makes
+   page's local --mint/--violet/--tangerine, because a few pages carry an older
+   palette (e.g. /entropy-driven/ has --mint:#20808D). Pinning is what makes
    the highlight identical everywhere. Resting colours are untouched.
 
-   Dark-first. Triad only: teal #22D3EE, violet #A78BFA, gold #FBBF24.
+   Dark-first. Triad only: teal #45E0A8, violet #8B5CF6, gold #FF9300.
    ========================================================================== */
 
 :root {
-  --ix-teal: #22D3EE;
-  --ix-violet: #A78BFA;
-  --ix-gold: #FBBF24;
+  --ix-teal: #45E0A8;
+  --ix-violet: #8B5CF6;
+  --ix-gold: #FF9300;
   --ix-ease: cubic-bezier(.16, 1, .3, 1);
 }
 
@@ -61,7 +61,7 @@ button,
 [data-ix-btn-secondary] {
   border-width: 1.5px;
   background: transparent;
-  color: var(--text, #d4dced);
+  color: var(--text, #E4E3F5);
 }
 
 .btn-secondary:hover,
@@ -157,7 +157,7 @@ button:active,
 /* Container-ish anchors (cards, buttons, chrome) are excluded so a card's
    whole body doesn't recolour on hover. */
 a:hover:not(.btn):not(.btn-primary):not(.btn-secondary):not(.btn-outline):not(.card):not(.feature-card):not(.eco-card):not(.module-card):not(.mech-card):not(.audit-card):not(.drug-card):not(.drug-card-featured):not(.nav-gh):not(.gh-link):not(.nav-back):not(.footer-back):not([data-ix-btn]):not([data-ix-btn-secondary]):not([data-ix-card]):not([data-ix-chrome]):not([data-ix-accent]) {
-  color: #22D3EE;
+  color: #45E0A8;
   filter: brightness(1.15);
   text-decoration: none;
 }
@@ -165,7 +165,7 @@ a:hover:not(.btn):not(.btn-primary):not(.btn-secondary):not(.btn-outline):not(.c
 /* CV / résumé resting colours are inline, so the hover has to outrank them. */
 .doc-page a:hover,
 [data-ix-doc] a:hover {
-  color: #22D3EE !important;
+  color: #45E0A8 !important;
 }
 
 /* --- 8. Keyboard focus -------------------------------------------------- */

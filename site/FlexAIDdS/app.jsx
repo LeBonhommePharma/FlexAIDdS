@@ -1,4 +1,4 @@
-// FlexAID∆S Website UI Kit — root app composition.
+// FlexAIDΔS Website UI Kit — root app composition.
 
 const { useState: useAppState, useEffect: useAppEffect } = React;
 

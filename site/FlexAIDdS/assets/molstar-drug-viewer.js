@@ -328,7 +328,7 @@
     el.innerHTML =
       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>' +
       '<div class="molstar-loading-text">Structure load failed — check network</div>' +
-      '<a href="https://www.rcsb.org/structure/' + pdbId.toUpperCase() + '" target="_blank" rel="noopener noreferrer" style="font-family:JetBrains Mono,monospace;font-size:10px;color:#22D3EE;">View on RCSB →</a>';
+      '<a href="https://www.rcsb.org/structure/' + pdbId.toUpperCase() + '" target="_blank" rel="noopener noreferrer" style="font-family:JetBrains Mono,monospace;font-size:10px;color:#45E0A8;">View on RCSB →</a>';
   }
 
   function bindResize(viewer, container) {

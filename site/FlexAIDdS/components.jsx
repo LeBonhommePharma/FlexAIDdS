@@ -1,4 +1,4 @@
-// FlexAID∆S Website UI Kit — shared primitives.
+// FlexAIDΔS Website UI Kit — shared primitives.
 // Loaded as text/babel; all components export to window for cross-file use.
 
 const { useState, useEffect, useRef } = React;
@@ -14,11 +14,11 @@ function LogoMark({ size = 132, poses = 6, fan = 58, period = 7.2, well = true, 
   return <span ref={ref} className={className} style={{ display: "inline-flex", lineHeight: 0 }} aria-hidden="true" />;
 }
 
-// ─── Brand wordmark with animated ∆S ───
+// ─── Brand wordmark with animated ΔS ───
 function Wordmark({ size = 14 }) {
   return (
-    <span className="word" style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--teal)", fontSize: size + "px", letterSpacing: "0.02em" }}>
-      FlexAID<span className="kw">∆S</span>
+    <span className="word" style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--mint)", fontSize: size + "px", letterSpacing: "0.02em" }}>
+      FlexAID<span className="kw">ΔS</span>
     </span>
   );
 }
@@ -71,22 +71,22 @@ function EntropyMeter() {
 
   // Map scroll position to entropy state
   const state =
-    pct < 25 ? { lbl: "UNBOUND", color: "#A78BFA", entropy: (8.5 - pct * 0.05).toFixed(1), dg: "+0.0" } :
-    pct < 70 ? { lbl: "ENCOUNTER", color: "#22D3EE", entropy: (5.4 - (pct - 25) * 0.03).toFixed(1), dg: (-(pct - 25) * 0.1).toFixed(1) } :
-               { lbl: "BOUND", color: "#FBBF24", entropy: (3.2 - (pct - 70) * 0.02).toFixed(1), dg: (-7.0 - (pct - 70) * 0.05).toFixed(1) };
+    pct < 25 ? { lbl: "UNBOUND", color: "#8B5CF6", entropy: (8.5 - pct * 0.05).toFixed(1), dg: "+0.0" } :
+    pct < 70 ? { lbl: "ENCOUNTER", color: "#45E0A8", entropy: (5.4 - (pct - 25) * 0.03).toFixed(1), dg: (-(pct - 25) * 0.1).toFixed(1) } :
+               { lbl: "BOUND", color: "#FF9300", entropy: (3.2 - (pct - 70) * 0.02).toFixed(1), dg: (-7.0 - (pct - 70) * 0.05).toFixed(1) };
 
   return (
     <div className="entropy-meter">
-      <span className="em-vert" style={{ color: "#A78BFA" }}>HIGH ENTROPY</span>
+      <span className="em-vert" style={{ color: "#8B5CF6" }}>HIGH ENTROPY</span>
       <div className="em-bar">
         <div className="em-fill" style={{ height: pct + "%" }} />
         <div className="em-marker" style={{ top: pct + "%", background: state.color, boxShadow: "0 0 10px " + state.color }} />
       </div>
-      <span className="em-vert" style={{ color: "#FBBF24" }}>LOW ENTROPY</span>
+      <span className="em-vert" style={{ color: "#FF9300" }}>LOW ENTROPY</span>
       <div>
         <div className="em-v" style={{ color: state.color }}>{state.entropy}</div>
         <div className="em-u">ΔS bits</div>
-        <div className="em-v" style={{ color: "var(--gold)", marginTop: "4px" }}>{state.dg}</div>
+        <div className="em-v" style={{ color: "var(--tangerine)", marginTop: "4px" }}>{state.dg}</div>
         <div className="em-u">kcal/mol</div>
       </div>
       <div className="em-state" style={{ color: state.color, background: "color-mix(in srgb, " + state.color + " 12%, transparent)", border: "1px solid color-mix(in srgb, " + state.color + " 40%, transparent)" }}>{state.lbl}</div>
@@ -106,7 +106,7 @@ function Nav({ active, onJump }) {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <button type="button" className="nav-brand" onClick={() => jump("hero")} aria-label="FlexAID∆S home">
+        <button type="button" className="nav-brand" onClick={() => jump("hero")} aria-label="FlexAIDΔS home">
           <LogoMark size={26} poses={4} fan={54} period={6} well={false} />
           <Wordmark size={14} />
         </button>
@@ -170,7 +170,7 @@ function ParticleCanvas() {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (reduce.matches) return;
     const ctx = c.getContext("2d");
-    const palette = ["#22D3EE", "#A78BFA", "#FBBF24"];
+    const palette = ["#45E0A8", "#8B5CF6", "#FF9300"];
     let particles = [];
     let raf = 0;
     let running = true;

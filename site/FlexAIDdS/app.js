@@ -1,4 +1,4 @@
-// Le Bonhomme Pharma — FlexAID∆S Homepage JS
+// Le Bonhomme Pharma — FlexAIDΔS Homepage JS
 // Tabs · Copy · Theme · Counter · Drug of day · Mol* hero · Mobile menu
 
 (function () {
@@ -59,7 +59,7 @@
     btn.addEventListener('click', function () {
       navigator.clipboard.writeText(btn.dataset.copy).then(function () {
         var orig = btn.innerHTML;
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#45E0A8" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
         setTimeout(function () { btn.innerHTML = orig; }, 1500);
       }).catch(function () {});
     });
@@ -146,7 +146,7 @@
       if (!isOpen) {
         mainNav.style.cssText =
           'display:flex;flex-direction:column;gap:4px;position:absolute;top:56px;left:0;right:0;' +
-          'background:rgba(10,14,20,0.98);padding:1rem 1.5rem;border-bottom:1px solid rgba(34,211,238,0.12);z-index:99;';
+          'background:rgba(8,9,26,0.98);padding:1rem 1.5rem;border-bottom:1px solid rgba(69,224,168,0.12);z-index:99;';
       } else {
         mainNav.removeAttribute('style');
       }
