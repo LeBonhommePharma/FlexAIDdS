@@ -1,0 +1,1794 @@
+{
+  "schema": "flexaidds.astex.target_manifest/v2",
+  "dataset": "astex_diverse_hartshorn85",
+  "N": 85,
+  "generated_utc": "2026-09-11T00:54:51Z",
+  "purpose": "Frozen pre-registered target denominator for claim-rate aggregation. Rates are ALWAYS k/85. A target absent from a campaign or dropped in admission counts as a FAILURE, never removed from the denominator.",
+  "why_v2": "v1 declared sources_cross_verified = [python/flexaidds/dataset_runner/datasets/astex_diverse.yaml, strict_pair_targets_20260712.csv (Codex audit)]. Both are descendants of the roster being verified, so v1 cross-checked a file against its own copies. That is replication, not verification, and it is why a 13-of-85 substitution survived four in-repo copies of the list. v2 cross-references only sources OUTSIDE the repository: the primary paper's own table, and RCSB.",
+  "cross_references": [
+    {
+      "kind": "PRIMARY_SOURCE",
+      "external": true,
+      "citation": "Hartshorn et al. (2007) J. Med. Chem. 50(4):726-741",
+      "doi": "10.1021/jm061277y",
+      "locator": "Table 2, journal pages 734-735",
+      "stated_n_in_caption": 85,
+      "extracted_n": 85,
+      "extraction_method": "PDF text layer parsed by character position: baseline clustering into lines, x-coordinate binning into the table's six columns; line-anchored code pattern ^[0-9][a-z][a-z0-9]{2}; count asserted against the caption's own stated N. Glyph decoding (beta, alpha vs Latin R) confirmed against 200-dpi page renders.",
+      "source_pdf_sha256": "662bb63a7ae61bd73c84673dbac5fc87695822a054860ad73e74adad06111753"
+    },
+    {
+      "kind": "STRUCTURE_DATABASE",
+      "external": true,
+      "endpoint": "https://data.rcsb.org (REST core/entry, holdings, and GraphQL entries/chem_comps)",
+      "checked_utc": "2026-09-11T00:54:51Z",
+      "codes_resolved": "85/85",
+      "fields_used": [
+        "rcsb_entry_info.resolution_combined",
+        "rcsb_entry_info.experimental_method",
+        "nonpolymer_entities.nonpolymer_comp.chem_comp",
+        "struct.title"
+      ]
+    },
+    {
+      "kind": "INDEPENDENT_IN_REPO_WITNESS",
+      "external": false,
+      "file": "benchmarks/datasets/astex_apo_strip_report.csv",
+      "why_not_circular": "its ligand_title column is derived from the cached ligand SDFs, not from the roster's ligand_id column, so it is independent OF THE COLUMN BEING CHECKED. It is recorded as corroboration only and is not load-bearing: the primary and RCSB references above are.",
+      "comparable_rows": 72,
+      "agree": 71,
+      "disagree": 1,
+      "disagreement": "1HQ2: cached ligand APC (ATP analogue/cofactor) vs Table 2 compound HP = CCD PH2"
+    }
+  ],
+  "sha256_of_sorted_codes": "57a2e7419f6edd0768aad4295d84560d8f48619c237ffa1279aa4bb9887148c0",
+  "sha256_of_sorted_codes_input": "lowercase codes, sorted ascending, newline-joined, trailing newline",
+  "roster_csv": "benchmarks/astex_diverse/astex_diverse_hartshorn85.csv",
+  "roster_csv_sha256": "77d8082311ae8d3917cb48523715d1bb100f0f3d5fff7d842af57366b54a8946",
+  "definition_yaml": [
+    "python/flexaidds/dataset_runner/datasets/astex_diverse_hartshorn85.yaml",
+    "benchmarks/datasets/astex_diverse_hartshorn85.yaml"
+  ],
+  "supersedes": {
+    "file": "benchmarks/protocols/astex85_target_manifest.json",
+    "its_sha256_of_sorted_codes": "da89650afd791e27924afbe403efdae5c63400ffce3b4c52a4c42351f4102afc",
+    "its_hash_is_internally_correct": true,
+    "its_undeclared_input_convention": "reproduced only after testing 10 conventions: UPPERCASE codes, sorted, COMMA-joined, no trailing newline. v1 does not state its convention, so its hash cannot be re-verified without guessing. v2 states the convention in sha256_of_sorted_codes_input. The hash was never the defect -- it faithfully hashes the wrong list.",
+    "overlap_with_primary_source": 72,
+    "in_v1_not_in_paper": [
+      "1igj",
+      "1mq6",
+      "1tw6",
+      "1y6r",
+      "2bys",
+      "2c3i",
+      "2cet",
+      "2cgr",
+      "2d3u",
+      "2gbp",
+      "2hb1",
+      "2hr7",
+      "2j62"
+    ],
+    "in_paper_not_in_v1": [
+      "1gkc",
+      "1hvy",
+      "1hwi",
+      "1hww",
+      "1ig3",
+      "1jla",
+      "1lrh",
+      "1mmv",
+      "1mzc",
+      "1oyt",
+      "1sqn",
+      "1tow",
+      "1xoq"
+    ],
+    "status": "NOT deleted and NOT edited: a docking lane is reading the live definition tree."
+  },
+  "targets": [
+    "1g9v",
+    "1gkc",
+    "1gm8",
+    "1gpk",
+    "1hnn",
+    "1hp0",
+    "1hq2",
+    "1hvy",
+    "1hwi",
+    "1hww",
+    "1ia1",
+    "1ig3",
+    "1j3j",
+    "1jd0",
+    "1jje",
+    "1jla",
+    "1k3u",
+    "1ke5",
+    "1kzk",
+    "1l2s",
+    "1l7f",
+    "1lpz",
+    "1lrh",
+    "1m2z",
+    "1meh",
+    "1mmv",
+    "1mzc",
+    "1n1m",
+    "1n2j",
+    "1n2v",
+    "1n46",
+    "1nav",
+    "1of1",
+    "1of6",
+    "1opk",
+    "1oq5",
+    "1owe",
+    "1oyt",
+    "1p2y",
+    "1p62",
+    "1pmn",
+    "1q1g",
+    "1q41",
+    "1q4g",
+    "1r1h",
+    "1r55",
+    "1r58",
+    "1r9o",
+    "1s19",
+    "1s3v",
+    "1sg0",
+    "1sj0",
+    "1sq5",
+    "1sqn",
+    "1t40",
+    "1t46",
+    "1t9b",
+    "1tow",
+    "1tt1",
+    "1tz8",
+    "1u1c",
+    "1u4d",
+    "1uml",
+    "1unl",
+    "1uou",
+    "1v0p",
+    "1v48",
+    "1v4s",
+    "1vcj",
+    "1w1p",
+    "1w2g",
+    "1x8x",
+    "1xm6",
+    "1xoq",
+    "1xoz",
+    "1y6b",
+    "1ygc",
+    "1yqy",
+    "1yv3",
+    "1yvf",
+    "1ywr",
+    "1z95",
+    "2bm2",
+    "2br1",
+    "2bsm"
+  ],
+  "per_target": [
+    {
+      "pdb_id": "1g9v",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 1, J Med Chem 50(4) p.734",
+        "paper_target_name": "deoxy hemoglobin",
+        "paper_compound_name": "RSR-13",
+        "paper_potency": null,
+        "paper_reference_ids": "42"
+      },
+      "rcsb": {
+        "resolution_A": 1.85,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "RQ3",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-{4-[(3,5-DIMETHYLANILINO)-CARBONYL-METHYL]-PHENOXY}-2-METHYLPROPIONIC ACID",
+        "title": "HIGH RESOLUTION CRYSTAL STRUCTURE OF DEOXY HEMOGLOBIN COMPLEXED WITH A POTENT ALLOSTERIC EFFECTOR"
+      }
+    },
+    {
+      "pdb_id": "1gkc",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 2, J Med Chem 50(4) p.734",
+        "paper_target_name": "matrix metalloprotease 9",
+        "paper_compound_name": "reverse hydroxamate inhibitor",
+        "paper_potency": null,
+        "paper_reference_ids": "43"
+      },
+      "rcsb": {
+        "resolution_A": 2.3,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "NFH",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "N~2~-[(2R)-2-{[formyl(hydroxy)amino]methyl}-4-methylpentanoyl]-N,3-dimethyl-L-valinamide",
+        "title": "MMP9-inhibitor complex"
+      }
+    },
+    {
+      "pdb_id": "1gm8",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 3, J Med Chem 50(4) p.734",
+        "paper_target_name": "penicillin G acylase",
+        "paper_compound_name": "PGSO",
+        "paper_potency": "Km 16 uM",
+        "paper_reference_ids": "44"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "SOX",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "N-[(2S,4S,6R)-2-(DIHYDROXYMETHYL)-4-HYDROXY-3,3-DIMETHYL-7-OXO-4LAMBDA~4~-THIA-1-AZABICYCL",
+        "title": "Crystal structures of penicillin acylase enzyme-substrate complexes: Structural insights into the catalytic me"
+      }
+    },
+    {
+      "pdb_id": "1gpk",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 4, J Med Chem 50(4) p.734",
+        "paper_target_name": "acetylcholinesterase",
+        "paper_compound_name": "huperzine A",
+        "paper_potency": "Ki 4.3 uM",
+        "paper_reference_ids": "45"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "HUP",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "Huperzine A",
+        "title": "Structure of Acetylcholinesterase Complex with (+)-Huperzine A at 2.1A Resolution"
+      }
+    },
+    {
+      "pdb_id": "1hnn",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 5, J Med Chem 50(4) p.734",
+        "paper_target_name": "phenylethanolamine N-methyltransferase",
+        "paper_compound_name": "SK&F 29661",
+        "paper_potency": "Ki 0.58 uM",
+        "paper_reference_ids": "46"
+      },
+      "rcsb": {
+        "resolution_A": 2.4,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "SKF",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "1,2,3,4-TETRAHYDRO-ISOQUINOLINE-7-SULFONIC ACID AMIDE",
+        "title": "CRYSTAL STRUCTURE OF HUMAN PNMT COMPLEXED WITH SK&F 29661 AND ADOHCY(SAH)"
+      }
+    },
+    {
+      "pdb_id": "1hp0",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 6, J Med Chem 50(4) p.734",
+        "paper_target_name": "purine specific nucleoside hydrolase",
+        "paper_compound_name": "3-deaza-adenosine",
+        "paper_potency": "Ki 0.2 uM",
+        "paper_reference_ids": "47"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "AD3",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "3-DEAZA-ADENOSINE",
+        "title": "CRYSTAL STRUCTURE OF AN INOSINE-ADENOSINE-GUANOSINE-PREFERRING NUCLEOSIDE HYDROLASE FROM TRYPANOSOMA VIVAX IN "
+      }
+    },
+    {
+      "pdb_id": "1hq2",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 7, J Med Chem 50(4) p.734",
+        "paper_target_name": "6-hydroxymethyl-7,8-dihydropterin pyrophosphokinase",
+        "paper_compound_name": "HP",
+        "paper_potency": "Kd 0.17 uM",
+        "paper_reference_ids": "48;49"
+      },
+      "rcsb": {
+        "resolution_A": 1.25,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "PH2",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-AMINO-6-HYDROXYMETHYL-7,8-DIHYDRO-3H-PTERIDIN-4-ONE",
+        "title": "CRYSTAL STRUCTURE OF A TERNARY COMPLEX OF E.COLI HPPK(R82A) WITH MGAMPCPP AND 6-HYDROXYMETHYL-7,8-DIHYDROPTERI"
+      }
+    },
+    {
+      "pdb_id": "1hvy",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 8, J Med Chem 50(4) p.734",
+        "paper_target_name": "thymidylate synthase",
+        "paper_compound_name": "tomudex",
+        "paper_potency": "Ki 0.67 uM",
+        "paper_reference_ids": "50;51"
+      },
+      "rcsb": {
+        "resolution_A": 1.9,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "D16",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "TOMUDEX",
+        "title": "Human thymidylate synthase complexed with dUMP and Raltitrexed, an antifolate drug, is in the closed conformat"
+      }
+    },
+    {
+      "pdb_id": "1hwi",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 9, J Med Chem 50(4) p.734",
+        "paper_target_name": "HMG-CoA reductase",
+        "paper_compound_name": "fluvastatin",
+        "paper_potency": "IC50 0.028 uM",
+        "paper_reference_ids": "52"
+      },
+      "rcsb": {
+        "resolution_A": 2.3,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "115",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "(3R,5S,6E)-7-[3-(4-fluorophenyl)-1-(propan-2-yl)-1H-indol-2-yl]-3,5-dihydroxyhept-6-enoic ",
+        "title": "COMPLEX OF THE CATALYTIC PORTION OF HUMAN HMG-COA REDUCTASE WITH FLUVASTATIN"
+      }
+    },
+    {
+      "pdb_id": "1hww",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 10, J Med Chem 50(4) p.734",
+        "paper_target_name": "\u03b1-mannosidase II",
+        "paper_compound_name": "swainsonine",
+        "paper_potency": "IC50 0.02 uM",
+        "paper_reference_ids": "53"
+      },
+      "rcsb": {
+        "resolution_A": 1.87,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "SWA",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "1S-8AB-OCTAHYDRO-INDOLIZIDINE-1A,2A,8B-TRIOL",
+        "title": "GOLGI ALPHA-MANNOSIDASE II IN COMPLEX WITH SWAINSONINE"
+      }
+    },
+    {
+      "pdb_id": "1ia1",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 11, J Med Chem 50(4) p.734",
+        "paper_target_name": "dihydrofolate reductase",
+        "paper_compound_name": "compound 3",
+        "paper_potency": "IC50 0.034 uM",
+        "paper_reference_ids": "54"
+      },
+      "rcsb": {
+        "resolution_A": 1.7,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "TQ3",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "5-PHENYLSULFANYL-2,4-QUINAZOLINEDIAMINE",
+        "title": "Candida albicans dihydrofolate reductase complexed with dihydro-nicotinamide-adenine-dinucleotide phosphate (N"
+      }
+    },
+    {
+      "pdb_id": "1ig3",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 12, J Med Chem 50(4) p.734",
+        "paper_target_name": "thiamin pyrophosphokinase",
+        "paper_compound_name": "thiamin or vitamin B1",
+        "paper_potency": null,
+        "paper_reference_ids": "55"
+      },
+      "rcsb": {
+        "resolution_A": 1.9,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "VIB",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "3-(4-AMINO-2-METHYL-PYRIMIDIN-5-YLMETHYL)-5-(2-HYDROXY-ETHYL)-4-METHYL-THIAZOL-3-IUM",
+        "title": "Mouse Thiamin Pyrophosphokinase Complexed with Thiamin"
+      }
+    },
+    {
+      "pdb_id": "1j3j",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 13, J Med Chem 50(4) p.734",
+        "paper_target_name": "dihydrofolate reductase",
+        "paper_compound_name": "pyrimethamine",
+        "paper_potency": "Ki 0.0098 uM",
+        "paper_reference_ids": "56"
+      },
+      "rcsb": {
+        "resolution_A": 2.3,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "CP6",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "5-(4-CHLORO-PHENYL)-6-ETHYL-PYRIMIDINE-2,4-DIAMINE",
+        "title": "Double mutant (C59R+S108N) Plasmodium falciparum dihydrofolate reductase-thymidylate synthase (PfDHFR-TS) comp"
+      }
+    },
+    {
+      "pdb_id": "1jd0",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 14, J Med Chem 50(4) p.734",
+        "paper_target_name": "carbonic anhydrase XII",
+        "paper_compound_name": "acetazolamide",
+        "paper_potency": "Ki 0.0057 uM",
+        "paper_reference_ids": "57;58"
+      },
+      "rcsb": {
+        "resolution_A": 1.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "AZM",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "5-ACETAMIDO-1,3,4-THIADIAZOLE-2-SULFONAMIDE",
+        "title": "CRYSTAL STRUCTURE OF THE EXTRACELLULAR DOMAIN OF HUMAN CARBONIC ANHYDRASE XII COMPLEXED WITH ACETAZOLAMIDE"
+      }
+    },
+    {
+      "pdb_id": "1jje",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 15, J Med Chem 50(4) p.734",
+        "paper_target_name": "metallo \u03b2-lactamase",
+        "paper_compound_name": "compound 11",
+        "paper_potency": "IC50 0.0037 uM",
+        "paper_reference_ids": "59"
+      },
+      "rcsb": {
+        "resolution_A": 1.8,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BYS",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-BENZO[1,3]DIOXOL-5-YLMETHYL-3-BENZYL-SUCCINIC ACID",
+        "title": "IMP-1 METALLO BETA-LACTAMASE FROM PSEUDOMONAS AERUGINOSA IN COMPLEX WITH A BIARYL SUCCINIC ACID INHIBITOR (11)"
+      }
+    },
+    {
+      "pdb_id": "1jla",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 16, J Med Chem 50(4) p.734",
+        "paper_target_name": "HIV-1 reverse transcriptase",
+        "paper_compound_name": "TNK-651",
+        "paper_potency": null,
+        "paper_reference_ids": "60"
+      },
+      "rcsb": {
+        "resolution_A": 2.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "TNK",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "6-BENZYL-1-BENZYLOXYMETHYL-5-ISOPROPYL URACIL",
+        "title": "CRYSTAL STRUCTURE OF Y181C MUTANT HIV-1 REVERSE TRANSCRIPTASE IN COMPLEX WITH TNK-651"
+      }
+    },
+    {
+      "pdb_id": "1k3u",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 17, J Med Chem 50(4) p.734",
+        "paper_target_name": "tryptophan synthase",
+        "paper_compound_name": "N-[1H-indol-3-yl-acetyl]aspartic acid",
+        "paper_potency": null,
+        "paper_reference_ids": "61"
+      },
+      "rcsb": {
+        "resolution_A": 1.7,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "IAD",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "N-[1H-INDOL-3-YL-ACETYL]ASPARTIC ACID",
+        "title": "CRYSTAL STRUCTURE OF WILD-TYPE TRYPTOPHAN SYNTHASE COMPLEXED WITH N-[1H-INDOL-3-YL-ACETYL]ASPARTIC ACID"
+      }
+    },
+    {
+      "pdb_id": "1ke5",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 18, J Med Chem 50(4) p.734",
+        "paper_target_name": "cyclin-dependent kinase 2",
+        "paper_compound_name": "compound 98",
+        "paper_potency": "IC50 0.56 uM",
+        "paper_reference_ids": "62"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "LS1",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "N-METHYL-4-{[(2-OXO-1,2-DIHYDRO-3H-INDOL-3-YLIDENE)METHYL]AMINO}BENZENESULFONAMIDE",
+        "title": "CDK2 complexed with N-methyl-4-{[(2-oxo-1,2-dihydro-3H-indol-3-ylidene)methyl]amino}benzenesulfonamide"
+      }
+    },
+    {
+      "pdb_id": "1kzk",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 19, J Med Chem 50(4) p.734",
+        "paper_target_name": "HIV-1 protease",
+        "paper_compound_name": "JE-2147 (also named AG1776 or KNI-764)",
+        "paper_potency": "Ki 0.000041 uM",
+        "paper_reference_ids": "63"
+      },
+      "rcsb": {
+        "resolution_A": 1.09,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "JE2",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "(4R)-3-{(2S,3S)-2-hydroxy-3-[(3-hydroxy-2-methylbenzoyl)amino]-4-phenylbutanoyl}-5,5-dimet",
+        "title": "JE-2147-HIV Protease Complex"
+      }
+    },
+    {
+      "pdb_id": "1l2s",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 20, J Med Chem 50(4) p.734",
+        "paper_target_name": "\u03b2-lactamase",
+        "paper_compound_name": "compound 1",
+        "paper_potency": "Ki 26 uM",
+        "paper_reference_ids": "64"
+      },
+      "rcsb": {
+        "resolution_A": 1.94,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "STC",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "3-[(4-CHLOROANILINO)SULFONYL]THIOPHENE-2-CARBOXYLIC ACID",
+        "title": "X-ray crystal structure of AmpC beta-lactamase from E. coli in complex with a DOCK-predicted non-covalent inhi"
+      }
+    },
+    {
+      "pdb_id": "1l7f",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 21, J Med Chem 50(4) p.734",
+        "paper_target_name": "neuraminidase A",
+        "paper_compound_name": "BCX-1812",
+        "paper_potency": "IC50 0.0008 uM",
+        "paper_reference_ids": "65;66"
+      },
+      "rcsb": {
+        "resolution_A": 1.8,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BCZ",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "3-(1-ACETYLAMINO-2-ETHYL-BUTYL)-4-GUANIDINO-2-HYDROXY-CYCLOPENTANECARBOXYLIC ACID",
+        "title": "Crystal structure of influenza virus neuraminidase in complex with BCX-1812"
+      }
+    },
+    {
+      "pdb_id": "1lpz",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 22, J Med Chem 50(4) p.734",
+        "paper_target_name": "factor Xa",
+        "paper_compound_name": "compound 41",
+        "paper_potency": "Ki 0.025 uM",
+        "paper_reference_ids": "67"
+      },
+      "rcsb": {
+        "resolution_A": 2.4,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "CMB",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "1-(3-carbamimidoylbenzyl)-N-(3,5-dichlorobenzyl)-4-methyl-1H-indole-2-carboxamide",
+        "title": "CRYSTAL STRUCTURE OF FXA IN COMPLEX WITH 41."
+      }
+    },
+    {
+      "pdb_id": "1lrh",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 23, J Med Chem 50(4) p.734",
+        "paper_target_name": "auxin-binding protein 1",
+        "paper_compound_name": "1-naphthalene acetic acid",
+        "paper_potency": null,
+        "paper_reference_ids": "68"
+      },
+      "rcsb": {
+        "resolution_A": 1.9,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "NLA",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "NAPHTHALEN-1-YL-ACETIC ACID",
+        "title": "Crystal structure of auxin-binding protein 1 in complex with 1-naphthalene acetic acid"
+      }
+    },
+    {
+      "pdb_id": "1m2z",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 24, J Med Chem 50(4) p.734",
+        "paper_target_name": "glucocorticoid receptor",
+        "paper_compound_name": "dexamethasone",
+        "paper_potency": "Kd 0.06 uM",
+        "paper_reference_ids": "69"
+      },
+      "rcsb": {
+        "resolution_A": 2.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "DEX",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "DEXAMETHASONE",
+        "title": "Crystal structure of a dimer complex of the human glucocorticoid receptor ligand-binding domain bound to dexam"
+      }
+    },
+    {
+      "pdb_id": "1meh",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 25, J Med Chem 50(4) p.734",
+        "paper_target_name": "inosine monophosphate dehydrogenase",
+        "paper_compound_name": "mycophenolic acid",
+        "paper_potency": null,
+        "paper_reference_ids": "70"
+      },
+      "rcsb": {
+        "resolution_A": 1.95,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "MOA",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "MYCOPHENOLIC ACID",
+        "title": "Inosine Monophosphate Dehydrogenase (IMPDH) From Tritrichomonas Foetus with IMP and MOA bound"
+      }
+    },
+    {
+      "pdb_id": "1mmv",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 26, J Med Chem 50(4) p.734",
+        "paper_target_name": "neuronal nitric-oxide synthase",
+        "paper_compound_name": "NG-propyl-L-arginine",
+        "paper_potency": "Ki 0.057 uM",
+        "paper_reference_ids": "71"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "3AR",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "N-OMEGA-PROPYL-L-ARGININE",
+        "title": "Rat neuronal NOS heme domain with NG-propyl-L-arginine bound"
+      }
+    },
+    {
+      "pdb_id": "1mzc",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 27, J Med Chem 50(4) p.734",
+        "paper_target_name": "protein farnesyltransferase",
+        "paper_compound_name": "compound 33a",
+        "paper_potency": "IC50 0.00006 uM",
+        "paper_reference_ids": "72"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BNE",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-[3-(3-ETHYL-1-METHYL-2-OXO-AZEPAN-3-YL)-PHENOXY]-4-[1-AMINO-1-(1-METHYL-1H-IMIDIZOL-5-YL",
+        "title": "Co-Crystal Structure Of Human Farnesyltransferase With Farnesyldiphosphate and Inhibitor Compound 33a"
+      }
+    },
+    {
+      "pdb_id": "1n1m",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 28, J Med Chem 50(4) p.734",
+        "paper_target_name": "dipeptidyl peptidase IV",
+        "paper_compound_name": "valine-pyrrolidine",
+        "paper_potency": "Ki 2 uM",
+        "paper_reference_ids": "73"
+      },
+      "rcsb": {
+        "resolution_A": 2.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "A3M",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-AMINO-3-METHYL-1-PYRROLIDIN-1-YL-BUTAN-1-ONE",
+        "title": "Human Dipeptidyl Peptidase IV/CD26 in complex with an inhibitor"
+      }
+    },
+    {
+      "pdb_id": "1n2j",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 29, J Med Chem 50(4) p.734",
+        "paper_target_name": "pantothenate synthetase",
+        "paper_compound_name": "pantoate",
+        "paper_potency": null,
+        "paper_reference_ids": "74"
+      },
+      "rcsb": {
+        "resolution_A": 1.8,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "PAF",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "PANTOATE",
+        "title": "Crystal Structure of a Pantothenate Synthetase from M. tuberculosis in complex with pantoate"
+      }
+    },
+    {
+      "pdb_id": "1n2v",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 30, J Med Chem 50(4) p.734",
+        "paper_target_name": "tRNA-guanine transglycosylase",
+        "paper_compound_name": "compound 6",
+        "paper_potency": "Ki 83 uM",
+        "paper_reference_ids": "75"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BDI",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-BUTYL-5,6-DIHYDRO-1H-IMIDAZO[4,5-D]PYRIDAZINE-4,7-DIONE",
+        "title": "Crystal Structure of TGT in complex with 2-Butyl-5,6-dihydro-1H-imidazo[4,5-d]pyridazine-4,7-dione"
+      }
+    },
+    {
+      "pdb_id": "1n46",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 31, J Med Chem 50(4) p.734",
+        "paper_target_name": "thyroid hormone receptor \u03b21",
+        "paper_compound_name": "compound 3",
+        "paper_potency": "Ki 0.00003 uM",
+        "paper_reference_ids": "76"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "PFA",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "[4-(4-HYDROXY-3-ISOPROPYL-PHENOXY)-3,5-DIMETHYL-PHENYL]-6-AZAURACIL",
+        "title": "CRYSTAL STRUCTURE OF HUMAN TR BETA LIGAND-BINDING DOMAIN COMPLEXED WITH A POTENT SUBTYPE-SELECTIVE THYROMIMETI"
+      }
+    },
+    {
+      "pdb_id": "1nav",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 32, J Med Chem 50(4) p.734",
+        "paper_target_name": "thyroid hormone receptor \u03b11",
+        "paper_compound_name": "compound 15",
+        "paper_potency": "IC50 0.025 uM",
+        "paper_reference_ids": "77"
+      },
+      "rcsb": {
+        "resolution_A": 2.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "IH5",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "{3,5-DICHLORO-4-[4-HYDROXY-3-(PROPAN-2-YL)PHENOXY]PHENYL}ACETIC ACID",
+        "title": "Thyroid Receptor Alpha in complex with an agonist selective for Thyroid Receptor Beta1"
+      }
+    },
+    {
+      "pdb_id": "1of1",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 33, J Med Chem 50(4) p.734",
+        "paper_target_name": "thymidine kinase",
+        "paper_compound_name": "(S)-MCT",
+        "paper_potency": "Km 4.1 uM",
+        "paper_reference_ids": "78"
+      },
+      "rcsb": {
+        "resolution_A": 1.95,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "SCT",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "(SOUTH)-METHANOCARBA-THYMIDINE",
+        "title": "KINETICS AND CRYSTAL STRUCTURE OF THE HERPES SIMPLEX VIRUS TYPE 1 THYMIDINE KINASE INTERACTING WITH (SOUTH)-ME"
+      }
+    },
+    {
+      "pdb_id": "1of6",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 34, J Med Chem 50(4) p.734",
+        "paper_target_name": "DAHP synthase",
+        "paper_compound_name": "tyrosine",
+        "paper_potency": "Ki 0.9 uM",
+        "paper_reference_ids": "79"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "DTY",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "D-TYROSINE",
+        "title": "crystal structure of the tyrosine-regulated 3-deoxy-d-arabino-heptulosonate-7-phosphate synthase from saccharo"
+      }
+    },
+    {
+      "pdb_id": "1opk",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 35, J Med Chem 50(4) p.734",
+        "paper_target_name": "c-Abl tyrosine kinase",
+        "paper_compound_name": "PD166326",
+        "paper_potency": "IC50 0.00015 uM",
+        "paper_reference_ids": "80"
+      },
+      "rcsb": {
+        "resolution_A": 1.8,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "P16",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "6-(2,6-DICHLOROPHENYL)-2-{[3-(HYDROXYMETHYL)PHENYL]AMINO}-8-METHYLPYRIDO[2,3-D]PYRIMIDIN-7",
+        "title": "Structural basis for the auto-inhibition of c-Abl tyrosine kinase"
+      }
+    },
+    {
+      "pdb_id": "1oq5",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 36, J Med Chem 50(4) p.734",
+        "paper_target_name": "carbonic anhydrase II",
+        "paper_compound_name": "celecoxib",
+        "paper_potency": "IC50 0.0021 uM",
+        "paper_reference_ids": "81"
+      },
+      "rcsb": {
+        "resolution_A": 1.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "CEL",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "4-[5-(4-METHYLPHENYL)-3-(TRIFLUOROMETHYL)-1H-PYRAZOL-1-YL]BENZENESULFONAMIDE",
+        "title": "CARBONIC ANHYDRASE II IN COMPLEX WITH NANOMOLAR INHIBITOR"
+      }
+    },
+    {
+      "pdb_id": "1owe",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 37, J Med Chem 50(4) p.734",
+        "paper_target_name": "urokinase",
+        "paper_compound_name": "compound 6",
+        "paper_potency": "Ki 0.631 uM",
+        "paper_reference_ids": "82"
+      },
+      "rcsb": {
+        "resolution_A": 1.6,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "675",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "6-[(Z)-AMINO(IMINO)METHYL]-N-PHENYL-2-NAPHTHAMIDE",
+        "title": "Substituted 2-Naphthamidine inhibitors of urokinase"
+      }
+    },
+    {
+      "pdb_id": "1oyt",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 38, J Med Chem 50(4) p.734",
+        "paper_target_name": "thrombin",
+        "paper_compound_name": "compound 4",
+        "paper_potency": "Ki 0.057 uM",
+        "paper_reference_ids": "83"
+      },
+      "rcsb": {
+        "resolution_A": 1.67,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "FSN",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "(3ASR,4RS,8ASR,8BRS)-4-(2-(4-FLUOROBENZYL)-1,3-DIOXODEACAHYDROPYRROLO[3,4-A] PYRROLIZIN-4-",
+        "title": "COMPLEX OF RECOMBINANT HUMAN THROMBIN WITH A DESIGNED FLUORINATED INHIBITOR"
+      }
+    },
+    {
+      "pdb_id": "1p2y",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 39, J Med Chem 50(4) p.734",
+        "paper_target_name": "cytochrome P450cam",
+        "paper_compound_name": "nicotine",
+        "paper_potency": "Ks 10 uM",
+        "paper_reference_ids": "84"
+      },
+      "rcsb": {
+        "resolution_A": 2.3,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "NCT",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "(S)-3-(1-METHYLPYRROLIDIN-2-YL)PYRIDINE",
+        "title": "CRYSTAL STRUCTURE OF CYTOCHROME P450CAM IN COMPLEX WITH (S)-(-)-NICOTINE"
+      }
+    },
+    {
+      "pdb_id": "1p62",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 40, J Med Chem 50(4) p.734",
+        "paper_target_name": "deoxycytidine kinase",
+        "paper_compound_name": "gemcitabine",
+        "paper_potency": "Km 22 uM",
+        "paper_reference_ids": "85"
+      },
+      "rcsb": {
+        "resolution_A": 1.9,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "GEO",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "GEMCITABINE",
+        "title": "Structure of human dCK complexed with gemcitabine and ADP-MG"
+      }
+    },
+    {
+      "pdb_id": "1pmn",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 41, J Med Chem 50(4) p.734",
+        "paper_target_name": "c-Jun terminal kinase 3",
+        "paper_compound_name": "compound 1",
+        "paper_potency": "IC50 0.007 uM",
+        "paper_reference_ids": "86"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "984",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "CYCLOPROPYL-{4-[5-(3,4-DICHLOROPHENYL)-2-[(1-METHYL)-PIPERIDIN]-4-YL-3-PROPYL-3H-IMIDAZOL-",
+        "title": "Crystal structure of JNK3 in complex with an imidazole-pyrimidine inhibitor"
+      }
+    },
+    {
+      "pdb_id": "1q1g",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 42, J Med Chem 50(4) p.734",
+        "paper_target_name": "purine nucleoside phosphorylase",
+        "paper_compound_name": "MT-ImmH",
+        "paper_potency": "Kd 0.0027 uM",
+        "paper_reference_ids": "87"
+      },
+      "rcsb": {
+        "resolution_A": 2.02,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "MTI",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "3,4-DIHYDROXY-2-[(METHYLSULFANYL)METHYL]-5-(4-OXO-4,5-DIHYDRO-3H-PYRROLO[3,2-D]PYRIMIDIN-7",
+        "title": "Crystal structure of Plasmodium falciparum PNP with 5'-methylthio-immucillin-H"
+      }
+    },
+    {
+      "pdb_id": "1q41",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 43, J Med Chem 50(4) p.734",
+        "paper_target_name": "glycogen synthase kinase 3\u03b2",
+        "paper_compound_name": "indirubin-3\u2032-monoxime",
+        "paper_potency": "IC50 0.022 uM",
+        "paper_reference_ids": "88"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "IXM",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "(Z)-1H,1'H-[2,3']BIINDOLYLIDENE-3,2'-DIONE-3-OXIME",
+        "title": "GSK-3 Beta complexed with Indirubin-3'-monoxime"
+      }
+    },
+    {
+      "pdb_id": "1q4g",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 44, J Med Chem 50(4) p.734",
+        "paper_target_name": "prostaglandin H2 synthase 1",
+        "paper_compound_name": "\u03b1-methyl-4-biphenylacetic acid",
+        "paper_potency": "Ki 0.13 uM",
+        "paper_reference_ids": "89;90"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BFL",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-(1,1'-BIPHENYL-4-YL)PROPANOIC ACID",
+        "title": "2.0 Angstrom Crystal Structure of Ovine Prostaglandin H2 Synthase-1, in complex with alpha-methyl-4-biphenylac"
+      }
+    },
+    {
+      "pdb_id": "1r1h",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 45, J Med Chem 50(4) p.734",
+        "paper_target_name": "neprilysin",
+        "paper_compound_name": "compound 1",
+        "paper_potency": "Ki 0.0012 uM",
+        "paper_reference_ids": "91;92"
+      },
+      "rcsb": {
+        "resolution_A": 1.95,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BIR",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "N-[3-[(1-AMINOETHYL)(HYDROXY)PHOSPHORYL]-2-(1,1'-BIPHENYL-4-YLMETHYL)PROPANOYL]ALANINE",
+        "title": "STRUCTURAL ANALYSIS OF NEPRILYSIN WITH VARIOUS SPECIFIC AND POTENT INHIBITORS"
+      }
+    },
+    {
+      "pdb_id": "1r55",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 46, J Med Chem 50(4) p.734",
+        "paper_target_name": "ADAM33",
+        "paper_compound_name": "marimastat",
+        "paper_potency": "Ki 0.16 uM",
+        "paper_reference_ids": "93;94"
+      },
+      "rcsb": {
+        "resolution_A": 1.58,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "097",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "(2S,3R)-N~4~-[(1S)-2,2-dimethyl-1-(methylcarbamoyl)propyl]-N~1~,2-dihydroxy-3-(2-methylpro",
+        "title": "Crystal structure of the catalytic domain of human ADAM 33"
+      }
+    },
+    {
+      "pdb_id": "1r58",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 47, J Med Chem 50(4) p.734",
+        "paper_target_name": "methionine aminopeptidase 2",
+        "paper_compound_name": "A357300",
+        "paper_potency": "IC50 0.11 uM",
+        "paper_reference_ids": "95"
+      },
+      "rcsb": {
+        "resolution_A": 1.9,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "AO5",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "N'-((2S,3R)-3-AMINO-2-HYDROXY-5-(ISOPROPYLSULFANYL)PENTANOYL)-N-3-CHLOROBENZOYL HYDRAZIDE",
+        "title": "Crystal Structure of MetAP2 complexed with A357300"
+      }
+    },
+    {
+      "pdb_id": "1r9o",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 48, J Med Chem 50(4) p.734",
+        "paper_target_name": "cytochrome P450 2C9",
+        "paper_compound_name": "flurbiprofen",
+        "paper_potency": "Ks 9.6 uM",
+        "paper_reference_ids": "96"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "FLP",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "FLURBIPROFEN",
+        "title": "Crystal Structure of P4502C9 with Flurbiprofen bound"
+      }
+    },
+    {
+      "pdb_id": "1s19",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 49, J Med Chem 50(4) p.734",
+        "paper_target_name": "vitamin D nuclear receptor",
+        "paper_compound_name": "calcipotriol",
+        "paper_potency": "EC50 0.0017 uM",
+        "paper_reference_ids": "97"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "MC9",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "CALCIPOTRIOL",
+        "title": "Crystal structure of VDR ligand binding domain complexed to calcipotriol."
+      }
+    },
+    {
+      "pdb_id": "1s3v",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 50, J Med Chem 50(4) p.734",
+        "paper_target_name": "dihydrofolate reductase",
+        "paper_compound_name": "compound 2",
+        "paper_potency": "IC50 0.038 uM",
+        "paper_reference_ids": "98;99"
+      },
+      "rcsb": {
+        "resolution_A": 1.8,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "TQD",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "(2R,6S)-6-{[methyl(3,4,5-trimethoxyphenyl)amino]methyl}-1,2,5,6,7,8-hexahydroquinazoline-2",
+        "title": "Structure Determination of Tetrahydroquinazoline Antifolates in Complex with Human and Pneumocystis carinii Di"
+      }
+    },
+    {
+      "pdb_id": "1sg0",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 51, J Med Chem 50(4) p.734",
+        "paper_target_name": "quinone reductase 2",
+        "paper_compound_name": "resveratrol",
+        "paper_potency": "Kd 0.034 uM",
+        "paper_reference_ids": "100"
+      },
+      "rcsb": {
+        "resolution_A": 1.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "STL",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "RESVERATROL",
+        "title": "Crystal structure analysis of QR2 in complex with resveratrol"
+      }
+    },
+    {
+      "pdb_id": "1sj0",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 52, J Med Chem 50(4) p.734",
+        "paper_target_name": "estrogen receptor \u03b1",
+        "paper_compound_name": "compound 4-D",
+        "paper_potency": "IC50 0.0008 uM",
+        "paper_reference_ids": "101"
+      },
+      "rcsb": {
+        "resolution_A": 1.9,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "E4D",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "(2S,3R)-2-(4-(2-(PIPERIDIN-1-YL)ETHOXY)PHENYL)-2,3-DIHYDRO-3-(4-HYDROXYPHENYL)BENZO[B][1,4",
+        "title": "Human Estrogen Receptor Alpha Ligand-binding Domain in Complex with the Antagonist Ligand 4-D"
+      }
+    },
+    {
+      "pdb_id": "1sq5",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 53, J Med Chem 50(4) p.734",
+        "paper_target_name": "pantothenate kinase",
+        "paper_compound_name": "pantothenate",
+        "paper_potency": "Km 41 uM",
+        "paper_reference_ids": "102;103"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "PAU",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "PANTOTHENOIC ACID",
+        "title": "Crystal Structure of E. coli Pantothenate kinase"
+      }
+    },
+    {
+      "pdb_id": "1sqn",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 54, J Med Chem 50(4) p.734",
+        "paper_target_name": "progesterone receptor",
+        "paper_compound_name": "norethindrone",
+        "paper_potency": "Kd 0.0004 uM",
+        "paper_reference_ids": "104"
+      },
+      "rcsb": {
+        "resolution_A": 1.451,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "NDR",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "Norethindrone",
+        "title": "Progesterone Receptor Ligand Binding Domain with bound Norethindrone"
+      }
+    },
+    {
+      "pdb_id": "1t40",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 55, J Med Chem 50(4) p.734",
+        "paper_target_name": "aldose reductase",
+        "paper_compound_name": "IDD552",
+        "paper_potency": "IC50 0.011 uM",
+        "paper_reference_ids": "105"
+      },
+      "rcsb": {
+        "resolution_A": 1.8,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "ID5",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "[5-FLUORO-2-({[(4,5,7-TRIFLUORO-1,3-BENZOTHIAZOL-2-YL)METHYL]AMINO}CARBONYL)PHENOXY]ACETIC",
+        "title": "Crystal structure of human aldose reductase complexed with NADP and IDD552 at ph 5"
+      }
+    },
+    {
+      "pdb_id": "1t46",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 56, J Med Chem 50(4) p.734",
+        "paper_target_name": "c-kit tyrosine kinase",
+        "paper_compound_name": "gleevec",
+        "paper_potency": "IC50 0.413 uM",
+        "paper_reference_ids": "106;107"
+      },
+      "rcsb": {
+        "resolution_A": 1.6,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "STI",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "4-(4-METHYL-PIPERAZIN-1-YLMETHYL)-N-[4-METHYL-3-(4-PYRIDIN-3-YL-PYRIMIDIN-2-YLAMINO)-PHENY",
+        "title": "STRUCTURAL BASIS FOR THE AUTOINHIBITION AND STI-571 INHIBITION OF C-KIT TYROSINE KINASE"
+      }
+    },
+    {
+      "pdb_id": "1t9b",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 57, J Med Chem 50(4) p.734",
+        "paper_target_name": "acetohydroxyacid synthase",
+        "paper_compound_name": "chlorsulfuron",
+        "paper_potency": "Ki 0.127 uM",
+        "paper_reference_ids": "108;109"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "1CS",
+        "cognate_basis": "HEURISTIC_LARGEST_OF_5(1CS/P25/YF3/P22/NSP)",
+        "ccd_name": "1-(2-CHLOROPHENYLSULFONYL)-3-(4-METHOXY-6-METHYL-L,3,5-TRIAZIN-2-YL)UREA",
+        "title": "Crystal structure of yeast acetohydroxyacid synthase in complex with a sulfonylurea herbicide, chlorsulfuron"
+      }
+    },
+    {
+      "pdb_id": "1tow",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 58, J Med Chem 50(4) p.734",
+        "paper_target_name": "adipocyte fatty acid-binding protein",
+        "paper_compound_name": "compound 1",
+        "paper_potency": "IC50 0.57 uM",
+        "paper_reference_ids": "110"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "CRZ",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "4-(9H-CARBAZOL-9-YL)BUTANOIC ACID",
+        "title": "Crystal structure of human adipocyte fatty acid binding protein in complex with a carboxylic acid ligand"
+      }
+    },
+    {
+      "pdb_id": "1tt1",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 59, J Med Chem 50(4) p.734",
+        "paper_target_name": "glutamate receptor 6",
+        "paper_compound_name": "kainate",
+        "paper_potency": "Ki 64.6 uM",
+        "paper_reference_ids": "111"
+      },
+      "rcsb": {
+        "resolution_A": 1.93,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "KAI",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "3-(CARBOXYMETHYL)-4-ISOPROPENYLPROLINE",
+        "title": "CRYSTAL STRUCTURE OF THE GLUR6 LIGAND BINDING CORE IN COMPLEX WITH KAINATE 1.93 A RESOLUTION"
+      }
+    },
+    {
+      "pdb_id": "1tz8",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 60, J Med Chem 50(4) p.734",
+        "paper_target_name": "transthyretin",
+        "paper_compound_name": "diethylstilbestrol",
+        "paper_potency": null,
+        "paper_reference_ids": "112"
+      },
+      "rcsb": {
+        "resolution_A": 1.85,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "DES",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "DIETHYLSTILBESTROL",
+        "title": "The monoclinic crystal structure of transthyretin in complex with diethylstilbestrol"
+      }
+    },
+    {
+      "pdb_id": "1u1c",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 61, J Med Chem 50(4) p.734",
+        "paper_target_name": "uridine phosphorylase",
+        "paper_compound_name": "5-benzyl-acyclouridine",
+        "paper_potency": "Ki 4.3 uM",
+        "paper_reference_ids": "113"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BAU",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "1-((2-HYDROXYETHOXY)METHYL)-5-BENZYLPYRIMIDINE-2,4(1H,3H)-DIONE",
+        "title": "Structure of E. coli uridine phosphorylase complexed to 5-benzylacyclouridine (BAU)"
+      }
+    },
+    {
+      "pdb_id": "1u4d",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 62, J Med Chem 50(4) p.734",
+        "paper_target_name": "activated Cdc42 kinase 1",
+        "paper_compound_name": "debromohymenialdisine",
+        "paper_potency": null,
+        "paper_reference_ids": "114"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "DBQ",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "DEBROMOHYMENIALDISINE",
+        "title": "Structure of the ACK1 Kinase Domain bound to Debromohymenialdisine"
+      }
+    },
+    {
+      "pdb_id": "1uml",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 63, J Med Chem 50(4) p.734",
+        "paper_target_name": "adenosine deaminase",
+        "paper_compound_name": "compound 4c",
+        "paper_potency": "Ki 0.03 uM",
+        "paper_reference_ids": "115"
+      },
+      "rcsb": {
+        "resolution_A": 2.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "FR4",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "1-((1R)-1-(HYDROXYMETHYL)-3-{6-[(3-PHENYLPROPANOYL)AMINO]-1H-INDOL-1-YL}PROPYL)-1H-IMIDAZO",
+        "title": "Crystal structure of adenosine deaminase complexed with a potent inhibitor FR233624"
+      }
+    },
+    {
+      "pdb_id": "1unl",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 64, J Med Chem 50(4) p.734",
+        "paper_target_name": "cyclin-dependent kinase 5",
+        "paper_compound_name": "(R)-roscovitine",
+        "paper_potency": "IC50 0.2 uM",
+        "paper_reference_ids": "116"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "RRC",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "R-ROSCOVITINE",
+        "title": "Structural mechanism for the inhibition of CD5-p25 from the roscovitine, aloisine and indirubin."
+      }
+    },
+    {
+      "pdb_id": "1uou",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 65, J Med Chem 50(4) p.734",
+        "paper_target_name": "thymidine phosphorylase",
+        "paper_compound_name": "TPI",
+        "paper_potency": "IC50 0.02 uM",
+        "paper_reference_ids": "117;118"
+      },
+      "rcsb": {
+        "resolution_A": 2.11,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "CMU",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "5-CHLORO-6-(1-(2-IMINOPYRROLIDINYL) METHYL) URACIL",
+        "title": "Crystal structure of human thymidine phosphorylase in complex with a small molecule inhibitor"
+      }
+    },
+    {
+      "pdb_id": "1v0p",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 66, J Med Chem 50(4) p.734",
+        "paper_target_name": "protein kinase 5",
+        "paper_compound_name": "purvalanol B",
+        "paper_potency": "IC50 0.13 uM",
+        "paper_reference_ids": "119;120"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "PVB",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "PURVALANOL B",
+        "title": "Structure of P. falciparum PfPK5-Purvalanol B ligand complex"
+      }
+    },
+    {
+      "pdb_id": "1v48",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 67, J Med Chem 50(4) p.734",
+        "paper_target_name": "purine nucleoside phosphorylase",
+        "paper_compound_name": "DFPP-G",
+        "paper_potency": "Ki 0.0069 uM",
+        "paper_reference_ids": "121"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "HA1",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "9-(5,5-DIFLUORO-5-PHOSPHONOPENTYL)GUANINE",
+        "title": "Calf spleen purine nucleoside phosphorylase (PNP) binary complex with 9-(5,5-difluoro-5-phosphonopenthyl)guani"
+      }
+    },
+    {
+      "pdb_id": "1v4s",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 68, J Med Chem 50(4) p.734",
+        "paper_target_name": "glucokinase",
+        "paper_compound_name": "compound A",
+        "paper_potency": "Km 1000 uM",
+        "paper_reference_ids": "122"
+      },
+      "rcsb": {
+        "resolution_A": 2.3,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "MRK",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-AMINO-4-FLUORO-5-[(1-METHYL-1H-IMIDAZOL-2-YL)SULFANYL]-N-(1,3-THIAZOL-2-YL)BENZAMIDE",
+        "title": "Crystal structure of human glucokinase"
+      }
+    },
+    {
+      "pdb_id": "1vcj",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 69, J Med Chem 50(4) p.734",
+        "paper_target_name": "neuraminidase B",
+        "paper_compound_name": "BANA207",
+        "paper_potency": "IC50 26 uM",
+        "paper_reference_ids": "123"
+      },
+      "rcsb": {
+        "resolution_A": 2.4,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "IBA",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "4-[(2R)-2-(AMINOMETHYL)-2-(HYDROXYMETHYL)-5-OXOPYRROLIDIN-1-YL]-3-[(1-ETHYLPROPYL)AMINO]BE",
+        "title": "Influenza B virus neuraminidase complexed with 1-(4-Carboxy-2-(3-pentylamino)phenyl)-5-aminomethyl-5-hydroxyme"
+      }
+    },
+    {
+      "pdb_id": "1w1p",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 70, J Med Chem 50(4) p.735",
+        "paper_target_name": "chitinase B",
+        "paper_compound_name": "cyclo-(gly-L-pro)",
+        "paper_potency": "IC50 5000 uM",
+        "paper_reference_ids": "124"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "GIO",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "CYCLO-(GLYCINE-L-PROLINE) INHIBITOR",
+        "title": "Crystal structure of S. marcescens chitinase B in complex with the cyclic dipeptide inhibitor cyclo-(Gly-L-Pro"
+      }
+    },
+    {
+      "pdb_id": "1w2g",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 71, J Med Chem 50(4) p.735",
+        "paper_target_name": "thymidylate kinase",
+        "paper_compound_name": "deoxythymidine",
+        "paper_potency": "Ki 27 uM",
+        "paper_reference_ids": "125;126"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "THM",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "THYMIDINE",
+        "title": "Crystal Structure Of Mycobacterium Tuberculosis Thymidylate Kinase Complexed With Deoxythymidine (dT) (2.1 A R"
+      }
+    },
+    {
+      "pdb_id": "1x8x",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 72, J Med Chem 50(4) p.735",
+        "paper_target_name": "tyrosyl-tRNA synthetase",
+        "paper_compound_name": "L-tyrosine",
+        "paper_potency": null,
+        "paper_reference_ids": "127"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "TYR",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "TYROSINE",
+        "title": "Tyrosyl t-RNA Synthetase from E.coli Complexed with Tyrosine"
+      }
+    },
+    {
+      "pdb_id": "1xm6",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 73, J Med Chem 50(4) p.735",
+        "paper_target_name": "phosphodiesterase 4B",
+        "paper_compound_name": "(R)-mesopram",
+        "paper_potency": "IC50 0.42 uM",
+        "paper_reference_ids": "128"
+      },
+      "rcsb": {
+        "resolution_A": 1.92,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "5RM",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "(5R)-5-(4-methoxy-3-propoxyphenyl)-5-methyl-1,3-oxazolidin-2-one",
+        "title": "Catalytic Domain Of Human Phosphodiesterase 4B In Complex With (R)-Mesopram"
+      }
+    },
+    {
+      "pdb_id": "1xoq",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 74, J Med Chem 50(4) p.735",
+        "paper_target_name": "phosphodiesterase 4D",
+        "paper_compound_name": "roflumilast",
+        "paper_potency": "IC50 0.00068 uM",
+        "paper_reference_ids": "128"
+      },
+      "rcsb": {
+        "resolution_A": 1.83,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "ROF",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "3-(CYCLOPROPYLMETHOXY)-N-(3,5-DICHLOROPYRIDIN-4-YL)-4-(DIFLUOROMETHOXY)BENZAMIDE",
+        "title": "Catalytic Domain Of Human Phosphodiesterase 4D In Complex With Roflumilast"
+      }
+    },
+    {
+      "pdb_id": "1xoz",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 75, J Med Chem 50(4) p.735",
+        "paper_target_name": "phosphodiesterase 5A",
+        "paper_compound_name": "tadalafil",
+        "paper_potency": "IC50 0.0012 uM",
+        "paper_reference_ids": "128"
+      },
+      "rcsb": {
+        "resolution_A": 1.37,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "CIA",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "6-BENZO[1,3]DIOXOL-5-YL-2-METHYL-2,3,6,7,12,12A-HEXAHYDRO-PYRAZINO[1',2':1,6]PYRIDO[3,4-B]",
+        "title": "Catalytic Domain Of Human Phosphodiesterase 5A In Complex With Tadalafil"
+      }
+    },
+    {
+      "pdb_id": "1y6b",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 76, J Med Chem 50(4) p.735",
+        "paper_target_name": "vascular endothelial growth factor receptor 2",
+        "paper_compound_name": "compound 46",
+        "paper_potency": "IC50 0.038 uM",
+        "paper_reference_ids": "129"
+      },
+      "rcsb": {
+        "resolution_A": 2.1,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "AAX",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "N-(CYCLOPROPYLMETHYL)-4-(METHYLOXY)-3-({5-[3-(3-PYRIDINYL)PHENYL]-1,3-OXAZOL-2-YL}AMINO)BE",
+        "title": "Crystal structure of VEGFR2 in complex with a 2-anilino-5-aryl-oxazole inhibitor"
+      }
+    },
+    {
+      "pdb_id": "1ygc",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 77, J Med Chem 50(4) p.735",
+        "paper_target_name": "factor VIIa",
+        "paper_compound_name": "G17905",
+        "paper_potency": "Ki 0.00035 uM",
+        "paper_reference_ids": "130"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "905",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "(R)-4-[2-(3-AMINO-BENZENESULFONYLAMINO)-1-(3,5-DIETHOXY-2-FLUOROPHENYL)-2-OXO-ETHYLAMINO]-",
+        "title": "Short Factor VIIa with a small molecule inhibitor"
+      }
+    },
+    {
+      "pdb_id": "1yqy",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 78, J Med Chem 50(4) p.735",
+        "paper_target_name": "lethal factor",
+        "paper_compound_name": "hydroxamate LFI",
+        "paper_potency": "Ki 0.024 uM",
+        "paper_reference_ids": "131"
+      },
+      "rcsb": {
+        "resolution_A": 2.3,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "915",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "(2R)-2-{[(4-FLUORO-3-METHYLPHENYL)SULFONYL]AMINO}-N-HYDROXY-2-TETRAHYDRO-2H-PYRAN-4-YLACET",
+        "title": "Structure of B. Anthrax Lethal factor in complex with a hydroxamate inhibitor"
+      }
+    },
+    {
+      "pdb_id": "1yv3",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 79, J Med Chem 50(4) p.735",
+        "paper_target_name": "myosin II",
+        "paper_compound_name": "blebbistatin",
+        "paper_potency": "IC50 4.9 uM",
+        "paper_reference_ids": "132"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BIT",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "(-)-1-PHENYL-1,2,3,4-TETRAHYDRO-4-HYDROXYPYRROLO[2,3-B]-7-METHYLQUINOLIN-4-ONE",
+        "title": "The structural basis of blebbistatin inhibition and specificity for myosin II"
+      }
+    },
+    {
+      "pdb_id": "1yvf",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 80, J Med Chem 50(4) p.735",
+        "paper_target_name": "NS5B polymerase",
+        "paper_compound_name": "compound 59",
+        "paper_potency": "IC50 0.1 uM",
+        "paper_reference_ids": "133"
+      },
+      "rcsb": {
+        "resolution_A": 2.5,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "PH7",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "(2Z)-2-(BENZOYLAMINO)-3-[4-(2-BROMOPHENOXY)PHENYL]-2-PROPENOIC ACID",
+        "title": "Hepatitis C virus NS5B RNA-dependent RNA polymerase complex with inhibitor PHA-00729145"
+      }
+    },
+    {
+      "pdb_id": "1ywr",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 81, J Med Chem 50(4) p.735",
+        "paper_target_name": "p38 kinase",
+        "paper_compound_name": "compound 15d",
+        "paper_potency": "IC50 0.032 uM",
+        "paper_reference_ids": "134"
+      },
+      "rcsb": {
+        "resolution_A": 1.95,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "LI9",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "4-(4-FLUOROPHENYL)-1-METHYL-5-(2-{[(1S)-1-PHENYLETHYL]AMINO}PYRIMIDIN-4-YL)-2-PIPERIDIN-4-",
+        "title": "Crystal Structure Analysis of inactive P38 kinase domain in complex with a Monocyclic Pyrazolone Inhibitor"
+      }
+    },
+    {
+      "pdb_id": "1z95",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 82, J Med Chem 50(4) p.735",
+        "paper_target_name": "androgen receptor",
+        "paper_compound_name": "R-bicalutamide",
+        "paper_potency": "Ki 0.076 uM",
+        "paper_reference_ids": "135"
+      },
+      "rcsb": {
+        "resolution_A": 1.8,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "198",
+        "cognate_basis": "NAME_MATCH_PAPER",
+        "ccd_name": "R-BICALUTAMIDE",
+        "title": "Crystal Structure of the Androgen Receptor Ligand-binding Domain W741L Mutant Complex with R-bicalutamide"
+      }
+    },
+    {
+      "pdb_id": "2bm2",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 83, J Med Chem 50(4) p.735",
+        "paper_target_name": "\u03b2II tryptase",
+        "paper_compound_name": "compound 16b",
+        "paper_potency": "Ki 0.015 uM",
+        "paper_reference_ids": "136"
+      },
+      "rcsb": {
+        "resolution_A": 2.2,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "PM2",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "1-[3-(1-{[5-(2-PHENYLETHYL)PYRIDIN-3-YL]CARBONYL}PIPERIDIN-4-YL)PHENYL]METHANAMINE",
+        "title": "human beta-II tryptase in complex with 4-(3-Aminomethyl-phenyl)- piperidin-1-yl-(5-phenethyl- pyridin-3-yl)-me"
+      }
+    },
+    {
+      "pdb_id": "2br1",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 84, J Med Chem 50(4) p.735",
+        "paper_target_name": "Chk1",
+        "paper_compound_name": "compound 1",
+        "paper_potency": "IC50 15.4 uM",
+        "paper_reference_ids": "137"
+      },
+      "rcsb": {
+        "resolution_A": 2.0,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "PFP",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "2-[5,6-BIS-(4-METHOXY-PHENYL)-FURO[2,3-D]PYRIMIDIN-4-YLAMINO]-ETHANOL",
+        "title": "Structure-based Design of Novel Chk1 Inhibitors: Insights into Hydrogen Bonding and Protein-Ligand Affinity"
+      }
+    },
+    {
+      "pdb_id": "2bsm",
+      "primary_source": {
+        "doi": "10.1021/jm061277y",
+        "locator": "Hartshorn 2007 Table 2, row 85, J Med Chem 50(4) p.735",
+        "paper_target_name": "heat shock protein 90",
+        "paper_compound_name": "compound 11 (VER49009)",
+        "paper_potency": "IC50 0.14 uM",
+        "paper_reference_ids": "138"
+      },
+      "rcsb": {
+        "resolution_A": 2.05,
+        "experimental_method": "X-ray",
+        "cognate_ccd": "BSM",
+        "cognate_basis": "SOLE_NON_ADDITIVE_CANDIDATE",
+        "ccd_name": "5-(5-CHLORO-2,4-DIHYDROXYPHENYL)-N-ETHYL-4-(4-METHOXYPHENYL)-1H-PYRAZOLE-3-CARBOXAMIDE",
+        "title": "Novel, potent small molecule inhibitors of the molecular chaperone Hsp90 discovered through structure-based de"
+      }
+    }
+  ]
+}

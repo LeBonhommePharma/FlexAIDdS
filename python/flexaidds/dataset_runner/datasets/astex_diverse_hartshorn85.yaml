@@ -1,0 +1,206 @@
+# Astex Diverse Set — the 85 complexes of Hartshorn et al. 2007, Table 2
+#
+# This file exists because the live `astex_diverse` definition is NOT the
+# published Astex Diverse Set. Measured against Table 2 of the primary source:
+# 72/85 overlap, 13 codes in the live roster are absent from the paper and 13
+# codes in the paper are absent from the live roster. Two of the 13 substitutes
+# have a buffer or a cryoprotectant as their largest non-polymer component
+# (2HR7 -> P33, a PEG oligomer; 1TW6 -> BTB, bis-tris), so they are not
+# protein-ligand docking cases at all.
+#
+# PRIMARY SOURCE, extracted in-session, not recalled:
+#   Hartshorn, Verdonk, Chessari, Brewerton, Mooij, Mortenson, Murray (2007)
+#   "Diverse, High-Quality Test Set for the Validation of Protein-Ligand
+#    Docking Performance", J. Med. Chem. 50(4):726-741
+#   DOI 10.1021/jm061277y
+#   Table 2, "Protein and Ligand Names for the 85 Complexes in the Set",
+#   journal pages 734-735.
+#
+# HOW THE LIST WAS EXTRACTED (reproducible):
+#   The table was parsed from the PDF text layer by CHARACTER POSITION, not by
+#   a line regex: characters were clustered into lines by baseline, then binned
+#   into the six table columns by their x coordinate, so a wrapped target name
+#   attaches to its own row and the target/compound split is read off the
+#   layout rather than guessed. A bare PDB-code regex over this paper matches
+#   page numbers and potency values such as 1000/2007/5000, so the extraction
+#   is line-anchored (^[0-9][a-z][a-z0-9]{2}) and the resulting count is
+#   ASSERTED against the table's OWN stated N, parsed from its caption
+#   ("for the 85 Complexes in the Set"). 85 extracted == 85 stated.
+#   Glyph decoding was verified against 200-dpi renders of the two table pages:
+#   the text layer maps beta to 'a-circumflex' and alpha to 'R', and 'R' is
+#   ALSO a genuine Latin R in RSR-13, (R)-roscovitine, (R)-mesopram and
+#   R-bicalutamide. Substitutions were applied only where the glyph was read
+#   visually, never by pattern.
+#
+# sha256 of the sorted, newline-joined lowercase code list:
+#   57a2e7419f6edd0768aad4295d84560d8f48619c237ffa1279aa4bb9887148c0
+# sha256 of benchmarks/astex_diverse/astex_diverse_hartshorn85.csv:
+#   77d8082311ae8d3917cb48523715d1bb100f0f3d5fff7d842af57366b54a8946
+# sha256 of the source PDF the table was read from:
+#   662bb63a7ae61bd73c84673dbac5fc87695822a054860ad73e74adad06111753
+#
+# NOT LIVE. Nothing reads this file yet. See DATASET_REMEDIATION_C2C7.md for the
+# exact one-line change per entry point that would make it live.
+
+slug: astex_diverse_hartshorn85
+docking_mode: self_docking
+name: "Astex Diverse Set (Hartshorn 2007 Table 2, verified)"
+benchmark_order: 1
+description: >
+  The 85 protein-ligand complexes named in Table 2 of Hartshorn et al. 2007.
+  Codes extracted from the primary source; resolutions and cognate ligand CCD
+  codes verified per target against RCSB. Supersedes the `astex_diverse`
+  definition, which differs from the published set on 13 of 85 targets.
+
+primary_source:
+  doi: 10.1021/jm061277y
+  citation: "Hartshorn et al. (2007) J. Med. Chem. 50(4):726-741"
+  table: "Table 2, journal pages 734-735"
+  stated_n: 85
+  extracted_n: 85
+  code_list_sha256: 57a2e7419f6edd0768aad4295d84560d8f48619c237ffa1279aa4bb9887148c0
+  roster_csv: benchmarks/astex_diverse/astex_diverse_hartshorn85.csv
+  roster_csv_sha256: 77d8082311ae8d3917cb48523715d1bb100f0f3d5fff7d842af57366b54a8946
+  source_pdf_sha256: 662bb63a7ae61bd73c84673dbac5fc87695822a054860ad73e74adad06111753
+  extracted_utc: "2026-09-11T00:54:51Z"
+
+# Every non-constant column in the roster CSV is per-target data. These two are
+# CONSTANT BY DESIGN and are declared here so a constant-column check can tell
+# a declared constant from an undeclared placeholder (the defect that produced
+# ligand_id="LIG" and resolution_A=2.0 on all 85 rows of the live roster).
+constant_columns:
+  - column: source_doi
+    justification: "every row comes from one table in one paper; the per-row
+      locator is source_locator, which is distinct on all 85 rows"
+  - column: experimental_method
+    justification: "MEASURED, not defaulted: all 85 entries are X-ray structures
+      according to RCSB rcsb_entry_info.experimental_method"
+
+verification:
+  resolution_source: "RCSB data API rcsb_entry_info.resolution_combined[0], fetched per code"
+  resolution_distinct_values: 27
+  resolution_range_A: [1.09, 2.5]
+  ligand_id_source: "RCSB non-polymer entities, cognate selected per target"
+  ligand_id_basis_counts:
+    NAME_MATCH_PAPER: 40
+    SOLE_NON_ADDITIVE_CANDIDATE: 44
+    HEURISTIC_LARGEST: 1
+  independent_cross_check:
+    against: benchmarks/datasets/astex_apo_strip_report.csv
+    note: "ligand_title in that report is derived from the cached SDFs, not from
+      the roster's ligand_id column, so it is an independent witness for the 72
+      codes the two sets share."
+    comparable_rows: 72
+    agree: 71
+    disagree: 1
+    disagreement: "1HQ2 — the repository's cached ligand is APC (an ATP analogue,
+      a cofactor), while Table 2 names the compound HP and the corresponding CCD
+      component is PH2 (6-hydroxymethyl-7,8-dihydropterin). The repository has
+      been docking the cofactor for this target."
+
+zenodo_doi: ""
+download_url: "https://www.ccdc.cam.ac.uk/community/freeprod/astex-diverse-set/"
+data_format: pdb
+tier: 2
+structural_states:
+  - holo
+
+# 85 codes, in Table 2 order. Comment = the paper's own protein / compound name.
+targets:
+  - 1g9v   # deoxy hemoglobin / RSR-13
+  - 1gkc   # matrix metalloprotease 9 / reverse hydroxamate inhibitor
+  - 1gm8   # penicillin G acylase / PGSO
+  - 1gpk   # acetylcholinesterase / huperzine A
+  - 1hnn   # phenylethanolamine N-methyltransferase / SK&F 29661
+  - 1hp0   # purine specific nucleoside hydrolase / 3-deaza-adenosine
+  - 1hq2   # 6-hydroxymethyl-7,8-dihydropterin pyrophosph / HP
+  - 1hvy   # thymidylate synthase / tomudex
+  - 1hwi   # HMG-CoA reductase / fluvastatin
+  - 1hww   # α-mannosidase II / swainsonine
+  - 1ia1   # dihydrofolate reductase / compound 3
+  - 1ig3   # thiamin pyrophosphokinase / thiamin or vitamin B1
+  - 1j3j   # dihydrofolate reductase / pyrimethamine
+  - 1jd0   # carbonic anhydrase XII / acetazolamide
+  - 1jje   # metallo β-lactamase / compound 11
+  - 1jla   # HIV-1 reverse transcriptase / TNK-651
+  - 1k3u   # tryptophan synthase / N-[1H-indol-3-yl-acetyl]aspart
+  - 1ke5   # cyclin-dependent kinase 2 / compound 98
+  - 1kzk   # HIV-1 protease / JE-2147 (also named AG1776 or 
+  - 1l2s   # β-lactamase / compound 1
+  - 1l7f   # neuraminidase A / BCX-1812
+  - 1lpz   # factor Xa / compound 41
+  - 1lrh   # auxin-binding protein 1 / 1-naphthalene acetic acid
+  - 1m2z   # glucocorticoid receptor / dexamethasone
+  - 1meh   # inosine monophosphate dehydrogenase / mycophenolic acid
+  - 1mmv   # neuronal nitric-oxide synthase / NG-propyl-L-arginine
+  - 1mzc   # protein farnesyltransferase / compound 33a
+  - 1n1m   # dipeptidyl peptidase IV / valine-pyrrolidine
+  - 1n2j   # pantothenate synthetase / pantoate
+  - 1n2v   # tRNA-guanine transglycosylase / compound 6
+  - 1n46   # thyroid hormone receptor β1 / compound 3
+  - 1nav   # thyroid hormone receptor α1 / compound 15
+  - 1of1   # thymidine kinase / (S)-MCT
+  - 1of6   # DAHP synthase / tyrosine
+  - 1opk   # c-Abl tyrosine kinase / PD166326
+  - 1oq5   # carbonic anhydrase II / celecoxib
+  - 1owe   # urokinase / compound 6
+  - 1oyt   # thrombin / compound 4
+  - 1p2y   # cytochrome P450cam / nicotine
+  - 1p62   # deoxycytidine kinase / gemcitabine
+  - 1pmn   # c-Jun terminal kinase 3 / compound 1
+  - 1q1g   # purine nucleoside phosphorylase / MT-ImmH
+  - 1q41   # glycogen synthase kinase 3β / indirubin-3′-monoxime
+  - 1q4g   # prostaglandin H2 synthase 1 / α-methyl-4-biphenylacetic acid
+  - 1r1h   # neprilysin / compound 1
+  - 1r55   # ADAM33 / marimastat
+  - 1r58   # methionine aminopeptidase 2 / A357300
+  - 1r9o   # cytochrome P450 2C9 / flurbiprofen
+  - 1s19   # vitamin D nuclear receptor / calcipotriol
+  - 1s3v   # dihydrofolate reductase / compound 2
+  - 1sg0   # quinone reductase 2 / resveratrol
+  - 1sj0   # estrogen receptor α / compound 4-D
+  - 1sq5   # pantothenate kinase / pantothenate
+  - 1sqn   # progesterone receptor / norethindrone
+  - 1t40   # aldose reductase / IDD552
+  - 1t46   # c-kit tyrosine kinase / gleevec
+  - 1t9b   # acetohydroxyacid synthase / chlorsulfuron
+  - 1tow   # adipocyte fatty acid-binding protein / compound 1
+  - 1tt1   # glutamate receptor 6 / kainate
+  - 1tz8   # transthyretin / diethylstilbestrol
+  - 1u1c   # uridine phosphorylase / 5-benzyl-acyclouridine
+  - 1u4d   # activated Cdc42 kinase 1 / debromohymenialdisine
+  - 1uml   # adenosine deaminase / compound 4c
+  - 1unl   # cyclin-dependent kinase 5 / (R)-roscovitine
+  - 1uou   # thymidine phosphorylase / TPI
+  - 1v0p   # protein kinase 5 / purvalanol B
+  - 1v48   # purine nucleoside phosphorylase / DFPP-G
+  - 1v4s   # glucokinase / compound A
+  - 1vcj   # neuraminidase B / BANA207
+  - 1w1p   # chitinase B / cyclo-(gly-L-pro)
+  - 1w2g   # thymidylate kinase / deoxythymidine
+  - 1x8x   # tyrosyl-tRNA synthetase / L-tyrosine
+  - 1xm6   # phosphodiesterase 4B / (R)-mesopram
+  - 1xoq   # phosphodiesterase 4D / roflumilast
+  - 1xoz   # phosphodiesterase 5A / tadalafil
+  - 1y6b   # vascular endothelial growth factor receptor  / compound 46
+  - 1ygc   # factor VIIa / G17905
+  - 1yqy   # lethal factor / hydroxamate LFI
+  - 1yv3   # myosin II / blebbistatin
+  - 1yvf   # NS5B polymerase / compound 59
+  - 1ywr   # p38 kinase / compound 15d
+  - 1z95   # androgen receptor / R-bicalutamide
+  - 2bm2   # βII tryptase / compound 16b
+  - 2br1   # Chk1 / compound 1
+  - 2bsm   # heat shock protein 90 / compound 11 (VER49009)
+
+metrics:
+  - docking_power_top1
+  - docking_power_top3
+  - rmsd_mean
+  - rmsd_median
+
+# No expected_baselines and no published_baselines are declared here ON PURPOSE.
+# The project's live 0.452 top-1 figure is sourced to Gaudreault & Najmanovich
+# 2015 Table 2, which was measured on a different target set; quoting it here
+# would re-create the like-for-like error this file exists to remove. A baseline
+# belongs here only once it has been measured on THESE 85 targets.
