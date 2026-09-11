@@ -1,3 +1,11 @@
+# DEPRECATED 2026-09-11 — DO NOT LAUNCH. Superseded by benchmarks/astex_nonnative_v2/
+# (definition: benchmarks/datasets/astex_nonnative_v2.yaml + mirror).
+# The data_file named below, astex_non_native_set.csv, is not a cross-docking
+# roster: 66 of its 74 pairs are CROSS_PROTEIN_INVALID — the two members are
+# different proteins, verified by UniProt accession on both sides for 72 of the
+# 74 pairs — its target_name column was fabricated, and its ligand_id matched
+# neither member on 0/74 rows. See ./README.md, DATASET_IDENTITY_REPORT.md and
+# DATASET_REMEDIATION_C2C7.md. Kept in place as the provenance record.
 name: astex-nonnative-tier1
 kind: scientific-validation
 status: active

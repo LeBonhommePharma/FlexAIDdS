@@ -1,3 +1,39 @@
+# ============================================================================
+# DEPRECATED 2026-09-11 — DO NOT USE FOR NEW RUNS.
+# SUPERSEDED BY: astex_nonnative_v2.yaml (this directory and the mirror).
+# Nothing here is deleted: this file is kept in place as the provenance record
+# for whatever consumed it. Two measured findings, neither of which a column
+# correction can repair, because a cross-protein pair is not a cross-dock:
+#
+#  1. THE ROSTER CSV IS NOT A CROSS-DOCKING SET. benchmarks/astex_nonnative/
+#     astex_non_native_set.csv holds 74 pairs, of which 66 are
+#     CROSS_PROTEIN_INVALID: the two members are DIFFERENT PROTEINS, verified
+#     by UniProt accession on both sides for 72 of the 74 pairs. Its
+#     target_name column was fabricated — the (1hwi,1hww) pair is labelled
+#     CDK2, while RCSB says 1HWI is HMG-CoA reductase and 1HWW is Golgi
+#     alpha-mannosidase II — and its stated ligand_id matched NEITHER member
+#     on 0/74 rows. Source: DATASET_IDENTITY_REPORT.md and
+#     DATASET_REMEDIATION_C2C7.md (2026-09-10/11 dataset identity audit).
+#
+#  2. THE C++ TABLE THIS FILE DELEGATES TO IS A SECOND, INDEPENDENT DEFECT.
+#     The comment below points the "full 65-target mapping" at
+#     astex_nonnative_targets() in LIB/DatasetRunner.cpp. The FlexAID paper
+#     defines the Astex non-native set as "apo and non-apo forms of 65
+#     proteins FROM THE DIVERSE SET" (Gaudreault & Najmanovich 2015, JCIM,
+#     doi:10.1021/acs.jcim.5b00078, Methods / "Docking Experiments", journal
+#     page K = PDF page 11), so every native member must be an Astex Diverse
+#     entry. Measured 2026-09-11 against this repository's own Hartshorn
+#     Table 2 extraction (benchmarks/datasets/astex_diverse_hartshorn85.yaml):
+#     only 24 of the 63 distinct native codes in that C++ table are Astex
+#     Diverse entries at all. Example: the table lists 1G9V as the native of
+#     family "ACE" (acetylcholinesterase); 1G9V is deoxy haemoglobin with
+#     RSR-13.
+#
+# A non-native pair must dock the ligand of one structure into a DIFFERENT
+# CONFORMER OF THE SAME PROTEIN. Neither artifact above satisfies that, which
+# is why the replacement is a rebuild and not a correction.
+# ============================================================================
+#
 # Astex Non-Native Set — 65 targets, ~1885 structures for cross-docking
 #
 # The Astex Non-Native set provides pairs of holo/apo structures for

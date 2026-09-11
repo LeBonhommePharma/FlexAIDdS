@@ -1,5 +1,23 @@
 # Astex Non-Native (Cross-Docking) Benchmark
 
+> ## DEPRECATED 2026-09-11 — DO NOT USE FOR NEW RUNS
+>
+> **Superseded by [`../astex_nonnative_v2/`](../astex_nonnative_v2/)**
+> (definition: `benchmarks/datasets/astex_nonnative_v2.yaml` and its mirror).
+>
+> `astex_non_native_set.csv` in this directory is **not a cross-docking roster**.
+> Of its 74 pairs, **66 are CROSS_PROTEIN_INVALID** — the two members are
+> different proteins, verified by UniProt accession on both sides for 72 of the
+> 74 pairs. The `target_name` column was fabricated (the `1hwi,1hww` pair is
+> labelled CDK2; RCSB says 1HWI is HMG-CoA reductase and 1HWW is Golgi
+> alpha-mannosidase II), and the stated `ligand_id` matched **neither** member
+> on **0/74** rows. See `DATASET_IDENTITY_REPORT.md` and
+> `DATASET_REMEDIATION_C2C7.md`.
+>
+> The description below of what the benchmark is *supposed* to be remains
+> accurate; the data in this directory does not implement it. Nothing here is
+> deleted — this directory is the provenance record for whatever consumed it.
+
 ## Overview
 
 The Astex Non-Native Set is a cross-docking benchmark: ligands are docked into
