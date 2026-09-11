@@ -1,4 +1,5 @@
 #include "BindingMode.h"
+#include "remark_zero.h"
 #include "EnvFlags.h"
 // Receptor side-chain conformational strain, E_strain(r) = E(r) - E(r_ref).
 // Gate FLEXAIDDS_RECEPTOR_STRAIN, DEFAULT OFF: with it unset every entry
@@ -959,6 +960,7 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+		strip_rendered_negzero(tmpremark);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
 		safe_remark_cat(remark, tmpremark, &remark_len);
@@ -1127,6 +1129,7 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+			strip_rendered_negzero(tmpremark);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
 			safe_remark_cat(remark, tmpremark, &remark_len);

@@ -1,4 +1,5 @@
 #include "gaboom.h"
+#include "remark_zero.h"
 #include "fileio.h"
 #include "simd_distance.h"
 #include "statmech.h"
@@ -861,6 +862,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+			strip_rendered_negzero(tmpremark);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
 			safe_remark_cat(remark, tmpremark, &remark_len);

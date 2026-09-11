@@ -1478,6 +1478,15 @@ if(BUILD_TESTING)
         TEST_NAME AtomPointerLifetimeTests
     )
 
+    # Header-only: LIB/remark_zero.h needs no production translation unit, so
+    # this deliberately links nothing else. Mirrors the single-source pattern
+    # above rather than adding LIB/*.cpp to resolve a symbol -- the mistake that
+    # took test_cf_aggregator's link set apart twice.
+    flexaids_add_unit_test(test_remark_zero
+        SOURCES tests/test_remark_zero.cpp
+        TEST_NAME RemarkZeroTests
+    )
+
     flexaids_add_unit_test(test_ga_population_receipt
         SOURCES tests/test_ga_population_receipt.cpp
         TEST_NAME GaPopulationReceiptTests
