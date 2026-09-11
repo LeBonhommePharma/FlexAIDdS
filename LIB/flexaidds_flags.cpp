@@ -112,6 +112,13 @@ void seed_runtime_gates() {
         "FLEXAIDDS_WAL_COERCIVE",
         "FLEXAIDDS_SOFTCORE_WAL",
         "FLEXAIDDS_NO_SAS",
+        // Thermodynamic ligand -T*dS_vib INSIDE the searched objective
+        // (ic2cf.cpp). Deliberately NOT an alias of FLEXAIDDS_TENCOM_WEIGHT:
+        // that one weights the dimensionless Cartesian Shannon h_rep, this one
+        // adds a kcal/mol free-energy term over the ligand's TORSIONAL DOFs with
+        // unit coefficient. Default OFF; when unset the CF is bit-identical to a
+        // build without this gate.
+        "FLEXAIDDS_DSVIB",
         // Atom-type-pair contact-surface vector (vcfunction.cpp accumulates,
         // cluster.cpp / native_score.cpp emit <pose>.cprof.csv). Pure
         // instrumentation: adds nothing to any CF channel and cannot change a

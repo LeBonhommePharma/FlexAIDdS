@@ -215,17 +215,98 @@ public:
                                      float cutoff = 7.0f,
                                      float k0     = DEFAULT_K0);
 
+    // ── ligand torsional Hessian IN THE FIELD OF A RIGID ENVIRONMENT ────────
+    //
+    // WHAT THIS COMPUTES, AND WHY IT IS THE COMPLEX TERM.  The thermodynamic
+    // cycle wants
+    //     dS_vib(bind) = S_vib(complex) - S_vib(apo receptor) - S_vib(free ligand)
+    // and no builder in this file assembles a joint protein+ligand Hessian, so
+    // S_vib(complex) is not computable as written.  It is computable in the
+    // RIGID-RECEPTOR limit, which is the limit these benchmark arms actually run
+    // in (autoflex_max = 0: no receptor side chain is a search variable, so no
+    // receptor internal coordinate moves between the apo and the complex state).
+    //
+    // Under that constraint the receptor's internal DOFs are frozen in BOTH
+    // states.  A frozen coordinate is not a DOF: it contributes no mode to
+    // either spectrum, so the protein block is not merely equal between the two
+    // terms, it is ABSENT from both and S_vib(complex) - S_vib(apo) reduces
+    // EXACTLY -- not approximately -- to the entropy of the ligand's own
+    // torsional DOFs evaluated in the static field of the receptor.  The
+    // receptor atoms enter as FIXED nodes: they carry springs to ligand atoms
+    // (stiffening the ligand's torsions) but contribute no row or column to the
+    // Hessian, because their displacement is identically zero, so dJ = 0 for
+    // them in H_kl = sum k_ij (u_ij . dJ_k)(u_ij . dJ_l).
+    //
+    // WHAT THIS BUYS.  Both states span the SAME M dihedral DOFs, so the mode
+    // count is conserved by construction.  In the classical-harmonic sum
+    //     S = sum_k kB [1 + ln(kB T / (hbar c sqrt(lambda_k)))]
+    //       = M kB [1 + ln(kB T / (hbar c))] - (kB/2) sum_k ln lambda_k
+    // the whole calibration-bearing prefactor is proportional to M and therefore
+    // CANCELS in the difference, leaving
+    //     dS_vib = -(kB/2) [ln det H_field - ln det H_vacuum]
+    // which is independent of the uncalibrated eigenvalue_to_omega scale that
+    // makes the ABSOLUTE S_vib of encom.cpp a model-scale heuristic.  That is
+    // what licenses entering -T dS_vib into dG with w = 1 and no fitted weight:
+    // the differential is in kcal/mol once kB is, and nothing in it is fitted.
+    // Mode-count conservation is a PRECONDITION of that cancellation, not a
+    // property to be assumed -- a soft or non-finite eigenvalue dropped by
+    // vibrational_eigenvalues() in one state and not the other breaks it, so the
+    // caller must compare the two counts and refuse on a mismatch.
+    //
+    // NOT A SUBSTITUTE FOR A FLEXIBLE-RECEPTOR CYCLE.  With autoflex_max > 0 the
+    // receptor DOFs are live, the cancellation argument above does not hold, and
+    // this quantity is no longer dS_vib(bind).  It is the rigid-receptor limit
+    // and must be labelled as such wherever it is emitted.
+    void build_from_ligand_torsional_in_field(const std::array<float,3>* xyz,
+                                              int   n_nodes,
+                                              const LigandTopology& topo,
+                                              const std::array<float,3>* field_xyz,
+                                              int   n_field,
+                                              float cutoff = 7.0f,
+                                              float k0     = DEFAULT_K0);
+
+    /// atom[] entry point for the in-engine path. Perceives the same DOF set as
+    /// build_from_ligand_torsional(atom*) -- the two share one perception helper
+    /// so the vacuum and field states cannot be built over different DOFs, which
+    /// would silently break the mode-count conservation the cancellation needs.
+    void build_from_ligand_torsional_in_field(const atom* atoms,
+                                              int   lig_start,
+                                              int   lig_end,
+                                              const std::array<float,3>* field_xyz,
+                                              int   n_field,
+                                              float cutoff = 7.0f,
+                                              float k0     = DEFAULT_K0);
+
+    /// How many fixed environment nodes the last torsional build saw within
+    /// `cutoff` bookkeeping range. 0 on the vacuum path and on every other
+    /// builder, so a caller reading it after the wrong build path gets 0 rather
+    /// than a stale count.
+    int n_field_nodes() const noexcept { return n_field_nodes_; }
+
 private:
     /// Shared core: assembles and diagonalises the torsional Hessian from a node
-    /// coordinate array plus explicit topology. BOTH public overloads delegate
-    /// here, so the two entry points cannot drift into different physics -- the
-    /// same consolidation this file already applied to the rigid-mode cutoff
+    /// coordinate array plus explicit topology. ALL FOUR public overloads
+    /// delegate here, so the entry points cannot drift into different physics --
+    /// the same consolidation this file already applied to the rigid-mode cutoff
     /// after the CLI and the objective disagreed by 56% on one ligand.
+    ///
+    /// `field_xyz` / `n_field`: fixed environment nodes. Pass nullptr / 0 for the
+    /// free-ligand (vacuum) state. Fixed nodes add springs but no DOFs.
     void assemble_torsional_(const std::array<float,3>* xyz,
                              int n_nodes,
                              const LigandTopology& topo,
+                             const std::array<float,3>* field_xyz,
+                             int n_field,
                              float cutoff,
                              float k0);
+
+    /// Shared DOF/adjacency perception for BOTH atom[] torsional entry points.
+    /// Extracted so the vacuum and field builds cannot perceive different DOFs.
+    static void perceive_ligand_topology_(const atom* atoms,
+                                          int lig_start,
+                                          int lig_end,
+                                          std::vector<std::array<float,3>>& xyz,
+                                          LigandTopology& topo);
 public:
 
     /// Number of internal-coordinate DOFs the torsional ligand path found.
@@ -297,6 +378,10 @@ private:
     // Left at 0 by every other builder so a caller reading it after the wrong
     // build path gets 0 rather than a stale count from a previous object use.
     int n_torsion_dofs_ = 0;
+
+    // Number of FIXED environment nodes the torsional assembly was handed.
+    // Reset by every builder for the same reason as n_torsion_dofs_.
+    int n_field_nodes_ = 0;
 
     // Internal node coordinate store:
     //   indices [0, n_protein_ca_)  → protein Cα atoms

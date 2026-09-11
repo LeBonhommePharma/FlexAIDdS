@@ -3,6 +3,10 @@
 #include "LigandRingFlex/LigandRingFlex.h"   // Phase 2: ring pucker apply
 #include "VibEntropy.h"
 #include "tENCoM/tencm.h"
+#include "encom.h"      // encom::ENCoMEngine::compute_vibrational_entropy (classical HO S_vib)
+
+#include <mutex>
+#include <array>
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -18,6 +22,11 @@ struct IC2CFScratch {
 	std::vector<IC2CFSavedResRot>         saved_res_rots;   // reserve 16
 	std::vector<char>                     saved_res_seen;   // sized to res_cnt+1
 	std::vector<std::pair<int,int>>       intraclashes;
+	// FLEXAIDDS_DSVIB per-pose receptor field gather. Per-thread so the OMP
+	// scoring path allocates once, not once per pose; untouched when the gate
+	// is off (the term returns before reaching them).
+	std::vector<std::array<float,3>>      dsvib_field;
+	std::vector<char>                     dsvib_picked;
 };
 // One IC2CFScratch per OMP thread (no synchronisation needed — each thread
 // has exclusive access to its own scratch throughout ic2cf execution).
@@ -48,6 +57,233 @@ static double compute_ligand_h_rep(const FA_Global* FA, const atom* atoms) {
 
 	const std::vector<std::vector<double>> single = { eigs };
 	return vibentropy::compute_vib_entropy_collapse(single).H_pop;
+}
+
+// ═══ FLEXAIDDS_DSVIB — thermodynamic ligand -T*dS_vib inside the objective ═══
+//
+// WHAT IS DIFFERENT FROM compute_ligand_h_rep ABOVE, since both sit in the same
+// file and both call tENCoM:
+//
+//   h_rep        32-bin SHANNON entropy of the log-frequency spectrum of a
+//                CARTESIAN 3N ligand ANM. Dimensionless (nats). Enters the CF as
+//                tencom_weight * h_rep, i.e. only through a FITTED weight, which
+//                makes it a heuristic ranking feature. Undefined over an empty
+//                spectrum and identically 0 over a single mode, so it cannot be
+//                evaluated at all on the 4 zero-DOF and 5 one-DOF ligands of the
+//                Astex roster.
+//   this term    classical-harmonic S_vib over the ligand's TORSIONAL (dihedral)
+//                DOFs -- a sum over modes, so 0 modes gives exactly 0 and a rigid
+//                ligand is correct rather than undefined. In kcal/mol/K, so
+//                -T*dS_vib is in kcal/mol and enters dG with NO fitted weight.
+//
+// THE CYCLE, AND WHY ONLY TWO TERMS ARE COMPUTED. dS_vib(bind) =
+// S(complex) - S(apo) - S(ligand). No builder in tencm.cpp assembles a joint
+// protein+ligand Hessian, so S(complex) is not directly computable. It IS
+// computable in the rigid-receptor limit these arms run in (autoflex_max = 0):
+// with every receptor internal coordinate frozen, the receptor contributes no
+// mode to either the complex or the apo spectrum, so S(complex) - S(apo) is
+// EXACTLY the ligand's torsional entropy in the static receptor field. The apo
+// term is not dropped, it is identically absent; the emitted columns say so.
+//
+// MODE-COUNT CONSERVATION IS CHECKED, NOT ASSUMED. The absolute S_vib of
+// encom.cpp carries an UNCALIBRATED eigenvalue->omega scale, so each term alone
+// is model-scale only. In the difference the whole calibration-bearing part is
+// M*kB*(1 + ln(kB T / (hbar c))) and cancels -- but only if both states have the
+// same M surviving modes. vibrational_eigenvalues() can drop a non-finite or
+// non-positive eigenvalue in one state and not the other, which would leave a
+// calibration-dependent residue masquerading as physics. A mismatch is refused.
+static void compute_ligand_dsvib(const FA_Global* FA, const atom* atoms, cfstr* cf)
+{
+	cf->dsvib_status = 0;
+	if (!FA || FA->dsvib_mode <= 0) return;
+
+	const int lig_start    = (FA->resligand && FA->resligand->fatm)
+	                         ? FA->resligand->fatm[0] : -1;
+	const int lig_end_incl = (FA->resligand && FA->resligand->latm)
+	                         ? FA->resligand->latm[0] : -1;
+	if (lig_start < 0 || lig_end_incl < lig_start) { cf->dsvib_status = 4; return; }
+
+	// Temperature from the RUN, never a literal. 0 means the configuration never
+	// established one, and a thermodynamic term with an invented temperature is
+	// worse than no term at all.
+	const double T_K = static_cast<double>(FA->dsvib_T_K);
+	if (!(T_K > 0.0)) { cf->dsvib_status = 5; return; }
+
+	// ── fixed receptor field nodes, built ONCE ──────────────────────────────
+	// The receptor is rigid for the whole run (autoflex_max = 0), so its heavy
+	// atoms and the cell grid over them are run-invariant. Rebuilding per pose
+	// would dominate the cost; caching makes the per-pose work proportional to
+	// the LIGAND size, not the receptor's.
+	struct FieldGrid {
+		std::vector<std::array<float,3>> pts;
+		std::vector<int>   starts;      // CSR offsets, size nx*ny*nz + 1
+		std::vector<int>   items;
+		float lo[3]{0.f,0.f,0.f};
+		float cell = 9.0f;
+		int   nx = 0, ny = 0, nz = 0;
+		int   n_receptor_heavy = 0;
+	};
+	static FieldGrid   grid;
+	static std::once_flag grid_once;
+	std::call_once(grid_once, [&]() {
+		grid.cell = tencm::DEFAULT_RC;     // one rule: the ENM contact cutoff
+		auto is_h = [](const atom& a) noexcept {
+			const char* e = a.element;
+			while (*e == ' ') ++e;
+			return e[0] == 'H' && (e[1] == '\0' || e[1] == ' ');
+		};
+		const int n_end = (FA->atm_cnt_real > 0) ? FA->atm_cnt_real : FA->atm_cnt;
+		for (int ai = 1; ai <= n_end; ++ai) {
+			if (ai >= lig_start && ai <= lig_end_incl) continue;   // ligand is not its own field
+			if (is_h(atoms[ai])) continue;
+			grid.pts.push_back({ atoms[ai].coor[0], atoms[ai].coor[1], atoms[ai].coor[2] });
+		}
+		grid.n_receptor_heavy = static_cast<int>(grid.pts.size());
+		if (grid.pts.empty()) return;
+
+		float hi[3];
+		for (int d = 0; d < 3; ++d) { grid.lo[d] = grid.pts[0][d]; hi[d] = grid.pts[0][d]; }
+		for (const auto& p : grid.pts)
+			for (int d = 0; d < 3; ++d) {
+				if (p[d] < grid.lo[d]) grid.lo[d] = p[d];
+				if (p[d] > hi[d])      hi[d]      = p[d];
+			}
+		grid.nx = std::max(1, static_cast<int>((hi[0] - grid.lo[0]) / grid.cell) + 1);
+		grid.ny = std::max(1, static_cast<int>((hi[1] - grid.lo[1]) / grid.cell) + 1);
+		grid.nz = std::max(1, static_cast<int>((hi[2] - grid.lo[2]) / grid.cell) + 1);
+
+		const std::size_t ncell = static_cast<std::size_t>(grid.nx) * grid.ny * grid.nz;
+		std::vector<int> counts(ncell + 1, 0);
+		auto cell_of = [&](const std::array<float,3>& p) {
+			int ix = static_cast<int>((p[0] - grid.lo[0]) / grid.cell);
+			int iy = static_cast<int>((p[1] - grid.lo[1]) / grid.cell);
+			int iz = static_cast<int>((p[2] - grid.lo[2]) / grid.cell);
+			ix = std::min(std::max(ix, 0), grid.nx - 1);
+			iy = std::min(std::max(iy, 0), grid.ny - 1);
+			iz = std::min(std::max(iz, 0), grid.nz - 1);
+			return (static_cast<std::size_t>(iz) * grid.ny + iy) * grid.nx + ix;
+		};
+		for (const auto& p : grid.pts) ++counts[cell_of(p) + 1];
+		for (std::size_t c = 1; c <= ncell; ++c) counts[c] += counts[c - 1];
+		grid.starts = counts;
+		grid.items.assign(grid.pts.size(), 0);
+		std::vector<int> fill(ncell, 0);
+		for (std::size_t i = 0; i < grid.pts.size(); ++i) {
+			const std::size_t c = cell_of(grid.pts[i]);
+			grid.items[static_cast<std::size_t>(grid.starts[c]) + fill[c]] = static_cast<int>(i);
+			++fill[c];
+		}
+		fprintf(stderr,
+		        "[DSVIB-INIT] receptor_heavy_nodes=%d grid=%dx%dx%d cell=%.2fA "
+		        "cutoff=%.2fA T=%.2fK basis=torsional units=kcal/mol/K\n",
+		        grid.n_receptor_heavy, grid.nx, grid.ny, grid.nz,
+		        grid.cell, static_cast<double>(tencm::DEFAULT_RC), T_K);
+	});
+	if (grid.pts.empty()) { cf->dsvib_status = 4; return; }
+
+	// ── per-pose: gather receptor heavy atoms within cutoff of the ligand ───
+	const float rc = tencm::DEFAULT_RC;
+	std::vector<std::array<float,3>>& field = tl_ic2cf_scratch.dsvib_field;
+	std::vector<char>& picked = tl_ic2cf_scratch.dsvib_picked;
+	field.clear();
+	picked.assign(grid.pts.size(), 0);
+	auto is_h2 = [](const atom& a) noexcept {
+		const char* e = a.element;
+		while (*e == ' ') ++e;
+		return e[0] == 'H' && (e[1] == '\0' || e[1] == ' ');
+	};
+	const float rc2 = rc * rc;
+	for (int ai = lig_start; ai <= lig_end_incl; ++ai) {
+		if (is_h2(atoms[ai])) continue;
+		const float* L = atoms[ai].coor;
+		int ix = static_cast<int>((L[0] - grid.lo[0]) / grid.cell);
+		int iy = static_cast<int>((L[1] - grid.lo[1]) / grid.cell);
+		int iz = static_cast<int>((L[2] - grid.lo[2]) / grid.cell);
+		for (int dz = -1; dz <= 1; ++dz)
+		for (int dy = -1; dy <= 1; ++dy)
+		for (int dx = -1; dx <= 1; ++dx) {
+			const int jx = ix + dx, jy = iy + dy, jz = iz + dz;
+			if (jx < 0 || jy < 0 || jz < 0 || jx >= grid.nx || jy >= grid.ny || jz >= grid.nz)
+				continue;
+			const std::size_t c =
+				(static_cast<std::size_t>(jz) * grid.ny + jy) * grid.nx + jx;
+			for (int t = grid.starts[c]; t < grid.starts[c + 1]; ++t) {
+				const int pi = grid.items[static_cast<std::size_t>(t)];
+				if (picked[static_cast<std::size_t>(pi)]) continue;
+				const auto& P = grid.pts[static_cast<std::size_t>(pi)];
+				const float ddx = P[0] - L[0], ddy = P[1] - L[1], ddz = P[2] - L[2];
+				if (ddx*ddx + ddy*ddy + ddz*ddz > rc2) continue;
+				picked[static_cast<std::size_t>(pi)] = 1;
+				field.push_back(P);
+			}
+		}
+	}
+
+	// ── the two spectra: SAME DOFs, SAME spring, SAME cutoff, one difference ──
+	tencm::TorsionalENM enm_free, enm_field;
+	enm_free.build_from_ligand_torsional(atoms, lig_start, lig_end_incl + 1, rc);
+	enm_field.build_from_ligand_torsional_in_field(
+		atoms, lig_start, lig_end_incl + 1,
+		field.empty() ? nullptr : field.data(),
+		static_cast<int>(field.size()), rc);
+
+	cf->dsvib_ndof = enm_free.n_torsion_dofs();
+
+	// Fewer than 2 rotatable bonds: the builder refuses (the 32-bin Shannon
+	// functional is undefined there), but the THERMODYNAMIC answer is not
+	// undefined -- a rigid ligand has no internal torsional entropy to lose, so
+	// S_vib = 0 exactly in both states and dS_vib = 0 exactly. Report that as a
+	// computed zero with its own status, not as a failure and not as a silent 0.
+	if (!enm_free.is_built() || !enm_field.is_built()) {
+		if (cf->dsvib_ndof < 2) {
+			cf->dsvib_s_free = 0.0; cf->dsvib_s_field = 0.0;
+			cf->dsvib_ds = 0.0;     cf->minus_T_dsvib = 0.0;
+			cf->dsvib_status = 2;
+		} else {
+			cf->dsvib_status = 4;
+		}
+		return;
+	}
+
+	const std::vector<double> ev_free  = enm_free.vibrational_eigenvalues();
+	const std::vector<double> ev_field = enm_field.vibrational_eigenvalues();
+	if (ev_free.size() != ev_field.size() || ev_free.empty()) {
+		// The calibration prefactor only cancels when both spectra carry the same
+		// number of modes. It does not here, so the difference would be
+		// contaminated by the uncalibrated scale. Refuse; do not emit a number.
+		cf->dsvib_status = 3;
+		return;
+	}
+
+	auto to_modes = [](const std::vector<double>& ev) {
+		std::vector<encom::NormalMode> m(ev.size());
+		for (std::size_t i = 0; i < ev.size(); ++i) {
+			m[i].index      = static_cast<int>(i) + 1;
+			m[i].eigenvalue = ev[i];
+			m[i].frequency  = std::sqrt(ev[i]);
+		}
+		return m;
+	};
+	// eigenvalue_cutoff = 0.0, NOT the 1e-6 default: a second, different filter
+	// here could drop a mode in one state and not the other and re-break the
+	// mode-count conservation that was just checked.
+	const encom::VibrationalEntropy S_free =
+		encom::ENCoMEngine::compute_vibrational_entropy(to_modes(ev_free),  T_K, 0.0);
+	const encom::VibrationalEntropy S_field =
+		encom::ENCoMEngine::compute_vibrational_entropy(to_modes(ev_field), T_K, 0.0);
+	if (S_free.n_modes != S_field.n_modes) { cf->dsvib_status = 3; return; }
+
+	cf->dsvib_s_free  = S_free.S_vib_kcal_mol_K;
+	cf->dsvib_s_field = S_field.S_vib_kcal_mol_K;
+	cf->dsvib_ds      = cf->dsvib_s_field - cf->dsvib_s_free;
+	cf->minus_T_dsvib = -T_K * cf->dsvib_ds;
+	if (!std::isfinite(cf->minus_T_dsvib)) {
+		cf->dsvib_s_free = 0.0; cf->dsvib_s_field = 0.0;
+		cf->dsvib_ds = 0.0;     cf->minus_T_dsvib = 0.0;
+		cf->dsvib_status = 4;
+		return;
+	}
+	cf->dsvib_status = 1;
 }
 
 /******************************************************************************
@@ -564,6 +800,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	FA->ori[2] = ori_save[2];
 
 	cf.h_rep = compute_ligand_h_rep(FA, atoms);
+	compute_ligand_dsvib(FA, atoms, &cf);
 
 	return cf;
 
@@ -586,6 +823,17 @@ double get_apparent_cf_evalue(cfstr* cf) {
 			             + cf->hbond + cf->gist_desolv + cf->metal_coord + cf->entropy + cf->pb_clash;
 			if (FA && FA->tencom_weight > 0.0f) {
 				total += static_cast<double>(FA->tencom_weight) * cf->h_rep;
+			}
+			// -T*dS_vib enters with UNIT coefficient. There is deliberately no
+			// weight field to multiply here: the term is already a free energy in
+			// kcal/mol, and a fitted weight is exactly what makes the h_rep line
+			// above a heuristic instead of physics. Any weight sweep is a
+			// sensitivity diagnostic run from outside, never a fit inside the CF.
+			// Guarded on status == 1 so a refused computation (degenerate spectrum,
+			// mode-count mismatch, missing temperature) contributes nothing rather
+			// than a zero that reads like a measured zero.
+			if (FA && FA->dsvib_mode > 0 && cf->dsvib_status == 1) {
+				total += cf->minus_T_dsvib;
 			}
 			return total;
 		}

@@ -760,7 +760,51 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			snprintf(tmpremark, MAX_REMARK, "REMARK CF.elec=%8.5f\n",cf_ptr->elec);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist_desolv=%8.5f\n",cf_ptr->gist_desolv);
-			safe_remark_cat(remark, tmpremark, &remark_len);
+			safe_remark_cat(remark,tmpremark,&remark_len);
+			// ── FLEXAIDDS_DSVIB components, WITH units and basis ──────────────
+			// PLACEMENT MATTERS. This block sits AFTER the gist_desolv
+			// safe_remark_cat above and appends its OWN cat for every line it
+			// writes, including the last. The first version of this edit relied on
+			// the next pre-existing cat to flush its final snprintf, which meant
+			// that with the gate OFF -- the default -- tmpremark still held the
+			// gist_desolv string and that trailing cat appended it a SECOND time,
+			// changing every emitted pose PDB in the default configuration. A
+			// default-off feature that alters default output is not default-off.
+			// Written whenever the gate produced a status, including the refusals:
+			// a row that says status=2 (rigid ligand, dS_vib = 0 by physics) or
+			// status=3 (mode-count mismatch, refused) is information, whereas an
+			// absent line is indistinguishable from a build without the feature.
+			// Units are spelled out on every line because the engine's OTHER
+			// entropies (h_rep, cf.entropy) are information measures in nats/bits
+			// and these are thermodynamic quantities in kcal/mol -- mixing them is
+			// the exact error this term exists to remove.
+			if (cf_ptr->dsvib_status != 0) {
+				snprintf(tmpremark, MAX_REMARK,
+				         "REMARK DSVIB.status=%d basis=torsional "
+				         "n_torsion_dofs=%d units_S=kcal/mol/K units_G=kcal/mol\n",
+				         cf_ptr->dsvib_status, cf_ptr->dsvib_ndof);
+				safe_remark_cat(remark,tmpremark,&remark_len);
+				snprintf(tmpremark, MAX_REMARK,
+				         "REMARK DSVIB.S_complex_minus_apo=%.8f\n", cf_ptr->dsvib_s_field);
+				safe_remark_cat(remark,tmpremark,&remark_len);
+				snprintf(tmpremark, MAX_REMARK,
+				         "REMARK DSVIB.S_ligand_free=%.8f\n", cf_ptr->dsvib_s_free);
+				safe_remark_cat(remark,tmpremark,&remark_len);
+				// Not a computed quantity: identically absent in the rigid-receptor
+				// limit (every receptor internal coordinate is frozen, so it
+				// contributes no mode to either the complex or the apo spectrum).
+				// Emitted explicitly so the cycle is auditable from the file.
+				snprintf(tmpremark, MAX_REMARK,
+				         "REMARK DSVIB.S_apo=0.00000000 apo_treatment=frozen_receptor_dofs_cancel_exactly\n");
+				safe_remark_cat(remark,tmpremark,&remark_len);
+				snprintf(tmpremark, MAX_REMARK,
+				         "REMARK DSVIB.dS_vib=%.8f\n", cf_ptr->dsvib_ds);
+				safe_remark_cat(remark,tmpremark,&remark_len);
+				snprintf(tmpremark, MAX_REMARK,
+				         "REMARK DSVIB.minus_T_dS_vib=%.8f weight=1.0_by_construction\n",
+				         cf_ptr->minus_T_dsvib);
+				safe_remark_cat(remark,tmpremark,&remark_len);
+			}
 			snprintf(tmpremark, MAX_REMARK,
 				"REMARK CF.elec_gist_con_status = gated_inert_on_claim_path (use_elec default off; GIST hard-disabled; con constraints-only; CF.gist unused vs gist_desolv)\n");
 			safe_remark_cat(remark, tmpremark, &remark_len);

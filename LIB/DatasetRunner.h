@@ -243,6 +243,28 @@ struct DockingResult {
     // measured basis; a row reading "not_run" means no model was assembled, which
     // is information, whereas the old default was an unfalsifiable claim.
     std::string eigen_model{"not_run"};
+
+    // ── FLEXAIDDS_DSVIB: thermodynamic ligand -T*dS_vib, read back from the
+    // elected pose's own REMARKs so the number in the CSV is the one the engine
+    // actually scored with, not a re-derivation. These move in the SAME commit as
+    // the writer by rule: a column added to cluster.cpp's REMARK block and not
+    // here would be an output nobody reads, and a column here with no writer
+    // would be an unfalsifiable NA.
+    //
+    // dsvib_status: 0 gate off / absent, 1 ok, 2 degenerate (<2 torsional DOFs;
+    // dS_vib = 0 exactly, which is correct physics for a rigid ligand, not a
+    // failure), 3 mode-count mismatch (calibration cancellation precondition
+    // violated -> refused), 4 model did not build, 5 no run temperature.
+    int         dsvib_status{0};
+    int         dsvib_ndof{-1};              // M dihedral DOFs tENCoM assembled
+    int         dsvib_nflexbonds{-1};        // engine's own FA->nflexbonds, from the ligtopo sidecar
+    std::string dsvib_basis{"none"};         // torsional | none
+    // UNITS, stated in the field names because this file also carries nats-valued
+    // Shannon columns (H_rep_*, D_vib, elected_H_vib) and the two must not mix.
+    float       dsvib_S_complex_minus_apo_kcal_mol_K{std::numeric_limits<float>::quiet_NaN()};
+    float       dsvib_S_ligand_free_kcal_mol_K{std::numeric_limits<float>::quiet_NaN()};
+    float       dsvib_dS_kcal_mol_K{std::numeric_limits<float>::quiet_NaN()};
+    float       dsvib_minus_T_dS_kcal_mol{std::numeric_limits<float>::quiet_NaN()};
     // Clash diagnostics (populated from stdout parsing)
     long  individuals_clashed{0};     // total clashing evaluations
     long  individuals_total{0};       // total evaluations (across all generations)

@@ -216,6 +216,14 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
     // ── Thermodynamics ──
     {
         FA->temperature = static_cast<unsigned int>(jint(config, "thermodynamics", "temperature", 300));
+        // Capture the RUN's temperature for the -T*dS_vib product before anything
+        // can perturb FA->temperature. gaboom.cpp:724 and :1201 overwrite
+        // FA->temperature during annealing (T_hot -> target over the run) and only
+        // restore it at :1518, so reading FA->temperature from inside ic2cf would
+        // scale a thermodynamic free energy by an annealing SELECTION temperature.
+        // This field is the target temperature, i.e. the same value that reaches
+        // "REMARK temperature" in the pose writers.
+        FA->dsvib_T_K = static_cast<float>(FA->temperature);
         if (FA->temperature > 0) {
             // β = 1 / T — in FlexAID's partition function Z = Σ exp(−CF_i/T), T is an
             // effective softmax temperature over the (unitless) CF landscape, NOT a

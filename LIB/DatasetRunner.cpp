@@ -9166,6 +9166,80 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
             result.claim_ready = false;
         }
 
+        // ── FLEXAIDDS_DSVIB read-back from the elected pose's own REMARKs ─────
+        // The engine wrote these next to the CF components it scored with
+        // (cluster.cpp), so parsing them here reports the value that was IN the
+        // objective rather than a re-derivation that could differ. Absent REMARKs
+        // leave status 0 / NaN, which is how a gate-OFF run must look.
+        if (!result.elected_pose_path.empty()) {
+            std::ifstream dfs(result.elected_pose_path);
+            std::string   dl;
+            auto grab = [](const std::string& line, const char* key, float& dst) {
+                const auto p = line.find(key);
+                if (p == std::string::npos) return false;
+                try { dst = std::stof(line.substr(p + std::strlen(key))); }
+                catch (...) {}
+                return true;
+            };
+            while (std::getline(dfs, dl)) {
+                if (dl.find("REMARK DSVIB.status=") != std::string::npos) {
+                    try {
+                        result.dsvib_status =
+                            std::stoi(dl.substr(dl.find("status=") + 7));
+                    } catch (...) {}
+                    const auto bp = dl.find("basis=");
+                    if (bp != std::string::npos) {
+                        std::string b = dl.substr(bp + 6);
+                        b = b.substr(0, b.find_first_of(" \t\r\n"));
+                        result.dsvib_basis = b;
+                    }
+                    const auto np = dl.find("n_torsion_dofs=");
+                    if (np != std::string::npos) {
+                        try { result.dsvib_ndof = std::stoi(dl.substr(np + 15)); }
+                        catch (...) {}
+                    }
+                    continue;
+                }
+                if (grab(dl, "REMARK DSVIB.S_complex_minus_apo=",
+                         result.dsvib_S_complex_minus_apo_kcal_mol_K)) continue;
+                if (grab(dl, "REMARK DSVIB.S_ligand_free=",
+                         result.dsvib_S_ligand_free_kcal_mol_K)) continue;
+                if (grab(dl, "REMARK DSVIB.dS_vib=",
+                         result.dsvib_dS_kcal_mol_K)) continue;
+                if (grab(dl, "REMARK DSVIB.minus_T_dS_vib=",
+                         result.dsvib_minus_T_dS_kcal_mol)) continue;
+            }
+            // Cross-check the two INDEPENDENT DOF perceptions, the same rule the
+            // torsional pose path already applies at :1220. The sidecar's
+            // n_flexbonds is the engine's own count written at dock time from
+            // FA->nflexbonds; dsvib_ndof is what tENCoM's perception assembled.
+            // A disagreement means the entropy was computed over a different
+            // coordinate set than the search moved in, so the number is not
+            // comparable to the search result that produced it.
+            const std::string dsc = find_ligtopo_sidecar(result.elected_pose_path);
+            if (!dsc.empty()) {
+                std::ifstream sf(dsc);
+                std::string   sline, sall;
+                while (std::getline(sf, sline)) sall += sline;
+                const auto kp = sall.find("\"n_flexbonds\"");
+                if (kp != std::string::npos) {
+                    const auto cp = sall.find(':', kp);
+                    if (cp != std::string::npos) {
+                        try { result.dsvib_nflexbonds = std::stoi(sall.substr(cp + 1)); }
+                        catch (...) {}
+                    }
+                }
+            }
+            if (result.dsvib_status == 1 && result.dsvib_ndof >= 0 &&
+                result.dsvib_nflexbonds >= 0 &&
+                result.dsvib_ndof != result.dsvib_nflexbonds) {
+                std::cerr << "  [DSVIB-DOF-MISMATCH] " << entry.pdb_id
+                          << ": REMARK n_torsion_dofs=" << result.dsvib_ndof
+                          << " but engine nflexbonds=" << result.dsvib_nflexbonds
+                          << "\n";
+            }
+        }
+
         // ── Exact-pose tENCoM/Eigen validator + population H(ω) diagnostic ──
         // Enabled by default because claim_ready requires it. Set
         // FLEXAIDDS_HVIB=0 only for non-claim diagnostics. The pooled metrics do
@@ -9390,6 +9464,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "posebusters_pose_sha256,posebusters_input_sha256,"
                            "tencom_status,tencom_basis,eigen_status,"
                            "tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
+                           // FLEXAIDDS_DSVIB. Units are in the column names on
+                           // purpose: elected_H_vib above is nats, these are
+                           // kcal/mol. Added to header and row TOGETHER -- a
+                           // header short of the row silently shifts every later
+                           // named column left in pandas (see the note below).
+                           "dsvib_status,dsvib_basis,dsvib_ndof,dsvib_nflexbonds,"
+                           "dsvib_S_complex_minus_apo_kcal_mol_K,dsvib_S_ligand_free_kcal_mol_K,"
+                           "dsvib_dS_kcal_mol_K,dsvib_minus_T_dS_kcal_mol,"
                            "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
                            "seed_echo,pose_source,"
                            "election_mode,consensus_count,rank0_demoted,"
@@ -9449,6 +9531,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.tencom_pose_sha256 << ","
                         << result.eigen_n_modes << ","
                         << result.elected_H_vib << ","
+                        << result.dsvib_status << ","
+                        << result.dsvib_basis << ","
+                        << result.dsvib_ndof << ","
+                        << result.dsvib_nflexbonds << ","
+                        << (std::isnan(result.dsvib_S_complex_minus_apo_kcal_mol_K) ? "NA" : std::to_string(result.dsvib_S_complex_minus_apo_kcal_mol_K)) << ","
+                        << (std::isnan(result.dsvib_S_ligand_free_kcal_mol_K) ? "NA" : std::to_string(result.dsvib_S_ligand_free_kcal_mol_K)) << ","
+                        << (std::isnan(result.dsvib_dS_kcal_mol_K) ? "NA" : std::to_string(result.dsvib_dS_kcal_mol_K)) << ","
+                        << (std::isnan(result.dsvib_minus_T_dS_kcal_mol) ? "NA" : std::to_string(result.dsvib_minus_T_dS_kcal_mol)) << ","
                         << result.cf_native << ","
                         << result.best_cluster_rmsd << ","
                         << result.conditional_scanned_pool_ceiling << ","
@@ -9871,6 +9961,9 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                "pb_backend,pose_sha256,rmsd_pose_sha256,"
                "posebusters_pose_sha256,posebusters_input_sha256,"
                "tencom_status,tencom_basis,eigen_status,tencom_pose_sha256,eigen_n_modes,elected_H_vib,"
+               "dsvib_status,dsvib_basis,dsvib_ndof,dsvib_nflexbonds,"
+               "dsvib_S_complex_minus_apo_kcal_mol_K,dsvib_S_ligand_free_kcal_mol_K,"
+               "dsvib_dS_kcal_mol_K,dsvib_minus_T_dS_kcal_mol,"
                "native_pose_seeded,native_pose_seed_fraction,protocol_claim_eligible,"
                "cf_native,best_cluster_rmsd,conditional_scanned_pool_ceiling,best_cluster_idx,"
                "seed_echo,pose_source,"
@@ -9921,6 +10014,14 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << r.tencom_pose_sha256 << ","
                 << r.eigen_n_modes << ","
                 << r.elected_H_vib << ","
+                << r.dsvib_status << ","
+                << r.dsvib_basis << ","
+                << r.dsvib_ndof << ","
+                << r.dsvib_nflexbonds << ","
+                << (std::isnan(r.dsvib_S_complex_minus_apo_kcal_mol_K) ? "NA" : std::to_string(r.dsvib_S_complex_minus_apo_kcal_mol_K)) << ","
+                << (std::isnan(r.dsvib_S_ligand_free_kcal_mol_K) ? "NA" : std::to_string(r.dsvib_S_ligand_free_kcal_mol_K)) << ","
+                << (std::isnan(r.dsvib_dS_kcal_mol_K) ? "NA" : std::to_string(r.dsvib_dS_kcal_mol_K)) << ","
+                << (std::isnan(r.dsvib_minus_T_dS_kcal_mol) ? "NA" : std::to_string(r.dsvib_minus_T_dS_kcal_mol)) << ","
                 << (r.native_pose_seeded ? 1 : 0) << ","
                 << r.native_pose_seed_fraction << ","
                 << (r.protocol_claim_eligible ? 1 : 0) << ","

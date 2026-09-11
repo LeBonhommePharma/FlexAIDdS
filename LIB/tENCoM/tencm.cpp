@@ -246,15 +246,19 @@ void TorsionalENM::build_from_ligand(const atom* atoms,
 // directly (FOPTICS.cpp:563), dependants following by .shift (:571). Taking the
 // DOFs from that representation rather than re-perceiving them means the entropy
 // is computed over the coordinates the search actually moves in.
-void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
-                                               int   lig_start,
-                                               int   lig_end,
-                                               float cutoff,
-                                               float k0)
+// Shared DOF/adjacency perception. Extracted from the atom[] overload so the
+// vacuum build and the rigid-field build cannot perceive DIFFERENT DOF sets:
+// dS_vib = S(field) - S(vacuum) is only a differential when both states span the
+// same M dihedral coordinates, and two copies of this loop could drift apart.
+void TorsionalENM::perceive_ligand_topology_(const atom* atoms,
+                                             int lig_start,
+                                             int lig_end,
+                                             std::vector<std::array<float,3>>& xyz,
+                                             LigandTopology& topo)
 {
-    built_ = false;
-    modes_.clear();
-    n_torsion_dofs_ = 0;
+    xyz.clear();
+    topo.rot_bonds.clear();
+    topo.adjacency.clear();
     if (atoms == nullptr || lig_end <= lig_start) return;
 
     auto is_h = [](const atom& a) noexcept {
@@ -267,14 +271,13 @@ void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
 
     // Heavy-atom nodes, plus a global-index -> node-index map.
     std::vector<int> node_of(span, -1);
-    std::vector<std::array<float,3>> xyz;
     for (int ai = lig_start; ai < lig_end; ++ai) {
         if (is_h(atoms[ai])) continue;
         node_of[static_cast<std::size_t>(ai - lig_start)] = static_cast<int>(xyz.size());
         xyz.push_back({ atoms[ai].coor[0], atoms[ai].coor[1], atoms[ai].coor[2] });
     }
     const int Na = static_cast<int>(xyz.size());
-    if (Na < 3) return;
+    if (Na < 3) { xyz.clear(); return; }
 
     // Topology in node space. NOTE the DOF rule here is a PROXY for the engine's
     // own flexbond list: distinct rec[1]--rec[0] bonds over reconstruction-flagged
@@ -282,7 +285,6 @@ void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
     // n_torsion_dofs() exists and why callers must cross-check it. A caller that
     // HAS the engine's list (via the <name>_ligtopo.json sidecar) should prefer
     // the explicit overload below, which needs no proxy at all.
-    LigandTopology topo;
     topo.adjacency.assign(static_cast<std::size_t>(Na), {});
     for (int ai = lig_start; ai < lig_end; ++ai) {
         const int na = node_of[static_cast<std::size_t>(ai - lig_start)];
@@ -307,8 +309,52 @@ void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
         if (std::find(topo.rot_bonds.begin(), topo.rot_bonds.end(), key)
             == topo.rot_bonds.end()) topo.rot_bonds.push_back(key);
     }
+}
 
-    assemble_torsional_(xyz.data(), Na, topo, cutoff, k0);
+// atom[] entry point, VACUUM state (no environment).
+void TorsionalENM::build_from_ligand_torsional(const atom* atoms,
+                                               int   lig_start,
+                                               int   lig_end,
+                                               float cutoff,
+                                               float k0)
+{
+    built_ = false;
+    modes_.clear();
+    n_torsion_dofs_ = 0;
+    n_field_nodes_  = 0;
+
+    std::vector<std::array<float,3>> xyz;
+    LigandTopology topo;
+    perceive_ligand_topology_(atoms, lig_start, lig_end, xyz, topo);
+    if (xyz.size() < 3) return;
+
+    assemble_torsional_(xyz.data(), static_cast<int>(xyz.size()), topo,
+                        nullptr, 0, cutoff, k0);
+}
+
+// atom[] entry point, RIGID-FIELD state. Same perception, same DOFs, same
+// spring law -- the ONLY difference from the vacuum call above is the fixed
+// environment node array, which is exactly the difference dS_vib measures.
+void TorsionalENM::build_from_ligand_torsional_in_field(const atom* atoms,
+                                                        int   lig_start,
+                                                        int   lig_end,
+                                                        const std::array<float,3>* field_xyz,
+                                                        int   n_field,
+                                                        float cutoff,
+                                                        float k0)
+{
+    built_ = false;
+    modes_.clear();
+    n_torsion_dofs_ = 0;
+    n_field_nodes_  = 0;
+
+    std::vector<std::array<float,3>> xyz;
+    LigandTopology topo;
+    perceive_ligand_topology_(atoms, lig_start, lig_end, xyz, topo);
+    if (xyz.size() < 3) return;
+
+    assemble_torsional_(xyz.data(), static_cast<int>(xyz.size()), topo,
+                        field_xyz, n_field, cutoff, k0);
 }
 
 // Explicit-topology entry point. Used by post-hoc consumers that read a pose file
@@ -322,8 +368,26 @@ void TorsionalENM::build_from_ligand_torsional(const std::array<float,3>* xyz,
     built_ = false;
     modes_.clear();
     n_torsion_dofs_ = 0;
+    n_field_nodes_  = 0;
     if (xyz == nullptr || n_nodes < 3) return;
-    assemble_torsional_(xyz, n_nodes, topo, cutoff, k0);
+    assemble_torsional_(xyz, n_nodes, topo, nullptr, 0, cutoff, k0);
+}
+
+// Explicit-topology entry point, RIGID-FIELD state.
+void TorsionalENM::build_from_ligand_torsional_in_field(const std::array<float,3>* xyz,
+                                                        int   n_nodes,
+                                                        const LigandTopology& topo,
+                                                        const std::array<float,3>* field_xyz,
+                                                        int   n_field,
+                                                        float cutoff,
+                                                        float k0)
+{
+    built_ = false;
+    modes_.clear();
+    n_torsion_dofs_ = 0;
+    n_field_nodes_  = 0;
+    if (xyz == nullptr || n_nodes < 3) return;
+    assemble_torsional_(xyz, n_nodes, topo, field_xyz, n_field, cutoff, k0);
 }
 
 // ─── shared core ────────────────────────────────────────────────────────────
@@ -333,6 +397,8 @@ void TorsionalENM::build_from_ligand_torsional(const std::array<float,3>* xyz,
 void TorsionalENM::assemble_torsional_(const std::array<float,3>* xyz,
                                        int n_nodes,
                                        const LigandTopology& topo,
+                                       const std::array<float,3>* field_xyz,
+                                       int n_field,
                                        float cutoff,
                                        float k0)
 {
@@ -342,6 +408,8 @@ void TorsionalENM::assemble_torsional_(const std::array<float,3>* xyz,
     const int Na = n_nodes;
     const int M  = static_cast<int>(topo.rot_bonds.size());
     n_torsion_dofs_ = M;
+    const int Nf = (field_xyz != nullptr && n_field > 0) ? n_field : 0;
+    n_field_nodes_ = Nf;
 
     // Fewer than 2 DOFs is a DEGENERATE spectrum, not a failed computation: a
     // rigid ligand has no internal vibrational entropy. Thermodynamic S_vib would
@@ -418,6 +486,52 @@ void TorsionalENM::assemble_torsional_(const std::array<float,3>* xyz,
                 proj[static_cast<std::size_t>(k)] =
                     ux * (ja[0] - jb[0]) + uy * (ja[1] - jb[1]) + uz * (ja[2] - jb[2]);
             }
+            for (int k = 0; k < M; ++k) {
+                const double pk = proj[static_cast<std::size_t>(k)];
+                if (pk == 0.0) continue;
+                for (int l = k; l < M; ++l) {
+                    const double hh = kij * pk * proj[static_cast<std::size_t>(l)];
+                    H(k, l) += hh;
+                    if (l != k) H(l, k) += hh;
+                }
+            }
+        }
+    }
+
+    // ── fixed environment (rigid receptor) contribution ─────────────────────
+    //
+    // A receptor atom held rigid has displacement identically zero, so its
+    // Jacobian row is zero and it adds NO DOF -- H stays M x M and the mode
+    // count is conserved between the vacuum and field states, which is the
+    // precondition for the calibration prefactor cancelling out of
+    // dS_vib = S(field) - S(vacuum). The spring law and cutoff are the SAME as
+    // the ligand-ligand loop above (one physics, not two), so the only thing
+    // that distinguishes the two states is which contacts exist.
+    //
+    // H_kl += k_af (u_af . J_k[a]) (u_af . J_l[a])   -- the dJ difference
+    // collapses to J_k[a] alone because J_k[fixed] = 0.
+    for (int a = 0; a < Na; ++a) {
+        for (int f = 0; f < Nf; ++f) {
+            const double dx = field_xyz[f][0] - xyz[a][0];
+            const double dy = field_xyz[f][1] - xyz[a][1];
+            const double dz = field_xyz[f][2] - xyz[a][2];
+            const double r2 = dx*dx + dy*dy + dz*dz;
+            if (r2 > rc2 || r2 < 1e-6) continue;
+
+            const double r0    = std::sqrt(r2);
+            const double ratio = static_cast<double>(cutoff_) / r0;
+            const double r3    = ratio * ratio * ratio;
+            const double kij   = static_cast<double>(k0_) * (r3 * r3);
+            const double ux = dx / r0, uy = dy / r0, uz = dz / r0;
+
+            bool any = false;
+            for (int k = 0; k < M; ++k) {
+                const auto& ja = J[static_cast<std::size_t>(k) * Na + a];
+                const double p = ux * ja[0] + uy * ja[1] + uz * ja[2];
+                proj[static_cast<std::size_t>(k)] = p;
+                if (p != 0.0) any = true;
+            }
+            if (!any) continue;
             for (int k = 0; k < M; ++k) {
                 const double pk = proj[static_cast<std::size_t>(k)];
                 if (pk == 0.0) continue;

@@ -813,6 +813,20 @@ int main(int argc, char **argv){
 	FA->metal_coord_cn_weight=0.5;
 	FA->tencom_weight=0.0f;
 
+	// FLEXAIDDS_DSVIB: thermodynamic ligand -T*dS_vib in the objective.
+	// OFF unless the env gate is explicitly truthy, so an unset environment
+	// reproduces every stored arm bit-for-bit. Temperature is left at 0 here and
+	// filled from the RUN's configuration (config_parser.cpp) -- a 0 that survives
+	// to scoring makes the term refuse rather than assume a literal 300 K.
+	{
+		const char* dsv = std::getenv("FLEXAIDDS_DSVIB");
+		FA->dsvib_mode = (dsv != NULL && dsv[0] != '\0'
+		                  && std::strcmp(dsv, "0") != 0
+		                  && std::strcmp(dsv, "off") != 0
+		                  && std::strcmp(dsv, "false") != 0) ? 1 : 0;
+	}
+	FA->dsvib_T_K=0.0f;
+
 	FA->useflexdee=0;
 	FA->num_constraints=0;
 

@@ -194,6 +194,36 @@ struct cf_str{  // Complementarity Function value structure
 	double metal_coord; // metal ion coordination energy (Morse potential)
 	double h_rep;  // tENCoM vibrational-mode Shannon entropy H(ω) (nats; diagnostic + CF when tencom_weight > 0)
 	double entropy;// Shannon contact-type distribution penalty (kcal/mol; vct_entropy_weight * H_bits)
+
+	// ── thermodynamic ligand vibrational entropy of binding (FLEXAIDDS_DSVIB) ──
+	// DISTINCT FROM h_rep ABOVE IN EVERY RESPECT THAT MATTERS. h_rep is the
+	// dimensionless 32-bin Shannon entropy of the log-frequency spectrum of a
+	// CARTESIAN ligand ANM, and it needs a fitted tencom_weight to enter a CF at
+	// all. These are the classical-harmonic S_vib of the ligand's own TORSIONAL
+	// (dihedral) DOFs, in kcal mol^-1 K^-1, and minus_T_dsvib enters the CF with
+	// weight 1 BY CONSTRUCTION -- it is already a free energy in kcal/mol.
+	//
+	// dsvib_s_field is the complex term in the rigid-receptor limit: the ligand's
+	// torsional spectrum in the static field of the receptor heavy atoms. With
+	// autoflex_max = 0 no receptor internal coordinate is a search variable, so
+	// the receptor DOFs are frozen in both states, contribute no mode to either
+	// spectrum, and S_vib(complex) - S_vib(apo) reduces exactly to this. The apo
+	// term is therefore not a separate number here and is emitted as 0 with its
+	// reason recorded, NOT silently omitted.
+	//
+	// UNITS ARE kcal mol^-1 K^-1 for the entropies and kcal mol^-1 for the -T dS
+	// product. NOT nats: the engine's Shannon quantities (h_rep, cf.entropy's
+	// H_bits) are information measures in nats/bits and do not mix with these.
+	double dsvib_s_field;  // S_vib(ligand torsional | rigid receptor field), kcal/mol/K
+	double dsvib_s_free;   // S_vib(ligand torsional | vacuum),               kcal/mol/K
+	double dsvib_ds;       // dS_vib = s_field - s_free,                      kcal/mol/K
+	double minus_T_dsvib;  // -T * dS_vib,                                    kcal/mol
+	int    dsvib_ndof;     // M dihedral DOFs the spectra were built over (identical in both states)
+	// 0 = gate off (never computed)      1 = ok
+	// 2 = degenerate: fewer than 2 torsional DOFs (rigid ligand; dS_vib is 0 by physics)
+	// 3 = mode-count mismatch between the two states (cancellation precondition violated)
+	// 4 = a model did not build            5 = no run temperature available
+	int    dsvib_status;
 	double pb_clash;// PoseBust-basis physical-realism clash penalty (uncapped, severity-scaled; pb_clash_weight * Σ overlap^p). 0 unless FLEXAIDDS_PB_CLASH_WEIGHT set.
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
@@ -530,6 +560,19 @@ struct FA_Global_struct{
 	double metal_coord_cn_weight;        // CN deviation penalty weight (default 0.5 kcal/mol per CN^2)
 
 	float tencom_weight;                 // tENCoM H_rep CF penalty weight (0.0–2.0; default 0.0 = off)
+
+	// ── FLEXAIDDS_DSVIB: thermodynamic ligand -T*dS_vib inside the objective ──
+	// A SEPARATE GATE FROM tencom_weight ON PURPOSE. tencom_weight multiplies the
+	// dimensionless Cartesian Shannon h_rep and means something else; overloading
+	// it would make one number select two different physics. 0 = off (default),
+	// 1 = on. There is no weight field because the term carries none: -T*dS_vib
+	// is a free energy in kcal/mol and enters dG with unit coefficient.
+	int   dsvib_mode;
+	// Run temperature in K for the -T*dS product, captured from the run's own
+	// configuration (the same value that reaches "REMARK temperature"), NEVER a
+	// literal in the scoring path. 0 means "not established" and the term refuses
+	// to compute rather than assuming 300.
+	float dsvib_T_K;
 
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter
