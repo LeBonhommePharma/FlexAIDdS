@@ -570,7 +570,15 @@ TEST(RunReceipt, BuildJsonHasRequiredKeys) {
     in.protocol.restarts = 5;
 
     const std::string json = flexaids::build_run_receipt_json(in);
-    EXPECT_NE(json.find("\"schema_version\": 1"), std::string::npos);
+    // Assert against the constant, not a literal. This test hardcoded "1" and
+    // went red when 3a4fa608 bumped kRunReceiptSchemaVersion to 2 to add
+    // executed_codes / executed_codes_sha256 / dataset_source_*. The Python gate
+    // (tests/test_run_receipt_codes.py) reads the constant and rode the bump
+    // without edit; this one did not. A literal here checks a number, not the
+    // writer -- and the next bump would break it again for no reason.
+    EXPECT_NE(json.find("\"schema_version\": "
+                        + std::to_string(flexaids::kRunReceiptSchemaVersion)),
+              std::string::npos);
     EXPECT_NE(json.find("\"run_id\": \"unit_test_run\""), std::string::npos);
     EXPECT_NE(json.find("\"mode\": \"defined-cleft-redock\""), std::string::npos);
     EXPECT_NE(json.find("\"temperature_K\":"), std::string::npos);
