@@ -15,6 +15,12 @@
 
 #include "TuiColor.h"
 #include "DatasetRunner.h"
+// The PDB code lists this file used to hold as string literals. GENERATED from
+// one declared canonical source per dataset by scripts/gen_dataset_codes.py, and
+// diffed against those sources by tests/test_dataset_codes_codegen.py. It also
+// carries each list's canonical source path + sha256, which the run receipt
+// records so an executed roster can be CHECKED against its declared source.
+#include "generated/dataset_codes.inc"
 #include "json_value.h"   // ligand-topology sidecar reader
 #include "DatasetRunnerStats.h"  // PoseRmsdOutcome / hungarian_rmsd declarations
 #include "DatasetThermoLog.h"
@@ -4710,19 +4716,11 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
 // =============================================================================
 
 std::vector<std::string> DatasetRunner::astex_diverse_codes() {
-    return {
-        "1G9V", "1GM8", "1GPK", "1HNN", "1HP0", "1HQ2", "1IA1", "1IGJ",
-        "1J3J", "1JD0", "1JJE", "1K3U", "1KE5", "1KZK", "1L2S", "1L7F",
-        "1LPZ", "1M2Z", "1MEH", "1MQ6", "1N1M", "1N2J", "1N2V", "1N46",
-        "1NAV", "1OF1", "1OF6", "1OPK", "1OQ5", "1OWE", "1P2Y", "1P62",
-        "1PMN", "1Q1G", "1Q41", "1Q4G", "1R1H", "1R55", "1R58", "1R9O",
-        "1S19", "1S3V", "1SG0", "1SJ0", "1SQ5", "1T40", "1T46", "1T9B",
-        "1TT1", "1TW6", "1TZ8", "1U1C", "1U4D", "1UML", "1UNL", "1UOU",
-        "1V0P", "1V48", "1V4S", "1VCJ", "1W1P", "1W2G", "1X8X", "1XM6",
-        "1XOZ", "1Y6B", "1Y6R", "1YGC", "1YQY", "1YV3", "1YVF", "1YWR",
-        "1Z95", "2BM2", "2BR1", "2BSM", "2BYS", "2C3I", "2CET", "2CGR",
-        "2D3U", "2GBP", "2HB1", "2HR7", "2J62"
-    };
+    // GENERATED list: see LIB/generated/dataset_codes.inc and
+    // scripts/gen_dataset_codes.py. Throws if no generated list is declared for
+    // this slug -- an engine that cannot name the declaration it executes must
+    // not execute a list at all.
+    return flexaids::generated::dataset_codes("astex_diverse");
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_astex() {
@@ -5027,19 +5025,11 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
 // =============================================================================
 
 std::vector<std::string> DatasetRunner::hap2_codes() {
-    // HAP2 benchmark: 59 hardcoded PDB codes from the original FlexAID
-    // validation lineage (Gaudreault & Najmanovich 2015, JCIM).
-    return {
-        "1A28", "1A4Q", "1A9M", "1ADB", "1AI5", "1B6M", "1B9V",
-        "1BMA", "1C1B", "1C5C", "1C83", "1CBX", "1CIL", "1D3H",
-        "1D4P", "1DBB", "1DWD", "1EBY", "1EED", "1ETA", "1ETR",
-        "1F0R", "1F0S", "1FCX", "1FEN", "1FKI", "1FL3", "1FPC",
-        "1GKC", "1HPV", "1HTF", "1HWI", "1IDA", "1IGJ", "1IMB",
-        "1IVC", "1K1J", "1KZK", "1LAM", "1LPM", "1MEH", "1MLD",
-        "1MMV", "1MRK", "1MTS", "1N2V", "1OKL", "1OPK", "1OWE",
-        "1PHD", "1POC", "1QPJ", "1RBP", "1STP", "1TLP", "1TMN",
-        "1TNI", "1ULB", "1UNL"
-    };
+    // GENERATED list: see LIB/generated/dataset_codes.inc and
+    // scripts/gen_dataset_codes.py. Throws if no generated list is declared for
+    // this slug -- an engine that cannot name the declaration it executes must
+    // not execute a list at all.
+    return flexaids::generated::dataset_codes("hap2");
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_hap2() {
@@ -5115,79 +5105,11 @@ bool DatasetRunner::is_non_dockable(const std::string& pdb_id, std::string* reas
 // =============================================================================
 
 std::vector<std::string> DatasetRunner::casf2016_codes() {
-    // CASF-2016 benchmark: 285 protein-ligand complexes from the PDBbind
-    // core set v2016 (Su et al. 2019, JCIM 59(2):895-913,
-    // DOI 10.1021/acs.jcim.8b00545). These are the standard
-    // scoring/ranking/docking/screening power test set.
-    //
-    // Citation corrected 2026-09-10 (dataset identity audit). This comment
-    // previously read "Li et al. 2019, JCIM 59:1105" — a MISATTRIBUTION that also
-    // disagreed with both YAML copies of this dataset
-    // (python/flexaidds/dataset_runner/datasets/casf2016.yaml and
-    // benchmarks/datasets/casf2016.yaml), which cite Su et al. Resolved against
-    // CrossRef: 10.1021/acs.jcim.8b00545 is Su et al., "Comparative Assessment of
-    // Scoring Functions: The CASF-2016 Update", J. Chem. Inf. Model. 59:895-913,
-    // and a CrossRef search of JCIM 2018-2019 for CASF returns no Li-first-author
-    // paper and nothing at page 1105. The YAMLs were right; C++ now agrees with
-    // them. (The 285-code list below is a separate defect, tracked under C3.)
-    return {
-        "1A30", "1B6J", "1B6K", "1BMA", "1C5Z", "1E66", "1EBY",
-        "1F8B", "1F8D", "1FEN", "1FKI", "1G2K", "1GKC", "1GNI",
-        "1GNM", "1GPK", "1HFS", "1HNN", "1HP0", "1HQ2", "1IA1",
-        "1J3J", "1J4R", "1JD0", "1JJE", "1K1J", "1K3U", "1KZK",
-        "1L2S", "1L7F", "1LPZ", "1M2Z", "1MQ6", "1N1M", "1N2J",
-        "1N2V", "1N46", "1NAV", "1OF1", "1OF6", "1OPK", "1OQ5",
-        "1OWE", "1OYT", "1P2Y", "1P62", "1PMN", "1PSO", "1Q1G",
-        "1Q41", "1Q4G", "1R1H", "1R55", "1R58", "1R9O", "1S19",
-        "1S3V", "1SG0", "1SJ0", "1SQ5", "1T40", "1T46", "1T49",
-        "1T9B", "1TT1", "1TW6", "1TZ8", "1U1C", "1U4D", "1UML",
-        "1UNL", "1UOU", "1V0P", "1V48", "1V4S", "1VCJ", "1W1P",
-        "1W2G", "1X8X", "1XM6", "1XOZ", "1Y6B", "1Y6R", "1YGC",
-        "1YQY", "1YV3", "1YVF", "1YWR", "1Z95", "2AL5", "2BM2",
-        "2BR1", "2BSM", "2BYS", "2C3I", "2CET", "2CGR", "2D3U",
-        "2FVD", "2G70", "2GBP", "2GQG", "2HB1", "2HR7", "2IW1",
-        "2J62", "2J78", "2JDM", "2JDY", "2OBF", "2P4Y", "2PQ9",
-        "2QBP", "2QBQ", "2QBR", "2QBS", "2R9W", "2V00", "2VO5",
-        "2VVN", "2VW5", "2W66", "2W97", "2WBG", "2WCA", "2WER",
-        "2WHB", "2WN9", "2WT2", "2WTV", "2WYG", "2X00", "2X0Y",
-        "2XB8", "2XBV", "2XDL", "2XHM", "2XJ7", "2XJJ", "2XNB",
-        "2XYS", "2Y5H", "2YFE", "2YGE", "2YLB", "2YMD", "2YPL",
-        "2ZB1", "2ZXD", "3AO4", "3AGN", "3BL1", "3BV9", "3CJ4",
-        "3CJ2", "3CKZ", "3CYU", "3D4Z", "3DD0", "3DDQ", "3DXG", "3EBP",
-        "3EIG", "3EL1", "3F3A", "3F3C", "3F3D", "3F3E", "3FV1",
-        "3FV2", "3GBB", "3GEN", "3GI5", "3GP0", "3GQL", "3GV9",
-        "3GVU", "3HUC", "3IAR", "3JVR", "3JVS", "3JY0", "3K5V",
-        "3KGP", "3KMZ", "3KR8", "3KWA", "3L3N", "3L4U", "3L4W",
-        "3L7B", "3LKA", "3MFV", "3MNA", "3MUZ", "3MY5", "3N7A",
-        "3N86", "3NW9", "3NZK", "3OAF", "3OOF", "3OUP", "3OZS",
-        "3OZT", "3P3G", "3P5O", "3PCG", "3PE2", "3PFQ", "3PRS",
-        // 3QGS and 3RP3 REMOVED 2026-09-11 (dataset identity audit, C3).
-        // Neither code is a retrievable PDB entry, so neither can be docked.
-        // Measured in one cell with controls, against data.rcsb.org:
-        //   core/entry/3QGS        -> HTTP 404   (control core/entry/1T46 -> 200)
-        //   core/entry/3RP3        -> HTTP 404
-        //   holdings/removed/entry_ids (n=6123) -> NEITHER code present
-        //                           (membership test positive control: 116L present)
-        //   holdings/unreleased/3QGS -> status_code WDRN, deposited 2011-01-24,
-        //                           "Crystal Structure of Ureidoglycolate dehydrog..."
-        //   holdings/unreleased/3RP3 -> status_code WDRN, deposited 2011-04-26
-        // So these are WITHDRAWN depositions: an ID was reserved, the deposition
-        // was withdrawn before release, and no coordinates were ever published.
-        // They are NOT obsoleted/superseded entries (absent from the removed list),
-        // so there is no successor code to substitute. A set declared as a subset
-        // of PDBbind cannot contain them.
-        "3PWW", "3QAA", "3QBH", "3QGW", "3QGY", "3QQK",
-        "3QTI", "3R88", "3RLQ", "3RT4", "3RUX", "3RYJ",
-        "3S8O", "3SXR", "3SYR", "3U5J", "3U5L", "3UAH", "3UAJ",
-        "3UIB", "3UP2", "3UPV", "3UTU", "3UWK", "3VD4", "3VF5",
-        "3VHE", "3VRI", "3WMC", "3ZSO", "3ZYX", "4AGM", "4AGN",
-        "4AGQ", "4BKT", "4CIG", "4CRA", "4CRC", "4DE1", "4DE2",
-        "4DJP", "4DLI", "4E5W", "4EA2", "4EOR", "4F09", "4F2W",
-        "4F3C", "4GAM", "4GFM", "4GID", "4GIH", "4GKM", "4GR0",
-        "4HGE", "4IQJ", "4IVB", "4IVC", "4IVD", "4J21", "4J28",
-        "4JFS", "4JIA", "4JSZ", "4JXS", "4K18", "4K77", "4KAW",
-        "4KEL", "4KNE", "4KZ6", "4KZQ"
-    };
+    // GENERATED list: see LIB/generated/dataset_codes.inc and
+    // scripts/gen_dataset_codes.py. Throws if no generated list is declared for
+    // this slug -- an engine that cannot name the declaration it executes must
+    // not execute a list at all.
+    return flexaids::generated::dataset_codes("casf2016");
 }
 
 std::vector<DatasetEntry> DatasetRunner::fetch_casf2016() {

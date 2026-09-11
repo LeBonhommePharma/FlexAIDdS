@@ -156,7 +156,7 @@ def list_files(root: Path) -> List[str]:
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIR_PARTS]
         for fn in filenames:
             low = fn.lower()
-            if low.endswith((".csv", ".csv.orig", ".yaml", ".yml", ".cpp")):
+            if low.endswith((".csv", ".csv.orig", ".yaml", ".yml", ".cpp", ".inc")):
                 out.append(str((Path(dirpath) / fn).relative_to(root)))
     return out
 
@@ -261,8 +261,12 @@ def collect(root: Path, files: Optional[Iterable[str]] = None
             n_yaml += 1
             continue
 
-        # --- hardcoded C++ lists (the 3QGS/3RP3 surface) ---
-        if suffix == ".cpp":
+        # --- C++ code lists (the 3QGS/3RP3 surface) ---
+        # ".inc" is here because scripts/gen_dataset_codes.py moved the engine's
+        # literal lists OUT of DatasetRunner.cpp and into a generated header. Without
+        # this suffix the codegen would have silently cut this gate's code-check
+        # denominator by 334 (1420 -> 1086) while it kept printing PASS.
+        if suffix in {".cpp", ".inc"}:
             text = p.read_text(encoding="utf-8", errors="replace")
             hits: List[str] = []
             for m in re.finditer(r"\b(\w*_codes)\s*\(\s*\)\s*\{", text):
