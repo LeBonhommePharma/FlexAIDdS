@@ -191,6 +191,42 @@ static const double wal_stiff = [](){
     return (v > 0.0) ? v : 0.0;
 }();
 
+// FLEXAIDDS_WAL_C1: match the soft branch's ARRIVAL SLOPE to the continuation,
+// and continue the quadratic above the join instead of freezing it at its join
+// value. Default OFF -> bit-identical to current behaviour, so every stored arm
+// stays reproducible and an A/B is possible at all.
+//
+// WHAT IT FIXES, both measured 2026-09-12 at cr=3.50, o_soft=0.40, k_wal=50:
+//   join kink   dE/do 0.029994 -> 4.916560 (164x) becomes 44.91 -> 44.91
+//   soft band   the shipped physical wall is SOFTER than the capped quadratic
+//               it replaced on 789 of 2500 sampled overlaps, worst deficit
+//               -26.4924 against a per-contact cap of 50. Under the quadratic
+//               continuation that becomes 1 of 2500 at -2.4e-07, which is the
+//               float o_soft, not structure.
+//
+// DEFAULT-FLIP CONDITION -- RATIFIED BY THE PROJECT OWNER 2026-09-12.
+// The default flips to c1_match once the validation arm completes and shows NO
+// REGRESSION in oracle-in-pool. The bar is explicitly NOT "demonstrated
+// improvement": this is a correctness fix to a wall that rewards
+// interpenetration past 1.0 A of overlap, and an improvement bar would leave a
+// known non-physical potential in place indefinitely with a gate beside it as
+// evidence someone knew. The legacy form stays reachable by gate so stored arms
+// remain reproducible.
+//
+// WHAT "NO REGRESSION" CAN MEAN AT THIS n, measured 2026-09-12 from the three
+// stored same-protocol arms (oracle-in-pool, symcorr, <2.0 A, n=84):
+//   per-arm rates          guard 67/84, seed2 68/84, seed3 69/84
+//   seed-only churn        5 / 8 / 5 discordant pairs, |net| never exceeds 2
+//   resolvable effect      at ~6 discordant a 6/0 split is needed for p<0.05;
+//                          at 4 discordant NO split reaches it
+//   bootstrap over targets 95% CI on a same-protocol net is [-3, +8] targets
+// So a null arm rules out regressions worse than about -3.6 pp and nothing
+// below 6 targets one-way is resolvable. The arm is insurance against a LARGE
+// regression, not a discovery experiment -- record it that way in the result.
+static const bool wal_c1 =
+    (std::getenv("FLEXAIDDS_WAL_C1") != nullptr &&
+     std::getenv("FLEXAIDDS_WAL_C1")[0] != '0');
+
 // ── FLEXAIDDS_WAL_CAP_MODE — receptor-state-conditional per-contact ceiling ──
 //
 // WHY. FlexAID's contact function uses IMPLICIT solvation: absence of an atom
@@ -1165,7 +1201,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 				    wal_coercive || wal_flex_contact, wal_stiff);
 			} else if (FA->soft_wall_cutoff > 0.0f) {
 				Ewall_fitness = wall_energy_fitness_physical(
-				    d, cr, FA->soft_wall_cutoff, wal_stiff);
+				    d, cr, FA->soft_wall_cutoff, wal_stiff, wal_c1);
 				// Optional finite replacement ceiling for flex contacts only.
 				if (wal_flex_contact && wal_cap_flex > 0.0 &&
 				    Ewall_fitness > wal_cap_flex) {

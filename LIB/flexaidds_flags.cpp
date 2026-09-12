@@ -236,6 +236,8 @@ void seed_runtime_gates() {
         "FLEXAIDDS_RECEPTOR_STRAIN_T",
         "FLEXAID_SEED",
         "FLEXAIDDS_WAL_STIFF",
+        // C1-matched soft branch + quadratic continuation (default OFF).
+        "FLEXAIDDS_WAL_C1",
         // Optional finite replacement ceiling for FLEXAIDDS_WAL_CAP_MODE=flex.
         "FLEXAIDDS_WAL_CAP_FLEX",
         "FLEXAIDDS_SOFTCORE_FLOOR",
