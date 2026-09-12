@@ -1804,6 +1804,22 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_configure_msvc_test(test_unified_dispatch)
     add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
+    # test_svib_invariants — physical invariants of the vibrational-entropy path.
+    # Links the REAL tencm.cpp + encom.cpp (no stubs): every assertion reaches
+    # the production implementation. Invariants, not golden values.
+    flexaids_add_unit_test(test_svib_invariants
+        SOURCES
+            tests/test_svib_invariants.cpp
+            LIB/tENCoM/tencm.cpp
+            LIB/encom.cpp
+        TEST_NAME SvibInvariantTests
+    )
+    target_include_directories(test_svib_invariants PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
+    target_link_libraries(test_svib_invariants PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_svib_invariants PRIVATE FLEXAIDS_HAS_EIGEN)
+
     # test_tencom_diff — tENCoM differential engine tests
     flexaids_add_unit_test(test_tencom_diff
         SOURCES

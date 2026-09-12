@@ -284,3 +284,59 @@ TEST(Ic2cfContamination, VcfunctionErrorRestoresAfterBuildccScribble) {
     EXPECT_EQ(ok.rclash, 0);
     EXPECT_FLOAT_EQ(fx.atoms[1].coor[0], x0);
 }
+
+// ─── Clash invariants on the CF aggregator ──────────────────────────────────
+//
+// CONTEXT: measured on 1gpk this session, the engine's own docked pose carries
+// wall term 2086.04 against the crystal pose's 95.52 -- 21.8x the steric clash --
+// and still scores 14.7x BETTER (-196689.5 vs -13392.9), because `com` is
+// unbounded below and outruns `wal`. Nothing in the suite would have caught it.
+//
+// WHAT IS AND IS NOT TESTABLE HERE, STATED PLAINLY. get_cf_evalue() is the
+// AGGREGATOR: it receives channel values already computed and returns their sum.
+// The defect above is a property of the PHYSICS TERMS (how large com grows for a
+// buried-but-wrong pose relative to wal), which is only observable with real
+// receptor + ligand geometry through vcfunction(). That is an integration test
+// against structure fixtures, not a unit test, and it cannot be written here
+// without either shipping structures or adding an engine code path -- neither of
+// which is in scope. The specific obstacle is recorded in the PR.
+//
+// What IS testable at this level is the aggregator's CONTRACT about clash, and
+// these assertions do pin real behaviour: the wall term must be a penalty, must
+// never improve a score, and must not be silently dropped.
+
+TEST(CFClashInvariants, WallTermIsAPenaltyNotABonus) {
+    cfstr base{};   base.com = -1000.0; base.wal =    0.0;
+    cfstr clash{};  clash.com = -1000.0; clash.wal = 500.0;
+
+    const double cf_base  = get_cf_evalue(&base,  nullptr);
+    const double cf_clash = get_cf_evalue(&clash, nullptr);
+
+    EXPECT_GT(cf_clash, cf_base)
+        << "adding steric clash improved (lowered) CF: wal is acting as a bonus";
+}
+
+TEST(CFClashInvariants, CFIsMonotonicNonDecreasingInWall) {
+    double prev = -std::numeric_limits<double>::infinity();
+    for (double w : {0.0, 1.0, 10.0, 100.0, 1000.0, 10000.0}) {
+        cfstr c{}; c.com = -1000.0; c.wal = w;
+        const double cf = get_cf_evalue(&c, nullptr);
+        EXPECT_GE(cf, prev) << "CF decreased as clash increased, at wal=" << w;
+        prev = cf;
+    }
+}
+
+// The clash channel must not be silently ignored: a pose with an enormous wall
+// term must differ from one with none. This is the assertion that would go red
+// if `wal` were ever dropped from the sum -- the class of defect that lets a
+// clashing pose score like a clean one.
+TEST(CFClashInvariants, WallTermIsNotDroppedFromTheSum) {
+    cfstr none{};  none.com = -1000.0; none.wal =     0.0;
+    cfstr huge{};  huge.com = -1000.0; huge.wal = 1.0e6;
+
+    EXPECT_NE(get_cf_evalue(&huge, nullptr), get_cf_evalue(&none, nullptr))
+        << "a 1e6 wall term changed nothing: the clash channel is not summed";
+    EXPECT_NEAR(get_cf_evalue(&huge, nullptr) - get_cf_evalue(&none, nullptr),
+                1.0e6, 1e-6)
+        << "wall entered the sum with weight != 1";
+}
