@@ -1195,19 +1195,22 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// FLEXAIDDS_WAL_LEGACY_CAPPED=1 for A/B and for reproducing any
 			// pre-fix number; it is NOT the default because it is non-physical
 			// (dE/do == 0 beyond 1.0 A overlap -- see soft_wall.h).
-			if (wal_legacy_capped) {
-				Ewall_fitness = soft_wall_fitness_energy(
-				    d, cr, FA->soft_wall_cutoff,
-				    wal_coercive || wal_flex_contact, wal_stiff);
-			} else if (FA->soft_wall_cutoff > 0.0f) {
-				Ewall_fitness = wall_energy_fitness_physical(
-				    d, cr, FA->soft_wall_cutoff, wal_stiff, wal_c1);
-				// Optional finite replacement ceiling for flex contacts only.
+			if (FA->soft_wall_cutoff > 0.0f) {
+				if (wal_legacy_capped) {
+					Ewall_fitness = soft_wall_fitness_energy(
+					    d, cr, FA->soft_wall_cutoff,
+					    wal_coercive || wal_flex_contact, wal_stiff);
+				} else {
+					Ewall_fitness = wall_energy_fitness_physical(
+					    d, cr, FA->soft_wall_cutoff, wal_stiff, wal_c1);
+				}
+				// Both forms retain the explicit finite ceiling for flex contacts.
 				if (wal_flex_contact && wal_cap_flex > 0.0 &&
 				    Ewall_fitness > wal_cap_flex) {
 					Ewall_fitness = wal_cap_flex;
 				}
 			} else {
+				// Preserve Ewall, including any upstream softcore correction.
 				// Legacy hard r^-12. Only an EXPLICIT finite FLEXAIDDS_WAL_CAP_FLEX
 				// raises the ceiling here; see the wal_cap_flex comment for why
 				// this path is never implicitly uncapped.
