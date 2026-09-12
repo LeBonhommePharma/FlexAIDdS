@@ -86,6 +86,69 @@ inline double wall_energy_raw_r12(double d, double cr)
 	return KWALL_D * (inv_d12 - inv_cr12);
 }
 
+// Analytic slope of wall_energy_raw_r12 with respect to OVERLAP o = cr - d:
+//   d/do [ KWALL_D * ((cr-o)^-12 - cr^-12) ] = 12 * KWALL_D / (cr-o)^13
+// Closed form deliberately, NOT a finite difference. The continuation's second
+// derivative at the transition is ~120 per A^2, so sampling the slope 1e-3 A
+// past the join reports it 0.27% high with no warning -- measured 2026-09-12,
+// where two probes disagreed by exactly C_o * offset to six figures.
+inline double wall_r12_overlap_slope(double d)
+{
+	constexpr double KWALL_D = 1.0e6;
+	const double d2 = d * d, d4 = d2 * d2, d8 = d4 * d4;
+	return 12.0 * KWALL_D / (d8 * d4 * d);      // 12*KWALL_D / d^13
+}
+
+// ADMISSIBILITY OF A C1-MATCHED SOFT BRANCH.
+//
+// A cubic Hermite on [0, o_soft] with h(0)=h'(0)=0, h(o_soft)=V, h'(o_soft)=s
+// is, in t = o/o_soft space,
+//   h(t) = c2*t^2 + c3*t^3,  c2 = 3V - S_t,  c3 = S_t - 2V,  S_t = s*o_soft
+// and h'(t) = t*(2*c2 + 3*c3*t). With c2 >= 0 the bracket decreases in t to a
+// minimum 2*c2 + 3*c3 = S_t >= 0, so monotonicity binds on c2 ALONE:
+//
+//   ADMISSIBLE  <=>  c2 >= 0  <=>  S_t <= 3V  <=>  s <= 3*k_wal*o_soft
+//
+// c3 < 0 is harmless: the shipped smoothstep runs c3 = -2V and is monotone. A
+// LOWER bound on S_t is NOT required, and asserting one is over-tight.
+//
+// WHY IT BINDS. Under a quadratic-continued upper branch the matched slope is
+// s = 2*k_wal*o_soft + 12*KWALL_D/d_s^13, whose second term grows as d_s^-13.
+// Measured at k_wal=50, o_soft=0.40: admissible only for cr >= 3.1827 A (closed
+// form d_s^13 >= 12*KWALL_D/(k_wal*o_soft) = 6.0e5; swept value 3.1826). Below
+// that c2 goes NEGATIVE and the cubic dips below zero -- an ATTRACTIVE well
+// inside the repulsion term, min -5.05 at cr=2.80 and -83.30 at cr=2.40. With
+// vdW-sum radii that band contains O-O (3.10) and N-O (3.15), i.e. the
+// hydrogen-bonding pairs. A single-cr test at 3.50 sees none of it.
+//
+// RESCUE OPTIONS, ALL MEASURED 2026-09-12:
+//   o_soft  DEAD for O-O at ANY width. The condition is I <= k_wal*o_soft with
+//           I = 12*KWALL_D/d_s^13. Shrinking o_soft sends the budget to zero
+//           while I stays bounded below by 12*KWALL_D/cr^13; growing it blows I
+//           up as d_s^-13. So there is an interior optimum, and for O-O it peaks
+//           at -1.68 -- k_wal*o_soft = I has NO ROOT for that pair. (N-O does
+//           have one, at o_soft 0.152.)
+//   k_wal   Works arithmetically: the exact threshold is
+//           12*KWALL_D/(o_soft*d_s^13) = 74.027 for O-O, so k_wal >= 75 clears
+//           it and 74 does NOT (margin -0.0109). Available today via
+//           FLEXAIDDS_WAL_STIFF: k_wal_override and the WAL_CONTACT_CAP ceiling
+//           are already separate roles (:139/:172 stiffness, :184/:189 ceiling),
+//           so no constant split is needed. NOT a substitute for the clamp --
+//           I scales as d_s^-13, so a 0.03 A radius-convention change (O 1.52
+//           vs 1.55) swings I by 34% against a 1.3% margin at k_wal=75, and a
+//           test built on the same radius table cannot detect the regression.
+//   clamp   s_eff = min(s, 3*k_wal*o_soft). THE BOUNDARY OF THE ADMISSIBLE SET,
+//           not a fallback: the steepest arrival achievable without an
+//           attractive well. At the bound c2 == 0 exactly and h(t) = V*t^3, a
+//           pure cubic -- monotone, non-negative, exact at the endpoint.
+//           Admissible for every cr, including radii not yet in the table, by
+//           construction rather than by arithmetic. THIS IS WHAT SHIPS.
+inline bool wall_c1_slope_is_admissible(double cr, double o_soft, double k_wal)
+{
+	if (!(o_soft > 0.0) || !(cr > o_soft)) return true;
+	return wall_r12_overlap_slope(cr - o_soft) <= k_wal * o_soft;
+}
+
 // ── PHYSICAL FITNESS WALL (CF scoring path) ─────────────────────────────────
 //
 // THE DEFECT THIS REPLACES. soft_wall_fitness_energy() below is quadratic in
@@ -128,7 +191,8 @@ inline double wall_energy_raw_r12(double d, double cr)
 // bind; if it ever does, that is a bug to investigate, not a value to clamp.
 inline double wall_energy_fitness_physical(double d, double cr,
                                            float soft_wall_cutoff,
-                                           double k_wal_override = 0.0)
+                                           double k_wal_override = 0.0,
+                                           bool c1_match = false)
 {
 	// Below this separation d^-12 stops being representable in double with the
 	// KWALL_D prefactor. NUMERICAL ONLY -- see the note above.
@@ -141,15 +205,82 @@ inline double wall_energy_fitness_physical(double d, double cr,
 	if (d >= cr) return 0.0;               // no overlap, no wall
 	const double o = cr - d;
 
-	if (o_soft > 0.0 && o <= o_soft) {     // unchanged near-contact smoothstep
-		const double t = o / o_soft;
-		return k_wal * o_soft * o_soft * t * t * (3.0 - 2.0 * t);
-	}
-
 	const double d_eff = (d < WALL_D_FLOOR) ? WALL_D_FLOOR : d;
 	const double d_s   = cr - o_soft;      // transition separation
-	const double base  = k_wal * o_soft * o_soft;
-	return base + (wall_energy_raw_r12(d_eff, cr) - wall_energy_raw_r12(d_s, cr));
+	const double base  = k_wal * o_soft * o_soft;   // V, the join value
+
+	// ── c1_match == false: BYTE-IDENTICAL to the shipped form ───────────
+	// Two MEASURED defects live in this branch; both are fixed only under
+	// c1_match. Recorded here so the default is understood as legacy, not
+	// as correct:
+	//
+	// (1) DERIVATIVE BREAK AT THE JOIN. The smoothstep has dE/do == 0 at
+	//     t == 1 by construction while the r^-12 increment leaves at
+	//     12*KWALL_D/d_s^13. Measured cr=3.50, o_soft=0.40, k_wal=50:
+	//     0.029994 -> 4.916560, a 164x jump. C0 holds, C1 does not.
+	//
+	// (2) SOFTER THAN THE FORM IT REPLACED, over a third of the range.
+	//     Because the increment is offset to vanish at the join, it starts
+	//     from zero and climbs more slowly than the capped quadratic it
+	//     superseded. Measured over 2500 samples of o in (0, 2.5]:
+	//     softer than legacy_capped on 789, worst deficit -26.4924 against
+	//     a per-contact cap of 50. Crossover near o = 1.2 A, so the band
+	//     0.41-1.15 A -- where real steric clashes sit -- is CONCEDED.
+	if (!c1_match) {
+		if (o_soft > 0.0 && o <= o_soft) {     // unchanged near-contact smoothstep
+			const double t = o / o_soft;
+			return k_wal * o_soft * o_soft * t * t * (3.0 - 2.0 * t);
+		}
+		return base + (wall_energy_raw_r12(d_eff, cr) - wall_energy_raw_r12(d_s, cr));
+	}
+
+	// ── c1_match == true: C1-matched soft branch + quadratic continuation ──
+	//
+	//   o <= o_soft : c2*t^2 + c3*t^3,  c2 = 3V - S_t,  c3 = S_t - 2V
+	//                 S_t = s_eff*o_soft,  s_eff = min(s, 3*k_wal*o_soft)
+	//   o >  o_soft : k_wal*o^2 + [ raw_r12(d) - raw_r12(d_s) ]
+	//
+	// The upper branch CONTINUES the quadratic rather than freezing it at its
+	// join value. Since the legacy uncapped form IS k_wal*o^2 beyond the join
+	// (verified: identical to 0.000e+00 at o = 0.50/0.75/1.00/1.50), adding a
+	// non-negative increment makes this form NEVER SOFTER than what it replaced,
+	// above the join, as a theorem rather than a tabulation. Measured 1/2500
+	// residual at -2.4e-07, which is the float o_soft (see below), not structure.
+	//
+	// s_eff is CLAMPED at the admissible boundary -- see
+	// wall_c1_slope_is_admissible above for why, and for the measured
+	// consequence of not clamping (an attractive well on O-O and N-O).
+	//
+	// FLOAT JOIN. soft_wall_cutoff is a float, so o_soft widens to
+	// 0.40000000596046448, not 0.40. Any test comparing against a double 0.40
+	// literal inherits ~1.5e-08 relative, which is exactly the 2.98e-08
+	// "violation" a probe reported on 2026-09-12 before the cause was found.
+	//
+	// SOFT-BAND DEFICIT, in closed form. Subtracting the smoothstep gives
+	// h - smoothstep = -S_t*t^2*(1-t), which is <= 0 for every S_t >= 0 -- so
+	// "never exceeds the shipped smoothstep" is ALGEBRAIC, not sampled. It peaks
+	// at t = 2/3 with depth (4/27)*S_t, and since S_t <= 3V the deficit can
+	// never exceed 4V/9, i.e. 44.4% of the join value, for ANY pair at ANY cr.
+	// t = 2/3 is also where the two slopes cross (o = 0.2667 at o_soft = 0.40),
+	// because the deficit is stationary exactly where the slopes are equal.
+	//
+	// COST. 12*KWALL_D/d_s^13 depends only on cr and o_soft, both fixed per
+	// atom-type pair at setup, so it hoists out of the inner loop. Recomputing
+	// it per contact instead measures 1.90x (1.364 -> 2.585 ns/contact) and is
+	// the wrong implementation.
+	if (o_soft > 0.0 && o <= o_soft) {
+		const double s_raw = 2.0 * k_wal * o_soft + wall_r12_overlap_slope(d_s);
+		const double s_max = 3.0 * k_wal * o_soft;
+		const double s_eff = (s_raw > s_max) ? s_max : s_raw;
+		const double S_t   = s_eff * o_soft;
+		const double c2    = 3.0 * base - S_t;
+		const double c3    = S_t - 2.0 * base;
+		const double t     = o / o_soft;
+		return c2 * t * t + c3 * t * t * t;
+	}
+
+	return k_wal * o * o
+	     + (wall_energy_raw_r12(d_eff, cr) - wall_energy_raw_r12(d_s, cr));
 }
 
 // Fitness wall energy for clash tally / CF.wal accumulation.
