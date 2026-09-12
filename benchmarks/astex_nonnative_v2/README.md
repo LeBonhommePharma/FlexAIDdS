@@ -71,6 +71,27 @@ Median maximal site displacement 3.16 Å, q95 8.61 Å, max 23.037 Å.
 65 pairs fall below 1 Å and are close to a redock; they are kept and labelled
 rather than dropped, so a user can exclude them explicitly.
 
+## `pair_provenance` format
+
+One `|`-delimited list of `KEY:value` tokens, per row:
+
+| token | meaning |
+|:--|:--|
+| `RCSB:<pdb>@<release date>` | receptor entry and its deposition release date |
+| `UNP:<accession>[;<accession>…]` | UniProt accession(s) of the donor site chain |
+| `LIG:<donor pdb>:<ligand id>` | donor entry and its cognate ligand code |
+| `RULE:<doi>` | DOI of the paper the construction rule is read from |
+| `RULEPAGE:<page>` | journal page within that DOI carrying the rule |
+| `BUILD:<date>` | date this roster was generated |
+
+`RULE` and `RULEPAGE` are **separate tokens on purpose.** They were once written
+as a single `RULE:<doi>-p<page>`, which is not a resolvable identifier: DOI
+suffixes may legitimately contain hyphens, so nothing downstream could tell where
+the DOI ended and the page locator began. `scripts/check_dois.py` correctly read
+the whole string as one DOI and reported it unregistered. The `|` delimiter is
+the fix because it is excluded from the DOI character class by construction, so
+the identifier now terminates unambiguously and resolves to the real citation.
+
 ## Reproducing
 
 Every value is fetched or computed, none recalled. UniProt accessions from the
