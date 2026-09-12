@@ -787,6 +787,37 @@ if(ENABLE_TENCOM_BENCHMARK)
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
 endif()
 
+# ─── dS_vib per-term cost benchmark (optional standalone binary) ──────────────
+# Registered so scripts/validate_sources.py STRICT mode has no orphan and no new
+# ignore-list blind spot. Timing harness only: it links the tENCoM ENM and has no
+# edge into the docking objective, so building it cannot change docking output.
+option(ENABLE_DSVIB_COST_BENCHMARK "Build the dS_vib per-term cost benchmark binary" OFF)
+if(ENABLE_DSVIB_COST_BENCHMARK)
+    add_executable(bench_dsvib_cost
+        LIB/tENCoM/bench_dsvib_cost.cpp
+        LIB/tENCoM/tencm.cpp
+    )
+    target_include_directories(bench_dsvib_cost PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
+    if(MSVC)
+        target_compile_options(bench_dsvib_cost PRIVATE /O2 /fp:fast)
+    else()
+        target_compile_options(bench_dsvib_cost PRIVATE -O3 -ffast-math -fno-finite-math-only)
+    endif()
+    flexaids_configure_simd(bench_dsvib_cost)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(bench_dsvib_cost PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(bench_dsvib_cost PRIVATE Eigen3::Eigen)
+    target_compile_definitions(bench_dsvib_cost PRIVATE FLEXAIDS_HAS_EIGEN)
+    if(MSVC)
+        target_compile_definitions(bench_dsvib_cost PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    endif()
+    message(STATUS "dS_vib cost benchmark enabled — build target: bench_dsvib_cost")
+endif()
+
 # ─── tENCoM: ultra-fast vibrational entropy tool (HPC-ready) ──────────────────
 # Enabled by default. Same LTO + native optimisation as FlexAIDdS.
 option(ENABLE_TENCOM_TOOL "Build the tENCoM vibrational entropy differential tool" ON)
