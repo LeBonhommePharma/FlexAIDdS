@@ -39,12 +39,22 @@ enum class SugarType;
 void apply_sugar_puckers(atom*, const std::vector<std::vector<int>>&,
                          const std::vector<float>&, const std::vector<SugarType>&) {}
 }
-namespace tencm {
-void TorsionalENM::build_from_ligand(const atom*, int, int, float, float) {}
-std::vector<double> TorsionalENM::vibrational_eigenvalues(int*, int*) const {
-    throw std::logic_error("CF aggregator fixture must not execute tENCoM");
-}
-}
+// REMOVED (and ONLY these two): TorsionalENM::build_from_ligand and
+// TorsionalENM::vibrational_eigenvalues. The target now links the REAL
+// LIB/tENCoM/tencm.cpp, which defines both -- keeping the stubs would be a
+// duplicate symbol at link, the exact failure a41557d9 recorded. Measured with
+// nm(1) on this tree: those two are the COMPLETE overlap between the real
+// sources now linked (tencm.cpp, encom.cpp) and this file. Every other stub
+// below stays, because no linked source defines it.
+//
+// Consequence, deliberately accepted: the substitutes are gone, so nothing here
+// can silently stand in for tENCoM/ENCoM any more.
+//
+// MEASURED, not assumed: this does NOT mean the tests now exercise that code.
+// llvm-cov after the change reports tencm.cpp 0.00% of 700 lines and encom.cpp
+// 0.00% of 115 lines executed by this binary. The vibrational path is simply not
+// reached from these fixtures -- already implied by the fact that the removed
+// vibrational_eigenvalues stub THREW and the suite passed regardless.
 
 // Controllable fail points for serial contamination tests (ic2cf restore).
 namespace ic2cf_test_hooks {
