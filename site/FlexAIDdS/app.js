@@ -255,7 +255,7 @@
   function viewerThemePalette() {
     var light = isLightTheme();
     return {
-      backgroundColor: light ? 0xffffff : 0x0a0e14,
+      backgroundColor: light ? 0xffffff : 0x08091A,
       outlineColor: light ? 0x000000 : 0xffffff,
       backgroundAlpha: 1,
     };

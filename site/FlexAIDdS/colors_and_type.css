@@ -52,7 +52,17 @@
 
   /* Violet (4.66:1) and firetruck (4.85:1) clear WCAG AA for
      normal text but have no headroom. Hold firetruck to 12px
-     and up; prefer --state-fail-text for small failure labels. */
+     and up; prefer --state-fail-text for small failure labels.
+
+     --violet-text is the same rule applied to ΔS: violet used AS
+     TEXT sits on violet washes and translucent cards, not on the
+     ink, and the composited ground (#101124 … #201841) drops it
+     to 3.91–4.40:1. The lift keeps hue 258° and saturation 0.90
+     exactly and moves lightness 0.66 → 0.72 — the smallest step
+     on the hue line that clears 4.5:1 on every ground the page
+     composites (5.00:1 worst case, 5.96:1 on the ink). Borders,
+     washes, glows and gradients keep --violet; only text moves. */
+  --violet-text: #9B76F8;
 
 
   --mint-06:       rgba(69, 224, 168, 0.06);
@@ -262,4 +272,8 @@
      had already arrived at independently in their own light blocks,
      promoted here so every page inherits it. */
   --state-fail-text: #BE123C;   /* 5.81:1 on --bg */
+
+  /* Same rule for ΔS text: darker on a light ground. 6.57:1 on --bg,
+     5.32:1 on the violet-18 wash of the active phase button. */
+  --violet-text: #6D28D9;
 }

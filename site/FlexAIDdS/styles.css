@@ -77,10 +77,12 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .nav-link, .nav-links button.nav-link {
   font-family: var(--font-mono); font-size: 12px;
   color: var(--fg-muted); transition: color 0.2s;
-  background: none; border: none; padding: 0; cursor: pointer;
+  background: none; border: none; padding: 0 4px; cursor: pointer;
+  /* 44px hit area, matching the mobile menu and CTAs; the 56px bar absorbs it. */
+  min-height: 44px; display: inline-flex; align-items: center;
 }
 .nav-link:hover, .nav-links button.nav-link:hover, .nav-link.active { color: var(--mint); }
-.nav-links .gh { display: flex; align-items: center; color: var(--fg-muted); }
+.nav-links .gh { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0; color: var(--fg-muted); }
 .nav-links .gh:hover { color: var(--mint); }
 
 .nav-mobile-btn {
@@ -164,7 +166,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 }
 .hero-tagline-top {
   font-family: var(--font-mono); font-size: 10px;
-  letter-spacing: 0.30em; text-transform: uppercase; color: var(--violet);
+  letter-spacing: 0.30em; text-transform: uppercase; color: var(--violet-text);
   margin-bottom: 1.5rem;
 }
 .hero-title {
@@ -217,12 +219,14 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   border-radius: 3px; border: 1px solid var(--mint-20);
   background: var(--mint-06); color: var(--mint); white-space: nowrap;
 }
-.badge.terra { border-color: rgba(139,92,246,0.46); background: var(--violet-10); color: var(--violet); }
+.badge.terra { border-color: rgba(139,92,246,0.46); background: var(--violet-10); color: var(--violet-text); }
 .badge.gold  { border-color: rgba(255,147,0,0.46); background: var(--tangerine-10); color: var(--tangerine); }
 .badge.ga    { border-color: rgba(58,166,179,0.46); background: rgba(58,166,179,0.10); color: #8EEFC9; }
 .badge.cuda  { border-color: rgba(118,185,0,0.46);  background: rgba(118,185,0,0.10);  color: #9AE635; }
 .badge.metal { border-color: rgba(90,200,250,0.46); background: rgba(90,200,250,0.10); color: #7DD3FC; }
-.badge.rocm  { border-color: rgba(237,28,36,0.46);  background: rgba(237,28,36,0.10);  color: #F87171; }
+/* ROCm: red is held to 12px and up (see colors_and_type.css); at badge
+   size the chip takes strawberry, the palette's warm-caution hue. */
+.badge.rocm  { border-color: rgba(255,47,146,0.46);  background: var(--strawberry-12);  color: var(--strawberry); }
 .badge.avx   { border-color: rgba(69,224,168,0.46); background: rgba(69,224,168,0.10); color: #45E0A8; }
 
 /* Drug of the Day as a hero badge (same row as C++26, CUDA, etc.) */
@@ -288,7 +292,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .section-divider { height: 1px; background: linear-gradient(to right, transparent, rgba(69,224,168,0.2), transparent); }
 .section-label {
   font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.20em;
-  text-transform: uppercase; color: var(--violet); margin-bottom: 12px;
+  text-transform: uppercase; color: var(--violet-text); margin-bottom: 12px;
 }
 .section-h2 {
   font-family: var(--font-mono); font-size: 1.75rem; font-weight: 700;
@@ -329,7 +333,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .feature-card.gold-card:hover  { border-color: rgba(255,147,0,0.35); box-shadow: 0 0 20px rgba(255,147,0,0.10); }
 .feature-card h3 { font-family: var(--font-mono); font-size: 14px; font-weight: 600; margin-bottom: 12px; }
 .feature-card.teal-card h3  { color: var(--mint); }
-.feature-card.terra-card h3 { color: var(--violet); }
+.feature-card.terra-card h3 { color: var(--violet-text); }
 .feature-card.gold-card h3  { color: var(--tangerine); }
 .feature-card ul { list-style: none; }
 .feature-card li {
@@ -383,9 +387,9 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   padding: 16px 20px; border-radius: 0 8px 8px 0;
   line-height: 1.8; overflow-x: auto;
 }
-.code-box .cmt { color: rgba(138,147,168,0.6); }
+.code-box .cmt { color: var(--fg-muted); }
 .code-box .cmd { color: var(--mint); }
-.code-box .kw  { color: var(--violet); }
+.code-box .kw  { color: var(--violet-text); }
 .code-box .str { color: var(--tangerine); }
 
 /* Benchmark table */
@@ -440,7 +444,10 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .footer-brand .word { font-family: var(--font-mono); font-weight: 700; color: var(--mint); font-size: 14px; }
 .footer-brand .word .delta { color: var(--tangerine); }
 .footer-links { display: flex; gap: 1rem; flex-wrap: wrap; }
-.footer-links a { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); transition: color 0.2s; }
+.footer-links a {
+  font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); transition: color 0.2s;
+  min-height: 44px; display: inline-flex; align-items: center; padding: 0 4px;
+}
 .footer-links a:hover { color: var(--mint); }
 .footer-bottom { margin-top: 1.5rem; padding-top: 1rem; text-align: center; border-top: 1px solid rgba(69,224,168,0.08); }
 .footer-cite { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); line-height: 1.6; }
@@ -458,7 +465,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   padding: 1rem; border-radius: 8px; background: var(--bg-card);
   border: 1px solid var(--mint-08);
 }
-.arch-sub-card h4 {
+.arch-sub-card h3 {
   font-family: var(--font-mono); font-size: 12px; font-weight: 600;
   color: var(--tangerine); margin-bottom: 6px;
 }
@@ -488,7 +495,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 }
 .binding-phase-btn:active { transform: scale(0.97); }
 .binding-phase-btn:hover { border-color: rgba(69,224,168,0.3); color: var(--fg); }
-.binding-phase-btn.active-diff { background: rgba(139,92,246,0.18); color: var(--violet); border-color: rgba(139,92,246,0.55); }
+.binding-phase-btn.active-diff { background: rgba(139,92,246,0.18); color: var(--violet-text); border-color: rgba(139,92,246,0.55); }
 .binding-phase-btn.active-enc { background: rgba(69,224,168,0.12); color: var(--mint); border-color: rgba(69,224,168,0.5); }
 .binding-phase-btn.active-bind { background: rgba(255,147,0,0.12); color: var(--tangerine); border-color: rgba(255,147,0,0.5); }
 .binding-desc {

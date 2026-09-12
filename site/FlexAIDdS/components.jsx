@@ -71,13 +71,13 @@ function EntropyMeter() {
 
   // Map scroll position to entropy state
   const state =
-    pct < 25 ? { lbl: "UNBOUND", color: "#8B5CF6", entropy: (8.5 - pct * 0.05).toFixed(1), dg: "+0.0" } :
+    pct < 25 ? { lbl: "UNBOUND", color: "var(--violet-text)", entropy: (8.5 - pct * 0.05).toFixed(1), dg: "+0.0" } :
     pct < 70 ? { lbl: "ENCOUNTER", color: "#45E0A8", entropy: (5.4 - (pct - 25) * 0.03).toFixed(1), dg: (-(pct - 25) * 0.1).toFixed(1) } :
                { lbl: "BOUND", color: "#FF9300", entropy: (3.2 - (pct - 70) * 0.02).toFixed(1), dg: (-7.0 - (pct - 70) * 0.05).toFixed(1) };
 
   return (
     <div className="entropy-meter">
-      <span className="em-vert" style={{ color: "#8B5CF6" }}>HIGH ENTROPY</span>
+      <span className="em-vert" style={{ color: "var(--violet-text)" }}>HIGH ENTROPY</span>
       <div className="em-bar">
         <div className="em-fill" style={{ height: pct + "%" }} />
         <div className="em-marker" style={{ top: pct + "%", background: state.color, boxShadow: "0 0 10px " + state.color }} />
