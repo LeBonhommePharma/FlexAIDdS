@@ -1,5 +1,5 @@
 /* ============================================================
-   FlexAID∆S — Dynamic Brand Mark
+   FlexAIDΔS — Dynamic Brand Mark
    Le Bonhomme Pharma · Montréal
 
    The mark is a living conformational ensemble. A 3-atom ligand
@@ -20,9 +20,9 @@
   "use strict";
 
   var NS = "http://www.w3.org/2000/svg";
-  var TEAL = "#22D3EE";
-  var TERRA = "#A78BFA";
-  var GOLD = "#FBBF24";
+  var TEAL = "#45E0A8";
+  var TERRA = "#8B5CF6";
+  var GOLD = "#FF9300";
 
   // pivot + ligand geometry inside a 100×100 viewBox
   var PX = 50, PY = 52;                 // shared rotation pivot
@@ -68,7 +68,7 @@
     var svg = el("svg", {
       viewBox: "0 0 100 100",
       width: size, height: size,
-      role: "img", "aria-label": "FlexAID∆S"
+      role: "img", "aria-label": "FlexAIDΔS"
     });
     svg.style.display = "block";
     svg.style.overflow = "visible";
@@ -175,7 +175,7 @@
       var sc = 1 + collapse * 0.06;
       bound.setAttribute("transform", "translate(" + (PX * (1 - sc)).toFixed(3) + " " + (PY * (1 - sc)).toFixed(3) + ") scale(" + sc.toFixed(3) + ")");
       var glow = 2 + collapse * 9;
-      svg.style.filter = "drop-shadow(0 0 " + glow.toFixed(1) + "px rgba(34,211,238," + (0.25 + collapse * 0.45).toFixed(3) + "))";
+      svg.style.filter = "drop-shadow(0 0 " + glow.toFixed(1) + "px rgba(69,224,168," + (0.25 + collapse * 0.45).toFixed(3) + "))";
       // atoms shift teal→gold at the binding instant
       var goldMix = clamp((collapse - 0.55) / 0.45, 0, 1);
       var atomCol = mixHex(TEAL, GOLD, goldMix);

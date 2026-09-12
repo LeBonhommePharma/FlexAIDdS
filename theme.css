@@ -30,7 +30,7 @@
 /* ── Canonical pill toggle ──────────────────────────────────── */
 .lbp-theme-toggle {
   /* Accent resolves to whatever the host page calls its accent. */
-  --lbp-accent: var(--color-accent, var(--teal, var(--neon-b, #22D3EE)));
+  --lbp-accent: var(--color-accent, var(--mint, var(--neon-b, #45E0A8)));
   appearance: none;
   -webkit-appearance: none;
   border: 0;
@@ -47,7 +47,7 @@
 }
 .lbp-theme-toggle:focus-visible {
   /* canonical focus ring — see interaction.css */
-  outline: 2px solid #22D3EE;
+  outline: 2px solid #45E0A8;
   outline-offset: 2px;
 }
 
@@ -92,7 +92,7 @@
   background: linear-gradient(145deg, #ffffff, #ffe39a);
   box-shadow:
     0 2px 6px rgba(146, 100, 0, 0.35),
-    0 0 12px rgba(251, 191, 36, 0.65),
+    0 0 12px rgba(255, 147, 0, 0.65),
     inset 0 0 0 1px rgba(255, 255, 255, 0.7);
 }
 
@@ -106,7 +106,7 @@
 [data-theme="light"] .lbp-theme-toggle:hover .lbp-theme-toggle__thumb {
   box-shadow:
     0 2px 8px rgba(146, 100, 0, 0.4),
-    0 0 16px rgba(251, 191, 36, 0.85),
+    0 0 16px rgba(255, 147, 0, 0.85),
     inset 0 0 0 1px rgba(255, 255, 255, 0.8);
 }
 .lbp-theme-toggle:active .lbp-theme-toggle__thumb {

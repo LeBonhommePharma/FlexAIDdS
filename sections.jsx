@@ -1,4 +1,4 @@
-// FlexAID∆S Website UI Kit — page-level sections.
+// FlexAIDΔS Website UI Kit — page-level sections.
 // Composes primitives from components.jsx into the actual marketing page.
 
 const { useState: useStateS, useEffect: useEffectS } = React;
@@ -20,7 +20,7 @@ function HeroSection() {
         </div>
 
         <h1 className="hero-title">
-          FlexAID<span className="gold">∆S</span>
+          FlexAID<span className="gold">ΔS</span>
         </h1>
 
         <p className="hero-subtitle">
@@ -32,25 +32,25 @@ function HeroSection() {
 
         <div className="equation">
           <p className="equation-text">
-            <span style={{ color: "#FBBF24" }}>ΔG</span>
-            <span style={{ color: "#8a93a8" }}> = </span>
-            <span style={{ color: "#22D3EE" }}>ΔH</span>
-            <span style={{ color: "#8a93a8" }}> − </span>
-            <span style={{ color: "#A78BFA" }}>TΔS</span>
+            <span style={{ color: "#FF9300" }}>ΔG</span>
+            <span style={{ color: "#8D8CB0" }}> = </span>
+            <span style={{ color: "#45E0A8" }}>ΔH</span>
+            <span style={{ color: "#8D8CB0" }}> − </span>
+            <span style={{ color: "#8B5CF6" }}>TΔS</span>
           </p>
         </div>
 
         <div className="hero-stats">
           <div className="hero-stat">
-            <div className="hero-stat-value" style={{ color: "#22D3EE" }}>—</div>
+            <div className="hero-stat-value" style={{ color: "#45E0A8" }}>—</div>
             <div className="hero-stat-label">PEARSON r (ITC-187) · unverified</div>
           </div>
           <div className="hero-stat">
-            <div className="hero-stat-value" style={{ color: "#A78BFA" }}>—</div>
+            <div className="hero-stat-value" style={{ color: "#8B5CF6" }}>—</div>
             <div className="hero-stat-label">RMSE kcal/mol · pending receipt</div>
           </div>
           <div className="hero-stat">
-            <div className="hero-stat-value" style={{ color: "#FBBF24" }}>—</div>
+            <div className="hero-stat-value" style={{ color: "#FF9300" }}>—</div>
             <div className="hero-stat-label">BINDING MODE · benchmarking not closed</div>
           </div>
         </div>
@@ -89,11 +89,11 @@ function WhySection() {
   return (
     <section id="why" className="section">
       <div className="container">
-        <SectionHeader eyebrow="why flexaid∆s">
-          Why <span className="gradient-tg">FlexAID∆S</span>
+        <SectionHeader eyebrow="why flexaidΔs">
+          Why <span className="gradient-tg">FlexAIDΔS</span>
         </SectionHeader>
         <div className="note-callout">
-          Most <span className="kw">docking engines</span> optimize <span className="kw">enthalpy</span> alone. <strong>FlexAID∆S</strong> adds <span className="kw">conformational entropy</span> via a full <span className="kw">statistical mechanics framework</span>. Pose-recovery and affinity rates are <strong>unverified / pending receipt</strong> until benchmarking is closed.
+          Most <span className="kw">docking engines</span> optimize <span className="kw">enthalpy</span> alone. <strong>FlexAIDΔS</strong> adds <span className="kw">conformational entropy</span> via a full <span className="kw">statistical mechanics framework</span>. Pose-recovery and affinity rates are <strong>unverified / pending receipt</strong> until benchmarking is closed.
         </div>
       </div>
     </section>
@@ -176,17 +176,17 @@ function BindingSection() {
     },
     {
       lbl: "Encounter",
-      color: "#22D3EE",
-      bg: "rgba(34,211,238,0.05)",
-      border: "rgba(34,211,238,0.3)",
+      color: "#45E0A8",
+      bg: "rgba(69,224,168,0.05)",
+      border: "rgba(69,224,168,0.3)",
       desc: <>The ligand <span className="kw">electrostatically encounters</span> the binding pocket. Translational entropy begins to drop as orientation locks.</>,
       ds: "+4.2", dh: "−3.1", dg: "+1.1",
     },
     {
       lbl: "Binding",
-      color: "#FBBF24",
-      bg: "rgba(251,191,36,0.05)",
-      border: "rgba(251,191,36,0.3)",
+      color: "#FF9300",
+      bg: "rgba(255,147,0,0.05)",
+      border: "rgba(255,147,0,0.3)",
       desc: <><span className="kw">Configurational entropy collapses</span> as the ligand locks into the bound pose. Enthalpic interactions dominate ΔG.</>,
       ds: "−5.4", dh: "−12.8", dg: "−7.4",
     },
@@ -223,8 +223,8 @@ function BindingSection() {
           <p style={{ fontSize: "13px", color: "var(--fg-muted)", lineHeight: 1.6 }}>{p.desc}</p>
           <div className="thermo-row">
             <div><span style={{ color: "var(--fg-muted)" }}>ΔS = </span><span style={{ color: "#EC4899" }}>{p.ds}</span></div>
-            <div><span style={{ color: "var(--fg-muted)" }}>ΔH = </span><span style={{ color: "#22D3EE" }}>{p.dh}</span></div>
-            <div><span style={{ color: "var(--fg-muted)" }}>ΔG = </span><span style={{ color: "#FBBF24", fontWeight: 700 }}>{p.dg}</span></div>
+            <div><span style={{ color: "var(--fg-muted)" }}>ΔH = </span><span style={{ color: "#45E0A8" }}>{p.dh}</span></div>
+            <div><span style={{ color: "var(--fg-muted)" }}>ΔG = </span><span style={{ color: "#FF9300", fontWeight: 700 }}>{p.dg}</span></div>
           </div>
         </div>
       </div>
@@ -244,23 +244,23 @@ function BindingDiagram({ phase }) {
     <svg viewBox="0 0 960 240" style={{ display: "block", width: "100%", height: "240px" }}>
       <defs>
         <radialGradient id="pocket-glow" cx="50%" cy="50%">
-          <stop offset="0%" stopColor="#22D3EE" stopOpacity="0.18"/>
-          <stop offset="100%" stopColor="#22D3EE" stopOpacity="0"/>
+          <stop offset="0%" stopColor="#45E0A8" stopOpacity="0.18"/>
+          <stop offset="100%" stopColor="#45E0A8" stopOpacity="0"/>
         </radialGradient>
       </defs>
       {/* Binding pocket */}
-      <ellipse cx="450" cy="140" rx="90" ry="40" fill="url(#pocket-glow)" stroke="#22D3EE" strokeOpacity="0.3" strokeWidth="1" strokeDasharray="3 3"/>
+      <ellipse cx="450" cy="140" rx="90" ry="40" fill="url(#pocket-glow)" stroke="#45E0A8" strokeOpacity="0.3" strokeWidth="1" strokeDasharray="3 3"/>
       {/* Trajectory trail */}
       {phase >= 1 && (
         <path d={phase === 1
           ? "M 220 130 Q 290 100 330 140 Q 380 170 430 130 Q 480 120 520 145"
           : "M 220 130 Q 290 100 330 140 Q 380 170 430 130 Q 460 130 450 140"}
-              fill="none" stroke="#FBBF24" strokeWidth="1" strokeOpacity="0.45" strokeDasharray="2 4"/>
+              fill="none" stroke="#FF9300" strokeWidth="1" strokeOpacity="0.45" strokeDasharray="2 4"/>
       )}
       {/* Ligand positions */}
       {positions.map((p, i) => {
         const isLast = i === positions.length - 1;
-        const c = phase === 0 ? "#EC4899" : phase === 1 ? "#22D3EE" : "#FBBF24";
+        const c = phase === 0 ? "#EC4899" : phase === 1 ? "#45E0A8" : "#FF9300";
         return (
           <g key={i} opacity={isLast ? 1 : 0.5}>
             <circle cx={p.x} cy={p.y} r={p.r} fill={c} fillOpacity={isLast ? 0.18 : 0.10}/>
@@ -350,9 +350,9 @@ function RepoStatsSection() {
           Repository <span className="t-gold">Stats</span>
         </SectionHeader>
         <div className="stats-row">
-          <div className={"stat-item" + (commits >= 1500 ? " stat-item--milestone" : "")}>
-            {commits >= 1500 && <span className="stat-milestone-badge">1,500th commit</span>}
-            <div className={"stat-value" + (commits >= 1500 ? " stat-value--milestone" : "")} id="stat-commits-display">{commits.toLocaleString()}</div>
+          <div className={"stat-item" + (commits >= 2000 ? " stat-item--milestone" : "")}>
+            {commits >= 2000 && <span className="stat-milestone-badge">2,000th commit 🎉</span>}
+            <div className={"stat-value" + (commits >= 2000 ? " stat-value--milestone" : "")} id="stat-commits-display">{commits.toLocaleString()}</div>
             <div className="stat-label">Commits</div>
           </div>
           <div className="stat-item"><div className="stat-value">C++26</div><div className="stat-label">Standard</div></div>
@@ -536,7 +536,7 @@ function BenchmarksSection() {
           Benchmark <span className="t-gold">status</span>
         </SectionHeader>
         <p className="binding-blurb">
-          This site publishes <span className="kw">no validated FlexAID∆S success rate</span>. Benchmarks are still rolling — do not cite a former rate at or above 90%. Astex-85, ITC-187, CASF, and CNS figures are <span className="kw">unverified / pending receipt</span> until a METHODOLOGY.md §0 receipted blind campaign exists. Literature comparators (JCIM 2015 Table 2 top-1 45.2% / top-10 66.7%) are someone else’s published numbers, not ours.
+          This site publishes <span className="kw">no validated FlexAIDΔS success rate</span>. Benchmarks are still rolling — do not cite a former rate at or above 90%. Astex-85, ITC-187, CASF, and CNS figures are <span className="kw">unverified / pending receipt</span> until a METHODOLOGY.md §0 receipted blind campaign exists. Literature comparators quoted elsewhere in this project are someone else’s published numbers, not ours.
         </p>
       </div>
     </section>
