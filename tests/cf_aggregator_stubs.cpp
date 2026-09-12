@@ -13,7 +13,6 @@
 #include <utility>
 #include <stdexcept>
 #include "tENCoM/tencm.h"
-#include "encom.h"        // canonical declaration of ENCoMEngine/VibrationalEntropy
 #include "VibEntropy.h"   // canonical declaration; see the ODR note below
 
 namespace vibentropy {
@@ -44,40 +43,6 @@ namespace tencm {
 void TorsionalENM::build_from_ligand(const atom*, int, int, float, float) {}
 std::vector<double> TorsionalENM::vibrational_eigenvalues(int*, int*) const {
     throw std::logic_error("CF aggregator fixture must not execute tENCoM");
-}
-// The thermodynamic dS_vib cycle added to ic2cf.cpp in 4e1043b6 made these two
-// torsional builders new collaborators of this target. Stubbed here rather than
-// linked, per this target's hermetic contract (CMakeLists.txt: "If ic2cf.cpp
-// acquires a NEW dependency, stub it") -- linking LIB/tENCoM/tencm.cpp is the
-// mistake the CMake comment records twice, because tencm.cpp needs Eigen that
-// this target deliberately has no include path for.
-//
-// No-ops, matching build_from_ligand above: builders only populate internal
-// state. The EVALUATORS stay loud -- vibrational_eigenvalues() above and
-// ENCoMEngine::compute_vibrational_entropy() below both throw, so a fixture that
-// actually reaches the vibrational path fails audibly instead of scoring a
-// silently plausible 0.0.
-void TorsionalENM::build_from_ligand_torsional(const std::array<float,3>*, int,
-                                               const LigandTopology&,
-                                               float, float) {}
-void TorsionalENM::build_from_ligand_torsional_in_field(const std::array<float,3>*, int,
-                                                        const LigandTopology&,
-                                                        const std::array<float,3>*, int,
-                                                        float, float) {}
-}
-
-namespace encom {
-// Throws for the same reason vibentropy::compute_vib_entropy_collapse does: this
-// fixture does not exercise the vibrational-entropy path (its tENCoM builders are
-// no-ops, so any mode set reaching here is empty and meaningless). A zeroed
-// VibrationalEntropy would be indistinguishable from a real result and would let
-// get_cf_evalue() be pinned against a term that silently contributed nothing.
-VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
-        const std::vector<NormalMode>&, double, double) {
-    throw std::logic_error(
-        "cf_aggregator fixture: ENCoMEngine::compute_vibrational_entropy is not "
-        "exercised by these tests; if you reached it, wire a real model or extend "
-        "the stub");
 }
 }
 
