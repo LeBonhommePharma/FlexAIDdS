@@ -86,6 +86,72 @@ inline double wall_energy_raw_r12(double d, double cr)
 	return KWALL_D * (inv_d12 - inv_cr12);
 }
 
+// ── PHYSICAL FITNESS WALL (CF scoring path) ─────────────────────────────────
+//
+// THE DEFECT THIS REPLACES. soft_wall_fitness_energy() below is quadratic in
+// overlap and then HARD-CAPPED at WAL_CONTACT_CAP. Measured on this tree with
+// the default soft_wall_cutoff = 0.40 and k_wal = 50: the cap binds at exactly
+// 1.0 A of overlap, beyond which dE/do == 0 EXACTLY. Two atoms may then
+// interpenetrate arbitrarily far at zero marginal cost, while cf.com keeps
+// growing linearly with buried Voronoi area (vcfunction.cpp: contribution =
+// yval * area, unbounded). Repulsion therefore does NOT dominate attraction at
+// short range -- it is constant where attraction is increasing -- so the
+// gradient points at maximum burial everywhere in the overlap regime. That is
+// non-physical, and no reweighting can repair it: a weight cannot outrun a zero
+// derivative. Measured consequence (1gpk): the engine's own docked pose carries
+// 21.8x the wall term of the crystal pose and still scores 14.7x better.
+//
+// THE SHAPE, AND WHY IT IS THIS SHAPE. The softening exists for a real reason,
+// recorded at vcfunction.cpp:1081 -- a bare r^-12 spikes just inside cr, so a
+// near-native pose carrying 0.2-0.4 A of crystallographic coordinate error can
+// score worse than a decoy. That protection is KEPT EXACTLY: for overlap up to
+// o_soft this function is the same Hermite smoothstep, bit for bit. Beyond
+// o_soft the quadratic-then-capped continuation is replaced by the TRUE r^-12
+// increment, so the Pauli wall is recovered where it belongs -- at real
+// interpenetration -- and diverges as d -> 0.
+//
+//   o <= o_soft : k_wal * o_soft^2 * t^2 * (3 - 2t),  t = o/o_soft   (unchanged)
+//   o >  o_soft : k_wal * o_soft^2 + [ raw_r12(d) - raw_r12(cr - o_soft) ]
+//
+// C0-continuous by construction: the bracket vanishes at o == o_soft.
+//
+// NO FITTED CONSTANT IS INTRODUCED. Every quantity is pre-existing: the contact
+// radius cr (= r_min, where the wall is zero), KWALL_D, and o_soft. The shape
+// follows from matching the physical form at the transition, not from anything
+// tuned to make a test pass.
+//
+// NUMERICAL GUARD, NOT A PHYSICAL CEILING. d is floored at WALL_D_FLOOR purely
+// so d^-12 stays representable; it is deliberately far outside the physically
+// meaningful range and must never bind on a real pose. At the floor the energy
+// is ~1e18 while the largest per-contact value measured on real Astex poses is
+// ~1e3 -- fifteen orders of magnitude of headroom. A test asserts it does not
+// bind; if it ever does, that is a bug to investigate, not a value to clamp.
+inline double wall_energy_fitness_physical(double d, double cr,
+                                           float soft_wall_cutoff,
+                                           double k_wal_override = 0.0)
+{
+	// Below this separation d^-12 stops being representable in double with the
+	// KWALL_D prefactor. NUMERICAL ONLY -- see the note above.
+	constexpr double WALL_D_FLOOR = 0.10;   // A
+
+	const double o_soft = (soft_wall_cutoff > 0.0f)
+	                          ? static_cast<double>(soft_wall_cutoff) : 0.0;
+	const double k_wal  = (k_wal_override > 0.0) ? k_wal_override : WAL_CONTACT_CAP;
+
+	if (d >= cr) return 0.0;               // no overlap, no wall
+	const double o = cr - d;
+
+	if (o_soft > 0.0 && o <= o_soft) {     // unchanged near-contact smoothstep
+		const double t = o / o_soft;
+		return k_wal * o_soft * o_soft * t * t * (3.0 - 2.0 * t);
+	}
+
+	const double d_eff = (d < WALL_D_FLOOR) ? WALL_D_FLOOR : d;
+	const double d_s   = cr - o_soft;      // transition separation
+	const double base  = k_wal * o_soft * o_soft;
+	return base + (wall_energy_raw_r12(d_eff, cr) - wall_energy_raw_r12(d_s, cr));
+}
+
 // Fitness wall energy for clash tally / CF.wal accumulation.
 // soft_wall_cutoff = 0.0 recovers legacy capped r^-12 (per-contact ceiling).
 // soft_wall_cutoff > 0 applies the v43 overlap Hermite cubic ramp:

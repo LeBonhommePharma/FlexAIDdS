@@ -1146,14 +1146,26 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			// atomzero is guaranteed to have a non-NULL optres (the outer loop
 			// `continue`s otherwise, ~line 417); atomcont may legitimately have a
 			// NULL one (rigid receptor atom) and the predicate handles that.
+			// FLEXAIDDS_WAL_LEGACY_CAPPED=1 restores the pre-fix capped quadratic.
+			static const bool wal_legacy_capped = [] {
+				const char* v = std::getenv("FLEXAIDDS_WAL_LEGACY_CAPPED");
+				return v && v[0] && std::string(v) != "0";
+			}();
 			const bool wal_flex_contact =
 			    (wal_cap_mode == WAL_CAP_FLEX) &&
 			    wal_contact_touches_flexed(atoms, atomzero, atomcont);
-			if (FA->soft_wall_cutoff > 0.0f) {
-				// coercive := global WAL_COERCIVE, OR this one flex contact.
+			// ── PHYSICAL WALL (default since the CF steric-asymptotics fix) ──
+			// The legacy capped-quadratic is retained behind
+			// FLEXAIDDS_WAL_LEGACY_CAPPED=1 for A/B and for reproducing any
+			// pre-fix number; it is NOT the default because it is non-physical
+			// (dE/do == 0 beyond 1.0 A overlap -- see soft_wall.h).
+			if (wal_legacy_capped) {
 				Ewall_fitness = soft_wall_fitness_energy(
 				    d, cr, FA->soft_wall_cutoff,
 				    wal_coercive || wal_flex_contact, wal_stiff);
+			} else if (FA->soft_wall_cutoff > 0.0f) {
+				Ewall_fitness = wall_energy_fitness_physical(
+				    d, cr, FA->soft_wall_cutoff, wal_stiff);
 				// Optional finite replacement ceiling for flex contacts only.
 				if (wal_flex_contact && wal_cap_flex > 0.0 &&
 				    Ewall_fitness > wal_cap_flex) {

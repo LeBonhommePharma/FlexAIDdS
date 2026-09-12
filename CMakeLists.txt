@@ -1786,6 +1786,13 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_configure_msvc_test(test_unified_dispatch)
     add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
+    # test_wall_asymptotics — the CF steric wall must dominate at short range.
+    flexaids_add_unit_test(test_wall_asymptotics
+        SOURCES tests/test_wall_asymptotics.cpp
+        TEST_NAME WallAsymptoticsTests
+    )
+    target_include_directories(test_wall_asymptotics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+
     # test_tencom_diff — tENCoM differential engine tests
     flexaids_add_unit_test(test_tencom_diff
         SOURCES
