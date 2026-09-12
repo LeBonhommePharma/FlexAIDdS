@@ -65,6 +65,9 @@ QUALIFIER_RE = re.compile(
 
 WINDOW_RADIUS = 3
 
+# Product name is spelled with U+0394 on migrated surfaces and U+2206 elsewhere.
+_DISCLAIMER_RE = re.compile(r"no validated FlexAID[\u0394\u2206]S success rate")
+
 
 def _window(lines: list[str], index: int, radius: int = WINDOW_RADIUS) -> str:
     lo = max(0, index - radius)
@@ -216,10 +219,18 @@ def test_public_product_docs_do_not_restate_ninety_plus_success_rates() -> None:
             if token in text:
                 failures.append(f"{rel} restates {token}")
         if path.name == "sections.jsx":
-            assert "no validated FlexAID∆S success rate" in text
+            # Accept either delta codepoint: the canonical spelling is U+0394
+            # (GREEK CAPITAL LETTER DELTA); U+2206 (INCREMENT) is still present on
+            # surfaces that have not been migrated. The assertion is about the
+            # disclaimer being present, not about which delta glyph spells it.
+            assert _DISCLAIMER_RE.search(text), f"{rel} lost the no-validated-rate disclaimer"
             assert "Benchmarks are still rolling" in text
         if path.name == "index.html" and "entropy-driven" in rel:
-            assert "no validated FlexAID∆S success rate" in text
+            # Accept either delta codepoint: the canonical spelling is U+0394
+            # (GREEK CAPITAL LETTER DELTA); U+2206 (INCREMENT) is still present on
+            # surfaces that have not been migrated. The assertion is about the
+            # disclaimer being present, not about which delta glyph spells it.
+            assert _DISCLAIMER_RE.search(text), f"{rel} lost the no-validated-rate disclaimer"
             assert "Benchmarks are still rolling" in text
         if path.name == "BENCHMARK.md":
             assert "Benchmarks are still rolling" in text
