@@ -1665,34 +1665,52 @@ flexaids_add_unit_test(test_protocol_config
 
     # test_cf_aggregator — pins the REAL get_cf_evalue() term set (links ic2cf.cpp,
     # not the reduced stub in tests/stubs.cpp)
+    #
+    # HERMETICITY IS DELIBERATELY TRADED AWAY HERE. a41557d9 restored this target
+    # to a hermetic link and its author was RIGHT on the design point: "resolve the
+    # symbol by linking the real .cpp" is the mistake that was made twice
+    # (ed9f6b4c, ec37b410). This is not a third accidental repeat -- LP was shown
+    # that history and the tradeoff explicitly and chose to link the real code, so
+    # that the entropy collaborators of get_cf_evalue() are no longer SUBSTITUTED.
+    # The cost is Eigen in a unit-test target.
+    #
+    # MEASURED LIMIT, stated so nobody infers more than was achieved: linking the
+    # real code does NOT make these tests exercise it. llvm-cov on this tree after
+    # the change: LIB/tENCoM/tencm.cpp 0.00% of 700 lines, LIB/encom.cpp 0.00% of
+    # 115 lines. The 9/9 pass is unchanged because the vibrational path is never
+    # reached from these fixtures -- which the PREVIOUS state already proved, since
+    # the old vibrational_eigenvalues stub THREW and the tests passed anyway.
+    # Making these assertions actually traverse tENCoM/ENCoM is separate work.
+    #
+    # Why this does not reproduce the recorded failure:
+    #   * a41557d9's 4 duplicates were rot_gene_index + rot_gene_guard_hits (from
+    #     LIB/rot_gene_index.cpp, NOT added here) and the two TorsionalENM symbols
+    #     below. Measured on this tree with nm(1): the real/stub overlap for the
+    #     two sources added here is EXACTLY TWO symbols --
+    #       tencm::TorsionalENM::build_from_ligand(atom_struct const*, int, int, float, float)
+    #       tencm::TorsionalENM::vibrational_eigenvalues(int*, int*) const
+    #     and both stub definitions are removed in tests/cf_aggregator_stubs.cpp.
+    #     Every other stub in that file STAYS -- no real source here defines them.
+    #   * LIB/encom.cpp is required too: tencm.cpp alone leaves
+    #     encom::ENCoMEngine::compute_vibrational_entropy undefined (ic2cf.cpp has
+    #     called it since 4e1043b6). It is the real implementation, not a stub.
+    #   * Eigen is linked explicitly, so the compile failure that MASKED the
+    #     duplicates in round 2 cannot recur. Modelled on benchmark_tencom above,
+    #     which already compiles LIB/tENCoM/tencm.cpp this way.
     flexaids_add_unit_test(test_cf_aggregator
         SOURCES
             tests/test_cf_aggregator.cpp
             tests/cf_aggregator_stubs.cpp
             LIB/ic2cf.cpp
-            # THIS TARGET IS DELIBERATELY HERMETIC: ic2cf.cpp's collaborators are
-            # supplied by tests/cf_aggregator_stubs.cpp, NOT by linking production
-            # translation units. Do not add LIB/*.cpp here to resolve a symbol --
-            # add or fix a stub instead. Two rounds of exactly that mistake:
-            #
-            #   1. LIB/rot_gene_index.cpp and LIB/tENCoM/tencm.cpp were both added
-            #      to resolve symbols the stubs ALREADY define (rot_gene_index,
-            #      rot_gene_guard_hits, TorsionalENM::build_from_ligand,
-            #      TorsionalENM::vibrational_eigenvalues -- stubs lines 26/27/83/91).
-            #      That is 4 duplicate symbols at link.
-            #   2. The duplicates were INVISIBLE because tencm.cpp includes
-            #      <Eigen/Dense> and this target has no Eigen include path, so the
-            #      build died at COMPILE time first ("Eigen/Dense: file not found",
-            #      Linux GCC/Clang/MPI/ASan and macOS) and never reached the linker.
-            #      Adding Eigen here "fixed" the compile and exposed the link error
-            #      underneath -- a repair that traded one red CI for another.
-            #
-            # Removing both sources restores the hermetic design: no Eigen, no
-            # OpenMP, no heavy deps, and the stubs remain the single definition of
-            # every collaborator. If ic2cf.cpp acquires a NEW dependency, stub it.
-            # Found by external audit (CI-1).
+            LIB/tENCoM/tencm.cpp
+            LIB/encom.cpp
         TEST_NAME CFAggregatorTests
     )
+    target_include_directories(test_cf_aggregator PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
+    target_link_libraries(test_cf_aggregator PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_cf_aggregator PRIVATE FLEXAIDS_HAS_EIGEN)
 
     # test_pb_vdw_parity — pins get_element(type) vs atoms[].element as PoseBusters
     # vdW radius sources (links write_pdb.cpp for the real get_element())
