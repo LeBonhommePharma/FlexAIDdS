@@ -1639,6 +1639,15 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME SoftWallTests
     )
 
+    # Header-only, like test_soft_wall above: LIB/soft_wall.h needs no production
+    # translation unit, so this deliberately links nothing else. Do NOT add
+    # LIB/*.cpp here to resolve a symbol -- add or fix a stub instead. That
+    # mistake took test_cf_aggregator's link set apart twice.
+    flexaids_add_unit_test(test_soft_wall_c1
+        SOURCES tests/test_soft_wall_c1.cpp
+        TEST_NAME SoftWallC1Tests
+    )
+
     # test_memetic_gate — Wave 3.4 FLEXAIDDS_MEMETIC + WALL_PILOT_PASS (header-only)
     flexaids_add_unit_test(test_memetic_gate
         SOURCES tests/test_memetic_gate.cpp
