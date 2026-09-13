@@ -431,7 +431,31 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		}
 	}
 
-	// // (9) Cluster Creation
+	// ---- (9) Cluster Creation ---- DESIGN INVARIANT: DO NOT RE-ENABLE THE TWO
+	// COMMENTED LINES BELOW. Deliberate, by design, and to be conserved.
+	//
+	// DP BUILDS THE COMPLETE PARTITION. FA->max_results is an EMISSION bound
+	// here, applied only in the output loops below (the `i < nResults &&
+	// i < FA->max_results` guards), never at construction. The two commented
+	// lines are the creation-side cap that was removed on purpose; they are
+	// kept visible so the decision stays legible instead of invisible.
+	//
+	// WHY RE-ENABLING THEM WOULD BE A SILENT REGRESSION:
+	//   CF (cluster.cpp:399) DOES bound construction --
+	//       if(num_of_clusters == num_of_results){break;}
+	//   so under CF the cap is an input to the CLUSTERING, not just to the
+	//   output: pose counts are not monotone in search effort, and a
+	//   scoring-function change moves both the partition and the point at
+	//   which it is truncated. That is the largest confound in this repo's
+	//   benchmark history (measured: reduced-budget pose counts bound nothing
+	//   in either direction).
+	//   Under DP the partition is COMPLETE before truncation, so raising the
+	//   cap reveals more of a FIXED set and the confound does not arise.
+	//   Restoring the creation-side cap would import CF's confound into DP
+	//   while changing nothing visible in any output -- a regression no
+	//   result would flag.
+	//
+	// Guarded by tests/test_dp_partition_invariant.py.
 	// if(nClusters < FA->max_results) nResults = nClusters;
 	// else nResults = FA->max_results;
 	nResults = nClusters;
