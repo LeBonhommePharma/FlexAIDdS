@@ -363,6 +363,43 @@ public:
     std::vector<double> vibrational_eigenvalues(int* n_dropped  = nullptr,
                                                 int* n_expected = nullptr) const;
 
+    /// Scale-aware zero-mode threshold: a mode is numerically zero iff
+    /// |lambda| <= zero_mode_cutoff(lam_max). Relative to the stiffest mode so
+    /// it is scale-free in k0 and in the units of the spring law.
+    static double zero_mode_cutoff(double lam_max) noexcept {
+        return std::max(1e-10, lam_max * 1e-8);
+    }
+
+    /// Three-way classification of a spectrum. Exposed as a STATIC function on a
+    /// plain vector<double> for two reasons: every consumer gets one rule, and a
+    /// test can drive the rule with a DELIBERATELY PERTURBED spectrum (sign
+    /// flips at the ULP scale) without needing a second machine to produce one.
+    ///
+    /// WHY MAGNITUDE AND NOT SIGN. A mathematically exact zero mode is emitted
+    /// by an iterative self-adjoint solver as +/-epsilon with a sign set by the
+    /// rounding path, so `lambda > 0.0` classifies it by noise. MEASURED on a
+    /// 24-residue Ca helix (torsional basis, Eigen 3.5.0, arm64): nudging ONE
+    /// coordinate by ONE float ULP changes the dropped-mode count in 11 of 24
+    /// single-coordinate trials, and on the dS_vib path (which passes
+    /// eigenvalue_cutoff = 0.0, so this is the only filter) flipping those signs
+    /// moves S_vib by up to 1.85e-01 kcal/mol/K. Classifying by |lambda| against
+    /// a relative threshold is decided by the spectral GAP instead: on that same
+    /// helix the two zero modes sit at 1.4e-13 and 1.4e-10 while the softest real
+    /// mode is 1.60e+02, so the threshold sits in twelve decades of empty space.
+    struct SpectrumClassification {
+        std::vector<double> vibrational;   ///< modes kept (lambda > cutoff)
+        int    n_zero      = 0;            ///< |lambda| <= cutoff (rigid / rank-deficient)
+        int    n_negative  = 0;            ///< lambda < -cutoff (genuinely unstable)
+        int    n_nonfinite = 0;
+        double cutoff      = 0.0;
+        double lam_max     = 0.0;
+    };
+
+    /// Classify `eigenvalues` for `basis`. Honours FLEXAIDDS_TENCOM_LEGACY_ZERO_SIGN
+    /// (see the .cpp) so a stored benchmark arm can be replayed bit-for-bit.
+    static SpectrumClassification classify_spectrum(
+        const std::vector<double>& eigenvalues, Basis basis);
+
     /// Per-contact surface-area-weighted spring scores.
     /// Ion contacts (is_ion==true) have k_scaled = k0*(rc/d_surf)^6 * (r_ion/R_CA_EFF)²,
     /// enabling callers to weight vibrational entropy by ion contact surface area.

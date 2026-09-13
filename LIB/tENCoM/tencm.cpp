@@ -36,6 +36,7 @@
 #include "tencm.h"
 #include "simd_distance.h"
 #include "ion_utils.h"
+#include "../EnvFlags.h"   // flexaids::env_bool — house gate parser
 
 #include <cstring>
 #include <cmath>
@@ -572,6 +573,59 @@ void TorsionalENM::assemble_torsional_(const std::array<float,3>* xyz,
 // See the header for the measurement that motivates this. Summary: a `> 0.0`
 // filter leaves roughly half the rigid-body modes in place, they set the lower
 // log-frequency bin edge, and H(omega) moves by ~56%.
+// FLEXAIDDS_TENCOM_LEGACY_ZERO_SIGN — restores the pre-fix classification
+// EXACTLY (torsional: `lambda > 0.0`; Cartesian: `lambda > max(1e-10,
+// lam_max*1e-8)`), so a stored benchmark arm can be replayed bit-for-bit on the
+// machine that produced it. DEFAULT OFF, i.e. the scale-aware magnitude rule is
+// the default, because the behaviour it replaces is NOT reproducible: see
+// classify_spectrum's doc comment for the 11-of-24 single-ULP measurement.
+// Parsed with flexaids::env_bool so an EMPTY value means OFF (a raw getenv
+// first-char test would make it mean ON).
+static bool tencm_legacy_zero_sign()
+{
+    return flexaids::env_bool("FLEXAIDDS_TENCOM_LEGACY_ZERO_SIGN", false);
+}
+
+TorsionalENM::SpectrumClassification
+TorsionalENM::classify_spectrum(const std::vector<double>& eigenvalues, Basis basis)
+{
+    SpectrumClassification out;
+    out.vibrational.reserve(eigenvalues.size());
+    if (eigenvalues.empty()) return out;
+
+    double lam_max = 0.0;
+    for (const double ev : eigenvalues)
+        if (std::isfinite(ev)) lam_max = std::max(lam_max, ev);
+    out.lam_max = lam_max;
+
+    const bool legacy = tencm_legacy_zero_sign();
+
+    // On the Cartesian basis the legacy and default cutoffs are the SAME value,
+    // and because that cutoff is strictly positive `ev > cutoff` already implies
+    // |ev| > cutoff. So the kept set and the dropped count are bit-identical
+    // there under either rule; only the torsional basis (legacy cutoff 0.0)
+    // changes. That is what keeps the recorded BU72 Cartesian anchor
+    // (ligand_tencom_pose.cpp: H_vib_nats = 2.949923762, 90 positive modes) valid.
+    out.cutoff = (legacy && basis != Basis::Cartesian)
+                 ? 0.0
+                 : zero_mode_cutoff(lam_max);
+
+    for (const double ev : eigenvalues) {
+        if (!std::isfinite(ev)) { ++out.n_nonfinite; continue; }
+        if (legacy) {
+            // Reproduce the old single comparison exactly, including the fact
+            // that it lumped negative and sub-cutoff modes into one count.
+            if (ev > out.cutoff) out.vibrational.push_back(ev);
+            else                 ++out.n_zero;
+            continue;
+        }
+        if (std::fabs(ev) <= out.cutoff)  ++out.n_zero;       // numerically zero
+        else if (ev < 0.0)                ++out.n_negative;   // genuinely unstable
+        else                              out.vibrational.push_back(ev);
+    }
+    return out;
+}
+
 std::vector<double> TorsionalENM::vibrational_eigenvalues(int* n_dropped,
                                                           int* n_expected) const
 {
@@ -579,47 +633,59 @@ std::vector<double> TorsionalENM::vibrational_eigenvalues(int* n_dropped,
     if (n_expected) *n_expected = expected;
     if (n_dropped)  *n_dropped  = 0;
 
-    std::vector<double> out;
-    out.reserve(modes_.size());
-    if (modes_.empty()) return out;
+    std::vector<double> ev;
+    ev.reserve(modes_.size());
+    for (const auto& nm : modes_) ev.push_back(nm.eigenvalue);
+    if (ev.empty()) return {};
 
-    // Cutoff relative to the stiffest mode, so it is scale-free in k0 and in
-    // the units of the spring law. Matches ligand_tencom_pose.cpp:85 and
-    // DatasetRunner.cpp:974 -- one rule for every consumer.
-    double lam_max = 0.0;
-    for (const auto& nm : modes_)
-        if (std::isfinite(nm.eigenvalue))
-            lam_max = std::max(lam_max, nm.eigenvalue);
-
-    // Torsional models have no rigid-body subspace, so only reject
-    // non-finite/non-positive values; do not discard genuinely soft modes.
-    const double cutoff = (basis_ == Basis::Cartesian)
-                          ? std::max(1e-10, lam_max * 1e-8)
-                          : 0.0;
-
-    int dropped = 0;
-    for (const auto& nm : modes_) {
-        // A negative eigenvalue fails this comparison and never reaches log().
-        if (std::isfinite(nm.eigenvalue) && nm.eigenvalue > cutoff)
-            out.push_back(nm.eigenvalue);
-        else
-            ++dropped;
-    }
+    const SpectrumClassification cls = classify_spectrum(ev, basis_);
+    const double lam_max = cls.lam_max;
+    const int dropped = cls.n_zero + cls.n_negative + cls.n_nonfinite;
+    std::vector<double> out = cls.vibrational;
     if (n_dropped) *n_dropped = dropped;
+
+    // A mode below -cutoff is not round-off: it is an imaginary frequency and
+    // the network is unstable. It was previously indistinguishable from a
+    // dropped rigid mode, so it could not be reported.
+    if (cls.n_negative > 0) {
+        static thread_local int warned_neg = 0;
+        if (warned_neg < 8) {
+            ++warned_neg;
+            std::cerr << "[TENCOM-UNSTABLE] " << cls.n_negative
+                      << " eigenvalue(s) below -" << cls.cutoff
+                      << " (lam_max=" << lam_max << "): imaginary frequencies,"
+                         " the elastic network is not at a minimum.\n";
+        }
+    }
 
     // Loud on a violated assumption rather than silently biased. On the
     // Cartesian path a fragmented contact graph yields >6 near-zero modes
     // (each connected component contributes its own), which would otherwise
     // vanish into the entropy with no trace.
-    if (basis_ == Basis::Cartesian && dropped != expected) {
+    //
+    // THIS DIAGNOSTIC WAS GATED ON `basis_ == Basis::Cartesian`, WHICH IS HOW
+    // THE DEFECT SURVIVED. The torsional basis declares 0 rigid modes, so ANY
+    // drop there is a violated assumption -- and it is the basis every dS_vib
+    // term is required to use. It printed nothing. Both bases now report.
+    // Expect this to fire legitimately on Ca-trace torsional networks: MEASURED
+    // 2 numerically-zero modes on helices of 12..32 residues (rel 2.6e-16 and
+    // 2.6e-13 against lam_max), i.e. the torsional Hessian is genuinely
+    // rank-deficient by 2 there. That is a true statement about the network
+    // rather than a false alarm, and it was previously invisible.
+    if (dropped != expected) {
         static thread_local int warned = 0;
         if (warned < 8) {
             ++warned;
             std::cerr << "[TENCOM-RIGID] dropped " << dropped
                       << " sub-cutoff modes, expected " << expected
-                      << " (Cartesian, " << modes_.size() << " modes, lam_max="
-                      << lam_max << "): ligand contact graph is probably"
-                         " fragmented at the build cutoff.\n";
+                      << " (" << (basis_ == Basis::Cartesian ? "Cartesian"
+                                                             : "torsional")
+                      << ", " << modes_.size() << " modes, lam_max="
+                      << lam_max << ", cutoff=" << cls.cutoff
+                      << ", zero=" << cls.n_zero
+                      << ", negative=" << cls.n_negative
+                      << "): contact graph is probably fragmented at the build"
+                         " cutoff, or the network is rank-deficient.\n";
         }
     }
     return out;
@@ -711,7 +777,9 @@ void TorsionalENM::build_contacts()
     const int n_threads = omp_get_max_threads();
     std::vector<std::vector<Contact>> thread_contacts(n_threads);
 
-    #pragma omp parallel
+    // Same unchecked-index defect as assemble_hessian(): thread_contacts is
+    // sized from omp_get_max_threads() outside the region. Clamp the team.
+    #pragma omp parallel num_threads(n_threads)
     {
         const int tid = omp_get_thread_num();
         auto& local = thread_contacts[tid];
@@ -1064,7 +1132,13 @@ void TorsionalENM::assemble_hessian()
     const int n_threads = omp_get_max_threads();
     std::vector<Eigen::MatrixXd> thread_H(n_threads, Eigen::MatrixXd::Zero(M, M));
 
-    #pragma omp parallel
+    // num_threads(n_threads) is load-bearing, not decoration: thread_H was
+    // sized from omp_get_max_threads() BEFORE the team existed, so without the
+    // clause a team larger than that value indexes thread_H out of bounds --
+    // a heap write past a vector of MxM Eigen matrices. The OpenMP
+    // thread-count algorithm never yields a team LARGER than the value
+    // requested by num_threads, so tid is now provably in [0, n_threads).
+    #pragma omp parallel num_threads(n_threads)
     {
         const int tid = omp_get_thread_num();
         auto& Ht = thread_H[tid];
