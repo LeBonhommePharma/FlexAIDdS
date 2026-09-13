@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include "tENCoM/tencm.h"
 #include "VibEntropy.h"   // canonical declaration; see the ODR note below
+#include "encom.h"        // encom::ENCoMEngine::compute_vibrational_entropy (encom.h:112)
 
 namespace vibentropy {
 // SIGNATURE MUST MATCH VibEntropy.h EXACTLY. This stub returned `double` while
@@ -43,6 +44,39 @@ namespace tencm {
 void TorsionalENM::build_from_ligand(const atom*, int, int, float, float) {}
 std::vector<double> TorsionalENM::vibrational_eigenvalues(int*, int*) const {
     throw std::logic_error("CF aggregator fixture must not execute tENCoM");
+}
+
+// The explicit-topology torsional overloads, reached from ic2cf.cpp:308-312 by
+// the dS_vib path added in 4e1043b6. NO-OPS, matching build_from_ligand above:
+// a builder that does not build is harmless here because nothing in this fixture
+// consumes a spectrum -- vibrational_eigenvalues() throws, so the two callers at
+// ic2cf.cpp:341-342 are the loud failure point, not these.
+//
+// Defaults are declared in tencm.h and MUST NOT be repeated on a definition.
+void TorsionalENM::build_from_ligand_torsional(
+        const std::array<float,3>*, int, const LigandTopology&, float, float) {}
+void TorsionalENM::build_from_ligand_torsional_in_field(
+        const std::array<float,3>*, int, const LigandTopology&,
+        const std::array<float,3>*, int, float, float) {}
+}
+
+namespace encom {
+// ic2cf.cpp:364,366 call this on the spectra produced above. UNREACHABLE in this
+// fixture (vibrational_eigenvalues throws first at ic2cf.cpp:341), but it must be
+// DEFINED or test_cf_aggregator does not link -- which is exactly how 4e1043b6
+// turned every CI build job red while leaving BUILD_TESTING=OFF builds green.
+//
+// Throws rather than returning a zeroed VibrationalEntropy, for the reason
+// recorded at the top of this file: a plausible-looking 0.0 from an unexercised
+// path is the failure mode that already cost this fixture one silent ODR bug.
+// Signature must track encom.h:112 exactly; the FrequencyCalibration overload is
+// not referenced by ic2cf.cpp and is deliberately NOT stubbed, so if a future
+// change starts calling it the link error says so instead of this stub absorbing it.
+VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
+        const std::vector<NormalMode>&, double, double) {
+    throw std::logic_error(
+        "cf_aggregator fixture: compute_vibrational_entropy is not exercised by "
+        "these tests; if you reached it, wire a real tENCoM model or extend the stub");
 }
 }
 
