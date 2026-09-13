@@ -223,9 +223,38 @@ static const double wal_stiff = [](){
 // So a null arm rules out regressions worse than about -3.6 pp and nothing
 // below 6 targets one-way is resolvable. The arm is insurance against a LARGE
 // regression, not a discovery experiment -- record it that way in the result.
-static const bool wal_c1 =
-    (std::getenv("FLEXAIDDS_WAL_C1") != nullptr &&
-     std::getenv("FLEXAIDDS_WAL_C1")[0] != '0');
+// DEFAULT FLIPPED TO ON, 2026-09-13, on the pre-registered condition above.
+// EVIDENCE (wall_pilot_20260912T234850Z, 24 cells, engine bb31a833 QUALIFIED,
+// ga 1000x1000, 3 restarts, seed 12345, budget 600, paired within target):
+//   admissible   12 of 12 targets; 0 censored, 0 vacuous -- the gate was reached
+//                 on every cell, so no target is measuring an inert knob
+//   paired delta  median +0.0442 A in best_cluster_rmsd (ON - OFF, negative =
+//                 ON better); bootstrap CI95 [-0.5212, +0.6069] INCLUDES ZERO
+//   split         5 improved, 7 worse, 0 tied
+//   rescue        1KZK and 1MQ6 saturated the 600 cap and were censored by the
+//                 pre-registered clause; both were re-run at cap 1500 and came
+//                 back uncensored (1KZK needed 1283 clusters, >2x the 600 cap).
+//                 The endpoint is paired WITHIN target, so the per-target cap
+//                 difference does not bias the delta.
+//   NOTE          on the 10 admissible targets alone the median was -0.0439 A.
+//                 Adding the two rescued targets FLIPPED THE SIGN to +0.0442 and
+//                 narrowed the interval. Both are indistinguishable from zero, but
+//                 the 10-target figure must not be quoted: two targets reversed it.
+//   determinism   every restart NOT at the cap reproduced EXACTLY between the
+//                 cap-600 and cap-1500 runs (1MQ6 OFF 507/-/557 both times), so
+//                 the cap was the sole cause of the censoring
+// That is a NULL, which is what the pre-registration predicted and what the bar
+// was written to accept. It rules out a large regression; it does not and was
+// never sized to demonstrate an improvement. Do not cite it as one.
+//
+// Reading the flag now goes through flexaids::env_bool rather than a raw getenv
+// on byte 0. The old form read FLEXAIDDS_WAL_C1="" as ENABLED, because the first
+// byte of an empty string is '\0' and '\0' != '0' -- so the natural way to
+// express "off" in a shell turned the gate ON. env_bool returns the fallback on
+// an empty or whitespace-only value and accepts 0/false/no/off, so
+// FLEXAIDDS_WAL_C1=0 is now the documented way to reach the legacy wall and
+// reproduce any arm stored before this commit.
+static const bool wal_c1 = flexaids::env_bool("FLEXAIDDS_WAL_C1", true);
 
 // ── FLEXAIDDS_WAL_CAP_MODE — receptor-state-conditional per-contact ceiling ──
 //
