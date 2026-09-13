@@ -90,7 +90,7 @@ add reachability "{\"off_poseset\":\"$so\",\"on_poseset\":\"$sn\",\"diverged\":$
 #     a pass, because an unrunnable check is not a passing one.
 tb=$BD.testbuild
 if [ "${FLEXAIDS_QUALIFY_SKIP_BUILD:-0}" = "1" ]; then
-  cfg_rc=-1; bld_rc=-1; ct_pass=0; ct_fail=0; ind=1; bnote=skipped_by_env
+  cfg_rc=-1; bld_rc=-1; ct_rc=-1; ct_tot=0; ct_pass=0; ct_fail=0; ind=1; bnote=skipped_by_env
 else
   # USE_SYSTEM_GTEST: FetchContent clones googletest from github at configure
   # time, which fails in a network-restricted sandbox. That is environmental, so
@@ -102,31 +102,47 @@ else
   cfg_rc=$?
   if [ "$cfg_rc" -ne 0 ]; then
     if grep -q 'Failed to clone repository' "$tb.cfg.log" 2>/dev/null; then
-      bld_rc=-1; ct_pass=0; ct_fail=0; ind=1; bnote=configure_blocked_network
+      bld_rc=-1; ct_rc=-1; ct_tot=0; ct_pass=0; ct_fail=0; ind=1; bnote=configure_blocked_network
     else
-      bld_rc=-1; ct_pass=0; ct_fail=0; v=1; bnote=configure_failed
+      bld_rc=-1; ct_rc=-1; ct_tot=0; ct_pass=0; ct_fail=0; v=1; bnote=configure_failed
     fi
   else
     cmake --build "$tb" --parallel 3 > "$tb.build.log" 2>&1
     bld_rc=$?
     if [ "$bld_rc" -ne 0 ]; then
-      v=1; ct_pass=0; ct_fail=0; bnote=build_failed
+      v=1; ct_rc=-1; ct_tot=0; ct_pass=0; ct_fail=0; bnote=build_failed
     else
       ctest --test-dir "$tb" --output-on-failure --timeout 240 > "$tb.ctest.log" 2>&1
-      ct_pass=$(grep -oE '[0-9]+ tests passed' "$tb.ctest.log" | tail -1 | cut -d' ' -f1)
-      ct_pass=${ct_pass:-0}
-      ct_fail=$(grep -oE '[0-9]+ tests failed' "$tb.ctest.log" | tail -1 | cut -d' ' -f1)
+      ct_rc=$?
+      # PARSE NOTE, measured 2026-09-13: ctest's green summary is
+      #   "100% tests passed out of 108"
+      # so a pattern like '[0-9]+ tests passed' NEVER MATCHES -- the '%' sits
+      # where the space would be. The first version of this check used exactly
+      # that pattern, scored a fully green build as ct_pass=0, and therefore
+      # returned INDETERMINATE on every healthy tree: a gate that could not pass.
+      # ctest's EXIT CODE is authoritative (0 = every test passed); the counts
+      # below are for the receipt only and must never drive the verdict.
+      ct_tot=$(grep -oE 'out of [0-9]+' "$tb.ctest.log" | tail -1 | awk '{print $3}')
+      ct_tot=${ct_tot:-0}
+      ct_fail=$(grep -oE '[0-9]+ tests failed' "$tb.ctest.log" | tail -1 | awk '{print $1}')
       ct_fail=${ct_fail:-0}
-      if [ "$ct_fail" -gt 0 ]; then v=1; bnote=tests_failed
-      elif [ "$ct_pass" -eq 0 ]; then ind=1; bnote=no_tests_ran
+      ct_pass=$((ct_tot - ct_fail))
+      [ "$ct_pass" -lt 0 ] && ct_pass=0
+      if [ "$ct_rc" -ne 0 ]; then v=1; bnote=tests_failed
+      elif [ "$ct_tot" -eq 0 ]; then ind=1; bnote=no_tests_ran
       else bnote=ok; fi
     fi
   fi
 fi
 # the undefined-symbol signature specifically, so the receipt names the 4e1043b6
 # failure mode rather than only its exit code
-undef=$(grep -ciE 'Undefined symbols|undefined reference' "$tb.build.log" 2>/dev/null || echo 0)
-add ci_parity_build "{\"build_testing\":\"ON\",\"configure_rc\":$cfg_rc,\"build_rc\":$bld_rc,\"ctest_passed\":$ct_pass,\"ctest_failed\":$ct_fail,\"undefined_symbol_lines\":$undef,\"note\":\"$bnote\"}"
+# NO `|| echo 0` HERE. grep -c prints its count AND exits 1 when the count is
+# zero, so `$(grep -c ... || echo 0)` yields TWO lines ("0\n0") on the healthy
+# path -- which made the add() payload below fail json.loads and blanked the
+# whole receipt. Same defect this file's ct_pass pattern had. Measured, not recalled.
+undef=$(grep -icE 'Undefined symbols|undefined reference' "$tb.build.log" 2>/dev/null)
+[ -z "$undef" ] && undef=0
+add ci_parity_build "{\"build_testing\":\"ON\",\"configure_rc\":$cfg_rc,\"build_rc\":$bld_rc,\"ctest_rc\":${ct_rc:--1},\"ctest_total\":${ct_tot:-0},\"ctest_passed\":$ct_pass,\"ctest_failed\":$ct_fail,\"undefined_symbol_lines\":$undef,\"note\":\"$bnote\"}"
 
 verdict=QUALIFIED; rc=0
 [ "$v" -eq 1 ] && { verdict=DISQUALIFIED; rc=1; }
