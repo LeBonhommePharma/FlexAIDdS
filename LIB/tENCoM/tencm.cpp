@@ -777,7 +777,9 @@ void TorsionalENM::build_contacts()
     const int n_threads = omp_get_max_threads();
     std::vector<std::vector<Contact>> thread_contacts(n_threads);
 
-    #pragma omp parallel
+    // Same unchecked-index defect as assemble_hessian(): thread_contacts is
+    // sized from omp_get_max_threads() outside the region. Clamp the team.
+    #pragma omp parallel num_threads(n_threads)
     {
         const int tid = omp_get_thread_num();
         auto& local = thread_contacts[tid];
@@ -1130,7 +1132,13 @@ void TorsionalENM::assemble_hessian()
     const int n_threads = omp_get_max_threads();
     std::vector<Eigen::MatrixXd> thread_H(n_threads, Eigen::MatrixXd::Zero(M, M));
 
-    #pragma omp parallel
+    // num_threads(n_threads) is load-bearing, not decoration: thread_H was
+    // sized from omp_get_max_threads() BEFORE the team existed, so without the
+    // clause a team larger than that value indexes thread_H out of bounds --
+    // a heap write past a vector of MxM Eigen matrices. The OpenMP
+    // thread-count algorithm never yields a team LARGER than the value
+    // requested by num_threads, so tid is now provably in [0, n_threads).
+    #pragma omp parallel num_threads(n_threads)
     {
         const int tid = omp_get_thread_num();
         auto& Ht = thread_H[tid];
