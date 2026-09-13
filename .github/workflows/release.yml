@@ -50,19 +50,24 @@ jobs:
         run: |
           bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
-          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev gcc-14 g++-14
+          # Eigen intentionally absent on all three OSes below: apt ships a
+          # 3.x, brew and choco float, and cmake/FlexAIDEigen.cmake pins one
+          # exact version. A release artifact must not depend on which Eigen
+          # the runner image happened to carry, so CMake fetches the pinned
+          # release and hash-verifies it instead.
+          sudo apt-get install -y cmake ninja-build libomp-dev gcc-14 g++-14
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
           # Apple Clang ≥ 16 (Xcode 16) is required for C++26.
           sudo xcode-select -s /Applications/Xcode_16.app || true
-          brew install cmake ninja libomp eigen
+          brew install cmake ninja libomp
 
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
-          choco install ninja eigen -y
+          choco install ninja -y
         shell: cmd
 
       - name: Set up Windows SDK and linker environment

@@ -83,10 +83,16 @@ jobs:
       - name: Install deps (Homebrew if available)
         run: |
           set -euo pipefail
+          # Eigen is not installed here. brew's eigen formula floats with
+          # upstream releases, so installing it would make this runner's
+          # Eigen depend on when the machine last ran `brew update` -- the
+          # same class of drift that let Linux and macOS CI compile
+          # different major versions. cmake/FlexAIDEigen.cmake pins one
+          # version and CMake fetches it, hash-verified.
           if command -v brew >/dev/null 2>&1; then
-            brew install cmake ninja libomp eigen || true
+            brew install cmake ninja libomp || true
           else
-            echo "NOTE: brew not found; assuming cmake/ninja/eigen already on PATH"
+            echo "NOTE: brew not found; assuming cmake/ninja already on PATH"
           fi
           command -v cmake
           command -v ninja

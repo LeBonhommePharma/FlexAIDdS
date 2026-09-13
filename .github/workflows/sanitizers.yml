@@ -19,7 +19,9 @@ jobs:
         run: |
           bash scripts/ci/apt_get_update.sh
           # clang-18 is required for C++26 support (see CMakeLists.txt compiler gate).
-          sudo apt-get install -y cmake ninja-build clang-18 libeigen3-dev libomp-dev
+          # Eigen intentionally absent: cmake/FlexAIDEigen.cmake pins an exact
+          # version that a distro 3.x package cannot satisfy. CMake fetches it.
+          sudo apt-get install -y cmake ninja-build clang-18 libomp-dev
 
       - name: Configure
         env:

@@ -781,6 +781,7 @@ TEST(ProvenanceJson, FormatContainsRequiredKeys) {
     p.binary_path = "/opt/FlexAID";
     p.binary_sha256 = "012345";
     p.git_commit = "abc123";
+    p.eigen_version = "5.0.1";
     p.oracle_site_dir = "/sites";
     p.oracle_site_dir_set = true;
 
@@ -788,9 +789,11 @@ TEST(ProvenanceJson, FormatContainsRequiredKeys) {
     for (const char* key : {
              "\"dataset\"", "\"matrix_path\"", "\"matrix_md5\"", "\"matrix_sha256\"",
              "\"binary_path\"", "\"binary_sha256\"", "\"git_commit\"",
+             "\"eigen_version\"",
              "\"oracle_site_dir\"", "\"oracle_site_dir_set\""}) {
         EXPECT_NE(j.find(key), std::string::npos) << "missing key " << key;
     }
+    EXPECT_NE(j.find("\"eigen_version\": \"5.0.1\""), std::string::npos);
     EXPECT_NE(j.find("\"Astex Diverse\""), std::string::npos);
     EXPECT_NE(j.find("\"oracle_site_dir_set\": true"), std::string::npos);
     // Trailing newline, no trailing comma after last field
@@ -821,6 +824,7 @@ TEST(ProvenanceJson, WriteToTempDir) {
     p.binary_path = (tmp / "FlexAID").string();
     p.binary_sha256 = "binhash";
     p.git_commit = "deadbeef";
+    p.eigen_version = "5.0.1";
     p.oracle_site_dir = "";
     p.oracle_site_dir_set = false;
 
@@ -837,6 +841,7 @@ TEST(ProvenanceJson, WriteToTempDir) {
     EXPECT_NE(body.find("\"matrix_md5\": \"md5hash\""), std::string::npos);
     EXPECT_NE(body.find("\"binary_sha256\": \"binhash\""), std::string::npos);
     EXPECT_NE(body.find("\"git_commit\": \"deadbeef\""), std::string::npos);
+    EXPECT_NE(body.find("\"eigen_version\": \"5.0.1\""), std::string::npos);
     EXPECT_NE(body.find("\"oracle_site_dir_set\": false"), std::string::npos);
 
     fs::remove_all(tmp);

@@ -45,7 +45,10 @@ jobs:
       - name: Install dependencies
         run: |
           bash scripts/ci/apt_get_update.sh
-          sudo apt-get install -y --no-update clang-18 llvm-18 cmake ninja-build libeigen3-dev lcov bc
+          # Eigen intentionally absent: libeigen3-dev is a 3.x package and
+          # cmake/FlexAIDEigen.cmake pins an exact version, which a distro
+          # package cannot satisfy. CMake fetches the pinned release itself.
+          sudo apt-get install -y --no-update clang-18 llvm-18 cmake ninja-build lcov bc
 
       - name: Configure CMake with coverage
         run: |

@@ -44,6 +44,30 @@
 #define FLEXAIDS_BUILT_UTC "unknown"
 #endif
 
+// The Eigen release the engine was compiled against, read back from the
+// headers by cmake/FlexAIDEigen.cmake rather than restated from the pin.
+//
+// This field exists because it was missing.  EIGEN_WORLD_VERSION appeared in
+// no source file, so no stored benchmark arm declared which Eigen produced
+// it -- while macOS resolved brew Eigen 5.x and every Linux CI leg installed
+// an Eigen 3.4.x package.  tENCoM classifies a zero mode by the SIGN of a
+// numerically-zero eigenvalue, so the eigensolver is part of what produced a
+// dS_vib mode count, and an arm that does not name its solver cannot be
+// compared to one from another machine.
+//
+// The value is the RELEASE string ("5.0.1"), not
+// EIGEN_WORLD_VERSION.EIGEN_MAJOR_VERSION.EIGEN_MINOR_VERSION.  Those are
+// not the same thing: Eigen freezes WORLD at 3 forever and moved to semver
+// at its 5.0.0 release, so the triple reads "3.5.0" for release 5.0.1 -- a
+// string matching no release, which sorts below 3.4.0.
+#ifndef FLEXAIDS_EIGEN_VERSION
+#define FLEXAIDS_EIGEN_VERSION "unknown"
+#endif
+
+#ifndef FLEXAIDS_EIGEN_MACRO_TRIPLE
+#define FLEXAIDS_EIGEN_MACRO_TRIPLE "unknown"
+#endif
+
 namespace flexaids {
 namespace version {
 
@@ -97,6 +121,18 @@ void print_build_identity()
     std::printf("build_type=%s\n", FLEXAIDS_BUILD_TYPE);
     std::printf("compiler=%s\n", FLEXAIDS_COMPILER);
     std::printf("built_utc=%s\n", FLEXAIDS_BUILT_UTC);
+
+    // Eigen release string, not the WORLD.MAJOR.MINOR macro triple -- see the
+    // fallback definition above for why those differ for Eigen >= 5.
+    std::printf("eigen_version=%s\n", FLEXAIDS_EIGEN_VERSION);
+
+    // The literal EIGEN_WORLD_VERSION.EIGEN_MAJOR_VERSION.EIGEN_MINOR_VERSION
+    // preprocessor triple, emitted alongside the release string precisely
+    // BECAUSE the two disagree above Eigen 5 and a reader cannot derive one
+    // from the other without knowing Eigen's convention.  Stated explicitly
+    // rather than left to be inferred, for the same reason
+    // git_commit_form=short is stated above.  Compare eigen_version.
+    std::printf("eigen_macro_triple=%s\n", FLEXAIDS_EIGEN_MACRO_TRIPLE);
 }
 
 }  // namespace version
