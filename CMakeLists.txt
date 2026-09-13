@@ -1820,6 +1820,25 @@ flexaids_add_unit_test(test_protocol_config
     )
     target_include_directories(test_wall_asymptotics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
 
+    # test_svib_zero_mode_stability — the zero-mode classification must not depend
+    # on the SIGN of a numerically-zero eigenvalue. Links the REAL tencm.cpp +
+    # encom.cpp (no stubs). LINK_OPENMP so the parallel assembly regions are
+    # actually compiled into the binary under test rather than #if'd out.
+    flexaids_add_unit_test(test_svib_zero_mode_stability
+        SOURCES
+            tests/test_svib_zero_mode_stability.cpp
+            LIB/tENCoM/tencm.cpp
+            LIB/encom.cpp
+        LINK_LIBRARIES Eigen3::Eigen
+        DEFINES FLEXAIDS_HAS_EIGEN
+        CONFIGURE_SIMD
+        LINK_OPENMP
+        TEST_NAME SvibZeroModeStabilityTests
+    )
+    target_include_directories(test_svib_zero_mode_stability PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
+
     # test_tencom_diff — tENCoM differential engine tests
     flexaids_add_unit_test(test_tencom_diff
         SOURCES
