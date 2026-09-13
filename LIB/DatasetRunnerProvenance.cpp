@@ -19,6 +19,21 @@
 
 namespace fs = std::filesystem;
 
+// ── Compile-time provenance stamps ───────────────────────────────────────
+//
+// Both are supplied globally by the top-level CMakeLists.txt.  The
+// fallbacks below are the values that are honest when the build system did
+// NOT supply the real one -- never an optimistic guess, matching the
+// convention in LIB/version_info.cpp.  A receipt that says "unknown" is
+// recoverable; one that asserts a version it did not measure is not.
+#ifndef FLEXAIDS_GIT_COMMIT
+#define FLEXAIDS_GIT_COMMIT "unknown"
+#endif
+
+#ifndef FLEXAIDS_EIGEN_VERSION
+#define FLEXAIDS_EIGEN_VERSION "unknown"
+#endif
+
 namespace dataset {
 
 std::string provenance_json_escape(const std::string& s) {
@@ -92,7 +107,34 @@ RunProvenanceFields build_run_provenance(const std::string& dataset_name,
     p.matrix_sha256 = provenance_file_sha256(matrix_path);
     p.binary_path = binary_path;
     p.binary_sha256 = provenance_file_sha256(binary_path);
-    p.git_commit = provenance_cmd_token("git rev-parse HEAD 2>/dev/null");
+
+    // Compile-time stamps, NOT run-time shell-outs.
+    //
+    // git_commit was previously:
+    //     provenance_cmd_token("git rev-parse HEAD 2>/dev/null")
+    // which is a real measurement, but one taken by a command that only
+    // succeeds when the process CWD is inside a git work tree.  Benchmark
+    // runs execute in the results tree, so `git rev-parse` reported
+    // "fatal: not a git repository" and the token came back empty: 3017 of
+    // 3044 stored receipts carry an empty git_commit, and
+    // scripts/check_run_receipt.py lists that field as REQUIRED.  Every one
+    // of those receipts is unattributable for the same reason.
+    //
+    // 99.1% unanimity on the empty string is what an unmeasured field looks
+    // like, so the fix is to stop measuring it at a point where it can
+    // fail.  FLEXAIDS_GIT_COMMIT is stamped into the binary at configure
+    // time from the source tree itself, so it is CWD-independent, needs no
+    // subprocess, and is still correct for an installed binary with no
+    // repository anywhere near it.  LIB/top.cpp already populates
+    // RunReceipt::git_commit exactly this way; this is the same mechanism,
+    // not a new one.
+    p.git_commit = FLEXAIDS_GIT_COMMIT;
+
+    // Recorded inline so the receipt is self-contained -- see the struct
+    // comment in DatasetRunnerProvenance.h for the 27%-attributability
+    // measurement that motivates this rather than a build-dir join.
+    p.eigen_version = FLEXAIDS_EIGEN_VERSION;
+
     p.oracle_site_dir = oracle_site_dir;
     p.oracle_site_dir_set = !oracle_site_dir.empty();
     return p;
@@ -123,6 +165,15 @@ std::string format_run_provenance_json(const RunProvenanceFields& p) {
     j += "\",\n";
     j += "  \"git_commit\": \"";
     j += provenance_json_escape(p.git_commit);
+    j += "\",\n";
+    // Inserted here, between git_commit and oracle_site_dir, rather than
+    // appended: oracle_site_dir_set must remain the LAST field, because
+    // tests/test_dataset_runner.cpp asserts the document ends with
+    // "true\n}\n" to prove there is no trailing comma.  This position also
+    // keeps the three engine-identity fields -- binary_sha256, git_commit,
+    // eigen_version -- adjacent, which is how they are read.
+    j += "  \"eigen_version\": \"";
+    j += provenance_json_escape(p.eigen_version);
     j += "\",\n";
     j += "  \"oracle_site_dir\": \"";
     j += provenance_json_escape(p.oracle_site_dir);

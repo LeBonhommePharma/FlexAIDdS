@@ -127,9 +127,22 @@ jobs:
         run: |
           bash scripts/ci/apt_get_update.sh
           # gcc-14 / clang-18 are required for C++26 support (see CMakeLists.txt compiler gate).
-          # libeigen3-dev: vendored copy lives in LIB/vendor/eigen but submodule fetch is
-          # skipped in CI (shallow clone + broken gitlink) — system Eigen is equivalent.
-          PKGS="cmake ninja-build libomp-dev gcc-14 g++-14 clang-18 libeigen3-dev"
+          #
+          # Eigen is deliberately NOT installed from apt. libeigen3-dev is an
+          # Eigen 3.x package, and cmake/FlexAIDEigen.cmake now pins one exact
+          # version; a system Eigen that does not match the pin is a hard
+          # configure error, so installing it here would break the build
+          # rather than help it. CMake downloads and hash-verifies the pinned
+          # release instead, identically on every OS in this matrix.
+          #
+          # The comment removed here asserted "system Eigen is equivalent".
+          # That was measurably false: this matrix compiled an Eigen 3.x on
+          # Linux against a 5.x on macOS -- two different major versions of
+          # the self-adjoint eigensolver, both satisfying the old version
+          # floor, because a floor is not a pin. tENCoM classifies a zero mode by
+          # the SIGN of a numerically-zero eigenvalue, so that difference
+          # reaches dS_vib mode counts.
+          PKGS="cmake ninja-build libomp-dev gcc-14 g++-14 clang-18"
           if [ "${{ matrix.name }}" = "linux-gcc-mpi" ]; then
             PKGS="$PKGS libopenmpi-dev openmpi-bin"
           fi
@@ -137,7 +150,10 @@ jobs:
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
-          choco install ninja eigen -y
+          rem Eigen is not installed from Chocolatey: that package floats and
+          rem cmake/FlexAIDEigen.cmake pins an exact version, which CMake
+          rem fetches and hash-verifies itself.
+          choco install ninja -y
         shell: cmd
       - name: Configure
         shell: bash
@@ -218,9 +234,16 @@ jobs:
       - name: Install macOS dependencies
         run: |
           # Apple Clang ≥ 16 (Xcode 16) is required for C++26.
-          # Eigen3: system install via brew; vendored submodule skipped in CI.
+          #
+          # Eigen is NOT installed via brew. brew's eigen formula floats with
+          # upstream releases, so this leg's Eigen would depend on when the
+          # runner image was built -- and brew shipping a 5.x while apt
+          # shipped a 3.x is precisely how this matrix ended up compiling two
+          # different major versions of the eigensolver.
+          # cmake/FlexAIDEigen.cmake pins one version and CMake fetches it,
+          # hash-verified, so every leg compiles the same Eigen.
           sudo xcode-select -s /Applications/Xcode_16.app || true
-          brew install cmake ninja libomp eigen
+          brew install cmake ninja libomp
       - name: Configure (CPU, tests ON, Metal OFF)
         run: |
           CMAKE_ARGS=(
@@ -302,8 +325,9 @@ jobs:
         run: |
           bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
-          # libeigen3-dev: system Eigen used in CI (submodule fetch skipped, see cxx_core_build).
-          sudo apt-get install -y cmake ninja-build gcc-14 g++-14 libeigen3-dev
+          # Eigen intentionally absent: cmake/FlexAIDEigen.cmake pins an exact
+          # version that a distro package cannot satisfy (see cxx_core_build).
+          sudo apt-get install -y cmake ninja-build gcc-14 g++-14
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
           python -m pip install --upgrade pip
@@ -312,7 +336,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          choco install ninja eigen -y
+          rem Eigen is not installed from Chocolatey: that package floats and
+          rem cmake/FlexAIDEigen.cmake pins an exact version, which CMake
+          rem fetches and hash-verifies itself.
+          choco install ninja -y
           python -m pip install --upgrade pip
           python -m pip install "pybind11[global]" pytest numpy
       # Sets up the MSVC toolchain (cl, link, headers) once and exports it to

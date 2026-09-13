@@ -34,7 +34,9 @@ jobs:
         run: |
           bash scripts/ci/apt_get_update.sh
           # gcc-14 is required for C++26 support (see CMakeLists.txt compiler gate).
-          sudo apt-get install -y cmake ninja-build libeigen3-dev libboost-all-dev gcc-14 g++-14
+          # Eigen intentionally absent: cmake/FlexAIDEigen.cmake pins an exact
+          # version that a distro 3.x package cannot satisfy. CMake fetches it.
+          sudo apt-get install -y cmake ninja-build libboost-all-dev gcc-14 g++-14
           echo "CC=gcc-14" >> "$GITHUB_ENV"
           echo "CXX=g++-14" >> "$GITHUB_ENV"
 

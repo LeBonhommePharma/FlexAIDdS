@@ -56,74 +56,20 @@ if(FLEXAIDS_USE_OPENMP)
     endif()
 endif()
 
-# ─── Eigen3 (header-only; vendored at LIB/vendor/eigen) ─────────────────────
-# Discovery priority:
-#   1. Vendored submodule  — always works, no package manager needed
-#   2. System find_package — uses installed libeigen3-dev / brew eigen / etc.
-#   3. pkg-config          — additional system fallback
-#   4. FetchContent        — downloads from GitLab if nothing else is available
+# ─── Eigen3 (header-only) ───────────────────────────────────────────────────
 #
-# For a zero-dependency build on any platform just run:
-#   git clone --recurse-submodules <repo>
-# or, if already cloned:
-#   git submodule update --init --recursive
+# Version, hash, resolution order and the divergence gate all live in one
+# place.  Nothing about Eigen is decided here — see cmake/FlexAIDEigen.cmake
+# for the declared version and the reasoning behind it.
+#
+# For a build that needs no package manager and no network, initialise the
+# vendored submodule:
+#   git submodule update --init --recursive LIB/vendor/eigen
+# Otherwise the pinned release tarball is downloaded and hash-verified
+# automatically, so no manual step is required on any platform.
 
-set(_eigen_vendor_dir "${CMAKE_SOURCE_DIR}/LIB/vendor/eigen")
-if(EXISTS "${_eigen_vendor_dir}/Eigen/Dense")
-    message(STATUS "Eigen3: using vendored copy (LIB/vendor/eigen) — no system package needed")
-    if(NOT TARGET Eigen3::Eigen)
-        add_library(Eigen3::Eigen INTERFACE IMPORTED GLOBAL)
-    endif()
-    set_target_properties(Eigen3::Eigen PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${_eigen_vendor_dir}")
-    set(Eigen3_FOUND TRUE)
-else()
-    # Vendored submodule not initialised — try system / network fallbacks
-    find_package(Eigen3 3.4 QUIET NO_MODULE)
-    if(Eigen3_FOUND)
-        message(STATUS "Eigen3 ${Eigen3_VERSION} found via system cmake config")
-    else()
-        find_package(PkgConfig QUIET)
-        if(PKG_CONFIG_FOUND)
-            pkg_check_modules(EIGEN3 QUIET eigen3)
-        endif()
-        if(EIGEN3_FOUND)
-            message(STATUS "Eigen3 found via pkg-config")
-            if(NOT TARGET Eigen3::Eigen)
-                add_library(Eigen3::Eigen INTERFACE IMPORTED)
-            endif()
-            set_target_properties(Eigen3::Eigen PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIRS}")
-            set(Eigen3_FOUND TRUE)
-        else()
-            # Last resort: download tarball at configure time
-            message(STATUS "Eigen3 not found locally — fetching via FetchContent")
-            include(FetchContent)
-            FetchContent_Declare(eigen3
-                URL      https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
-                URL_HASH SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
-                DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-            FetchContent_Populate(eigen3)
-            if(NOT TARGET Eigen3::Eigen)
-                add_library(Eigen3::Eigen INTERFACE IMPORTED)
-            endif()
-            set_target_properties(Eigen3::Eigen PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${eigen3_SOURCE_DIR}")
-            set(Eigen3_FOUND TRUE)
-            message(STATUS "Eigen3 3.4.0 fetched via FetchContent (headers only)")
-        endif()
-    endif()
-endif()
-
-if(NOT Eigen3_FOUND)
-    message(FATAL_ERROR
-        "Eigen3 not found. The easiest fix is to initialise the vendored submodule:\n"
-        "  git submodule update --init --recursive\n"
-        "Alternatively install a system package:\n"
-        "  Linux:   sudo apt install libeigen3-dev\n"
-        "  macOS:   brew install eigen\n"
-        "  Windows: choco install eigen")
-endif()
+include(${CMAKE_CURRENT_LIST_DIR}/FlexAIDEigen.cmake)
+flexaids_resolve_eigen()
 
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)

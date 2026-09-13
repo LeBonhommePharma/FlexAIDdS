@@ -178,11 +178,22 @@ jobs:
 
           # Belt and braces: compile-check the closure directly from the sdist.
           tmp=$(mktemp -d); tar xzf dist/*.tar.gz -C "$tmp" --strip-components=1
-          sudo apt-get install -y libeigen3-dev >/dev/null 2>&1 || true
+          # Eigen comes from the repo's pin, not apt. libeigen3-dev is an
+          # Eigen 3.x package and cmake/FlexAIDEigen.cmake pins one exact
+          # version; scripts/ci/eigen_pin.sh reads that pin, so no Eigen
+          # version literal appears anywhere in this workflow.
+          #
+          # This step compiles by hand rather than through CMake, so it does
+          # not inherit the resolution or the divergence gate -- which is
+          # exactly why it must not be left on a distro Eigen.
+          #
+          # Resolved BEFORE the `cd` below: the helper lives in the repo, and
+          # after cd the relative path would no longer find it.
+          EIGEN_INC=$(bash scripts/ci/eigen_pin.sh fetch)
           python -m pip install --quiet pybind11
           cd "$tmp"
           if g++ -fsyntax-only -std=c++2b -ILIB -ILIB/tENCoM -ILIB/ShannonThermoStack \
-                 -I/usr/include/eigen3 "-I$(python -m pybind11 --includes | sed 's/-I//g' | awk '{print $1}')" \
+                 -I"$EIGEN_INC" "-I$(python -m pybind11 --includes | sed 's/-I//g' | awk '{print $1}')" \
                  LIB/statmech.cpp 2>/tmp/syn.log; then
             echo "header closure resolves (syntax-only)"
           else
@@ -239,10 +250,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Eigen (so the build is attempted, then fails on C++26)
+      - name: Provide pinned Eigen (so the build is attempted, then fails on C++26)
         run: |
-          bash scripts/ci/apt_get_update.sh || sudo apt-get update -y
-          sudo apt-get install -y libeigen3-dev
+          # This job's assertion is the C++26 compiler gate, not the Eigen
+          # version -- but it still must not introduce a second Eigen into
+          # the matrix. python/setup.py honours EIGEN_INCLUDE_DIR (see
+          # _find_eigen_include_dir), so the repo's pin is used here too and
+          # apt's 3.x libeigen3-dev is no longer installed anywhere.
+          echo "EIGEN_INCLUDE_DIR=$(bash scripts/ci/eigen_pin.sh fetch)" >> "$GITHUB_ENV"
 
       - name: Build wheel with gcc-11 (no C++26)
         working-directory: python
@@ -288,7 +303,11 @@ jobs:
       - name: Install toolchain (gcc-14 — CMakeLists gates C++26 on it)
         run: |
           bash scripts/ci/apt_get_update.sh || sudo apt-get update -y
-          sudo apt-get install -y cmake ninja-build libeigen3-dev gcc-14 g++-14
+          # Eigen intentionally absent: this leg is CMake-driven, so it picks
+          # up the pinned release through cmake/FlexAIDEigen.cmake. An apt
+          # libeigen3-dev (3.x) could not satisfy the exact pin and would now
+          # be a hard configure error.
+          sudo apt-get install -y cmake ninja-build gcc-14 g++-14
 
       - name: Configure the four provenance cases
         env:

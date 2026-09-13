@@ -12,5 +12,10 @@
   "cxx_compiler_version": "@CMAKE_CXX_COMPILER_VERSION@",
   "cxx_standard": "@CMAKE_CXX_STANDARD@",
   "system_name": "@CMAKE_SYSTEM_NAME@",
-  "system_processor": "@CMAKE_SYSTEM_PROCESSOR@"
+  "system_processor": "@CMAKE_SYSTEM_PROCESSOR@",
+  "eigen_version": "@FLEXAIDS_EIGEN_VERSION_DETECTED@",
+  "eigen_version_declared": "@FLEXAIDS_EIGEN_VERSION@",
+  "eigen_macro_triple": "@FLEXAIDS_EIGEN_MACRO_TRIPLE@",
+  "eigen_source": "@FLEXAIDS_EIGEN_SOURCE@",
+  "eigen_version_meaning": "eigen_version is READ BACK from the headers compiled against; eigen_version_declared is what cmake/FlexAIDEigen.cmake pins. They are equal unless FLEXAIDS_ALLOW_EIGEN_MISMATCH was used. eigen_macro_triple is the literal EIGEN_WORLD_VERSION.EIGEN_MAJOR_VERSION.EIGEN_MINOR_VERSION and is NOT the release number above Eigen 5: WORLD is frozen at 3, so a 5.x release reports a 3.x triple that matches no release. Compare eigen_version, not eigen_macro_triple."
 }

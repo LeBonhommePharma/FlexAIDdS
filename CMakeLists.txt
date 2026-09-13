@@ -307,10 +307,12 @@ endif()
 # Placed after the C++ standard is FINAL (26, or 23 on AppleClang, or 20 on
 # MSVC) because the template also records @CMAKE_CXX_STANDARD@; stamped any
 # earlier, that field is an empty string.
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-provenance.json.in"
-    "${CMAKE_BINARY_DIR}/flexaidds-build-provenance.json"
-    @ONLY)
+#
+# The template also records the RESOLVED Eigen version, which is not known
+# until dependency resolution has run, so the configure_file() call itself
+# lives just below include(cmake/FlexAIDDependencies.cmake) -- see there.
+# It is still exactly ONE configure of ONE template from ONE set of
+# variables, which is the property this section exists to preserve.
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -336,6 +338,44 @@ include(cmake/FlexAIDOptions.cmake)
 # External dependencies (Eigen, OpenMP, CUDA, HIP, Metal, MPI, pybind11, etc.)
 # Extracted to fight CMake monolith. Must precede add_subdirectory(LIB).
 include(cmake/FlexAIDDependencies.cmake)
+
+# ── Resolved Eigen version into provenance ────────────────────────────────
+#
+# Both stamps below record FLEXAIDS_EIGEN_VERSION_DETECTED -- the version
+# read back out of the Eigen headers the compiler will actually see -- and
+# not FLEXAIDS_EIGEN_VERSION, which is only what this tree PINS.  A pin
+# restates intent; these record a measurement.  A build that somehow
+# resolved a different Eigen therefore reports the one it really used,
+# which is the only version of this field worth storing beside a result.
+#
+# Both the release string and the raw macro triple are stamped, because
+# they are not the same thing above Eigen 5 and a reader cannot convert one
+# to the other without knowing Eigen's versioning convention -- see
+# cmake/FlexAIDEigen.cmake.
+#
+# Until this commit EIGEN_WORLD_VERSION appeared in no source file at all,
+# so no stored benchmark arm declared which eigensolver produced it.
+#
+# Global rather than scoped to one translation unit, for the same reason
+# FLEXAIDS_GIT_COMMIT above is global: more than one writer needs it.
+# LIB/version_info.cpp stamps it into `--version`, and
+# LIB/DatasetRunnerProvenance.cpp stamps it inline into every per-run
+# provenance.json beside binary_sha256.  Unlike FLEXAIDS_BUILT_UTC this
+# value does not change on every configure -- it changes only when the
+# resolved Eigen changes -- so it costs no rebuild churn.
+#
+# Placed here, immediately after dependency resolution, because that is the
+# earliest point at which the resolved version exists.
+add_compile_definitions(
+    FLEXAIDS_EIGEN_VERSION="${FLEXAIDS_EIGEN_VERSION_DETECTED}"
+    FLEXAIDS_EIGEN_MACRO_TRIPLE="${FLEXAIDS_EIGEN_MACRO_TRIPLE}")
+
+# One configure of one template, as described under "Machine-readable
+# provenance artifact" above.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-provenance.json.in"
+    "${CMAKE_BINARY_DIR}/flexaidds-build-provenance.json"
+    @ONLY)
 
 if(APPLE AND FLEXAIDS_USE_METAL)
     if(NOT FLEXAIDS_METALC)

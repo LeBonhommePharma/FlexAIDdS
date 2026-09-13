@@ -15,6 +15,22 @@
 namespace dataset {
 
 /// Fields written to per-run provenance.json (key set is stable for audits).
+///
+/// eigen_version is recorded INLINE here, beside binary_sha256, rather than
+/// being left to a join through the build directory.  That is a deliberate
+/// consequence of a measurement: of 3044 stored receipts, 100% carried a
+/// binary_sha256 but only 42 of 156 arms (27%) could be attributed to an
+/// Eigen version retroactively, because attribution needed the engine's
+/// build directory to still exist and CMakeCache.txt to still be readable.
+/// A hash is a pointer into a mutable filesystem; once the build dir is
+/// deleted the pointer dangles and the receipt can no longer be
+/// interpreted.  A version STRING in the receipt survives deletion of
+/// everything else, so it needs no second file to be readable.
+///
+/// This matters for entropy specifically: tENCoM classifies a zero mode by
+/// the SIGN of a numerically-zero eigenvalue, so the eigensolver is part of
+/// what produced a dS_vib mode count, and an arm that does not name its
+/// solver cannot be compared with one from another machine.
 struct RunProvenanceFields {
     std::string dataset;
     std::string matrix_path;
@@ -22,7 +38,24 @@ struct RunProvenanceFields {
     std::string matrix_sha256;
     std::string binary_path;
     std::string binary_sha256;
+    /// Short-form commit (git rev-parse --short), stamped at COMPILE time.
+    /// Populated by build_run_provenance() from FLEXAIDS_GIT_COMMIT.
+    ///
+    /// It used to be measured at RUN time by shelling out to
+    /// `git rev-parse HEAD`, which returned the empty string whenever the
+    /// process CWD was outside a git work tree.  Benchmark runs execute in
+    /// the results tree, not the repository, so the field was empty on
+    /// 3017 of 3044 stored receipts (0.9% populated) while
+    /// scripts/check_run_receipt.py lists it as REQUIRED.  The 27 that did
+    /// populate carry 40-hex SHAs from runs that happened to start inside
+    /// the repo; new receipts carry the 8-hex short form, which is a prefix
+    /// of the full SHA and therefore still joinable against them.
     std::string git_commit;
+    /// Eigen release string the engine was compiled against, e.g. the value
+    /// of EIGEN_VERSION_STRING.  NOT the EIGEN_WORLD.MAJOR.MINOR macro
+    /// triple, which is not the release number above Eigen 5 because WORLD
+    /// is frozen at 3.  See cmake/FlexAIDEigen.cmake.
+    std::string eigen_version;
     std::string oracle_site_dir;
     bool oracle_site_dir_set = false;
 };
