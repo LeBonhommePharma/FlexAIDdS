@@ -226,9 +226,18 @@ TEST(SvibInvariants, HessianSpectrumIsPositiveSemiDefinite) {
     }
 }
 
-// The zero-mode count is a CONVENTION of the basis, taken from the source
-// (tencm.h: n_expected receives 6 on the Cartesian path and 0 on the torsional
-// one) rather than assumed to be Cartesian.
+// The DECLARED rigid-mode count is a convention of the basis (tencm.h:
+// n_expected is 6 on Cartesian, 0 on torsional). The OBSERVED drop count is
+// not the same thing on a Ca-trace torsional network: those Hessians are
+// rank-deficient by 2 (measured on helices of 12..32 residues). The old
+// sign-based classifier hid that on some Eigen/arch combinations by keeping
+// +epsilon modes, so `dropped == expected` was only true when the solver
+// happened to emit those two modes with a positive sign.
+//
+// linux-clang / linux-gcc-mpi on main (PR #488) failed this test with
+// dropped=1 vs expected=0 — one of the two numerical zeros came out negative.
+// After magnitude classification the drop count is 2 on every architecture
+// this fixture has been run on. Cartesian remains dropped == 6.
 TEST(SvibInvariants, DroppedModeCountMatchesBasisConvention) {
     auto ca = helix_ca(24);
     tencm::TorsionalENM tors;
@@ -236,8 +245,10 @@ TEST(SvibInvariants, DroppedModeCountMatchesBasisConvention) {
     int dropped = -1, expected = -1;
     (void)tors.vibrational_eigenvalues(&dropped, &expected);
     EXPECT_EQ(expected, 0) << "torsional basis should declare 0 rigid modes";
-    EXPECT_EQ(dropped, expected)
-        << "dropped != expected means the contact graph fragmented";
+    EXPECT_EQ(dropped, 2)
+        << "Ca-trace torsional helix is rank-deficient by 2; "
+           "dropped=" << dropped << " means the classifier is still sign-sensitive "
+           "or the network actually fragmented";
 
     auto atoms = carbon_atoms(helix_ca(18));
     tencm::TorsionalENM cart;
