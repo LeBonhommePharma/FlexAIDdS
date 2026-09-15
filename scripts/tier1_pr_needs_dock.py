@@ -5,10 +5,14 @@ PoseBust is post-election physical validity (METHODOLOGY.md). Changing
 LIB/PoseBust/** cannot change RMSD ranking, so the 4-target Astex quality
 gate is noise against an aspirational 0.70 top-1 baseline.
 
-The workflow still *starts* on LIB/** (required checks stay green rather
-than path-filter skipped). This script then skips the dock.
+The workflow still *starts* on LIB/**, python/**, and benchmarks/**
+(required checks stay green rather than path-filter skipped). This script
+then skips the dock when every changed path is post-election / docs /
+skills / receipt-protocol.
 
-Fail closed: if the diff cannot be classified, run the dock.
+Fail closed: if the diff cannot be classified, run the dock. Engine paths
+(LIB/** except PoseBust, src/, DatasetRunner, python package modules other
+than the listed wrappers, benchmark YAML) still dock.
 
 Exit 0 always (except argparse errors). Prints dock=true|false to stdout
 and appends the same key to $GITHUB_OUTPUT when that env var is set.
@@ -33,16 +37,26 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _SKIP_EXACT = frozenset(
     {
         "README.md",
+        "METHODOLOGY.md",
         "scripts/tier1_pr_needs_dock.py",
         "tests/test_tier1_pr_needs_dock.py",
         "python/README.md",
         "python/flexaidds/updater.py",
+        # Public wrapper + docstring/example. Cannot move C++ RMSD ranking;
+        # python/flexaidds/docking.py and LIB/** remain fail-closed.
+        "python/flexaidds/__init__.py",
         "python/pyproject.toml",
         "python/setup.py",
         "scripts/install.sh",
         "scripts/update.sh",
         "scripts/validate_install_patterns.sh",
         "scripts/check_github_workflows.py",
+        "scripts/blind_astex85_receipt_protocol.py",
+        "scripts/check_run_receipt.py",
+        "scripts/check_run_receipt_codes.py",
+        # Offline re-elect / election-vs-scoring diagnostics (no re-dock).
+        "scripts/acf_strict_offline_reelect.py",
+        "scripts/e10_election_vs_scoring.py",
     }
 )
 _SKIP_PREFIXES = (
@@ -57,6 +71,9 @@ _SKIP_PREFIXES = (
     "containers/",
     ".devcontainer/",
     "site/",
+    ".grok/skills/",
+    ".agents/skills/",
+    "benchmarks/protocols/",
 )
 
 
@@ -65,7 +82,16 @@ def is_post_election_path(rel: str) -> bool:
     rel = rel.replace("\\", "/")
     if rel in _SKIP_EXACT:
         return True
-    return any(rel.startswith(prefix) for prefix in _SKIP_PREFIXES)
+    # Repo-root markdown (METHODOLOGY.md, AGENTS.md, …) cannot move RMSD ranking.
+    if "/" not in rel and rel.lower().endswith(".md"):
+        return True
+    if any(rel.startswith(prefix) for prefix in _SKIP_PREFIXES):
+        return True
+    # Receipt printers / validators under scripts/ cannot move CF ranking.
+    name = rel.rsplit("/", 1)[-1].lower()
+    if rel.startswith("scripts/") and "receipt" in name:
+        return True
+    return False
 
 
 def files_need_dock(files: list[str]) -> bool:
@@ -138,8 +164,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         emit_dock(
             False,
-            "PR is post-election / docs / PoseBust-only; skipping 4-target Astex dock "
-            "(RMSD ranking unchanged; FlexAID C++ CI covers NativePoseQC)",
+            "PR is post-election / docs / skills / receipt-protocol / PoseBust-only; "
+            "skipping 4-target Astex dock (RMSD ranking unchanged; FlexAID C++ CI "
+            "covers NativePoseQC)",
         )
     return 0
 
