@@ -118,7 +118,7 @@ python3 scripts/bootstrap_3dsig_s_top10.py \
 ## 6. Checklist
 
 - [x] Metric frozen (this file)
-- [x] Matrix pin 72d7 verified on queue data/
+- [x] Matrix pin **9dc9** (`9dc93717…`) is the claim/comparative pin (historical 72d7 queue pin is obsolete)
 - [x] Arm B FO = **single literature MinPts** only (no ladder; fo_minpts_literature.md)
 - [ ] C0 processes dead; stale locks removed
 - [ ] Arm A 3dsig_r10 running or complete

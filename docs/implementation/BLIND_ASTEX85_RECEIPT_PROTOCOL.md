@@ -10,7 +10,7 @@ document does not report a success rate.
 | N | 85 |
 | `native_pose_seeded` | 0 |
 | `seed_echo` | 0 |
-| Matrix | `MC_st0r5.2_6.dat` MD5 `72d7c7396702331d96ff12d18f831796` |
+| Matrix | `MC_st0r5.2_6.dat` MD5 `9dc93717dfed0698006d88dd6a9627bc` (**9dc9**; repo/true pin). Historical **72d7** packing fork is not the claim pin. |
 | Default seed | `FLEXAIDDS_SEED_ELITISM=0`, `FLEXAIDDS_NATIVE_SEED_FRAC=0` |
 | Claim metric | rank-0 in-place RMSD **≤ 2.0 Å** (METHODOLOGY.md §0) |
 
