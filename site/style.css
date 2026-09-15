@@ -377,16 +377,31 @@ h2 {
 .tab-btn.active { background: rgba(34,211,238,0.10); border-color: rgba(34,211,238,0.35); color: var(--color-accent); }
 .tab-panel.hidden { display: none; }
 
-/* Stats */
-.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-.stat-card { text-align: center; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--r-md); padding: 1.25rem; }
+/* Stats -- 2500-commit milestone badge sits on the card top edge so all four
+   cards share a value/label baseline (C++26 / Apache 2.0 / Source Languages). */
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; align-items: stretch; }
+.stat-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  padding: 1.25rem;
+}
 .stat-card--milestone {
   border-color: rgba(251,191,36,0.45);
   background: linear-gradient(135deg, rgba(251,191,36,0.10) 0%, rgba(34,211,238,0.06) 100%);
   box-shadow: 0 0 28px rgba(251,191,36,0.14);
 }
 .stat-milestone-badge {
-  display: inline-block;
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%);
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.14em;
@@ -396,7 +411,8 @@ h2 {
   border: 1px solid rgba(251,191,36,0.38);
   border-radius: 10px;
   padding: 2px 8px;
-  margin-bottom: 6px;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .stat-value { display: block; font-family: var(--font-mono); font-size: 1.75rem; font-weight: 700; color: var(--color-accent); margin-bottom: 4px; }
 .stat-value--milestone {
