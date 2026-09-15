@@ -1,4 +1,31 @@
-# LIVE GOAL — Three-engine Astex Diverse 85 (PRIORITY)
+# ⚠ QUARANTINE — NOT LIVE INSTRUCTIONS
+
+**Do not launch, resume, or configure any campaign from this file.**
+
+This is a frozen **2026-07-15** ops snapshot. It contradicts current operator
+contracts and will launch the wrong experiment on the wrong filesystem.
+
+| This archive still says | Current contract |
+|-------------------------|------------------|
+| Storage: **iCloud only** | **Local-first** live OUT; iCloud is a thin durable mirror (`AGENTS.md`, `docs/ICLOUD_BENCHMARK_STORAGE.md`) |
+| Search: pop 1000 · **gen 6000** · T **298** | Claim freeze: generations **2000** fixed; arm B **TEMPER 21**; DoF scales **population**, not generations (`docs/implementation/3dsig_red_pair_protocol.md`, `AGENTS.md`) |
+| Matrix **72d7** | Claim/comparative pin is **9dc9** (`9dc93717dfed0698006d88dd6a9627bc`). 72d7 is a packing-sweetened historical fork |
+| C0 full85 **LIVE** | No live science dock; C0 **SUSPENDED** (`docs/implementation/CAMPAIGN_STATUS_2026-07-25.md`) |
+| Primary KPIs **S1/S2** | 3Dsig red bars use **S_top10**; S1 is not the red-pair headline |
+
+**Read instead (in this order):**
+
+1. `AGENTS.md` (storage + DoF budget)
+2. `docs/implementation/3dsig_red_pair_protocol.md`
+3. `docs/implementation/CAMPAIGN_STATUS_2026-07-25.md`
+4. `.agents/skills/flexaidds-benchmarking/SKILL.md`
+
+The text below is kept as archive. Treat every status, pin, path, and **LIVE**
+label as **historical**. Audit P0-3 (`docs/audit/2026-09-15_code_and_benchmark_audit.md` / PR #496).
+
+---
+
+# LIVE GOAL — Three-engine Astex Diverse 85 (PRIORITY) *(historical archive)*
 
 **Updated (UTC):** 2026-07-15T05:04Z  
 **Primary science goal (highest priority):**  
