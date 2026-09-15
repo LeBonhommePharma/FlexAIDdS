@@ -218,7 +218,7 @@ def dock(
     Example:
         >>> results = flexaidds.dock('receptor.pdb', 'ligand.mol2')
         >>> for mode in results.rank_by_free_energy():
-        ...     print(f"Mode: ΔG={mode.free_energy:.2f} kcal/mol")
+        ...     print(f"Mode: F-like={mode.free_energy:.2f} (CF a.u. proxy; not kcal/mol ΔG)")
     """
     import tempfile
     from pathlib import Path
