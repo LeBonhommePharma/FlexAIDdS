@@ -524,21 +524,37 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   font-size: 11px; color: var(--fg-muted); line-height: 1.4;
 }
 
-/* ─── Repo stats ─── */
+/* ─── Repo stats ───
+   2500-commit milestone: badge is out of flow so the gold card's value/label
+   share a baseline with C++26 / Apache 2.0 / Source Languages. */
 .stats-row {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 2rem;
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch;
+  gap: 2rem;
   margin-bottom: 2rem;
+  padding-top: 0.75rem; /* room for the 2500 badge on the card's top edge */
 }
-.stat-item { text-align: center; }
-.stat-item--milestone {
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   padding: 1rem 1.25rem;
+  min-width: 7rem;
+  box-sizing: border-box;
+}
+.stat-item--milestone {
+  position: relative;
   border-radius: 12px;
   border: 1px solid rgba(255,147,0,0.45);
   background: linear-gradient(135deg, rgba(255,147,0,0.10) 0%, rgba(69,224,168,0.06) 100%);
   box-shadow: 0 0 28px rgba(255,147,0,0.14);
 }
 .stat-milestone-badge {
-  display: inline-block;
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%);
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.14em;
@@ -548,7 +564,8 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   border: 1px solid rgba(255,147,0,0.38);
   border-radius: 10px;
   padding: 2px 8px;
-  margin-bottom: 6px;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .stat-item .stat-value {
   font-family: var(--font-mono); font-size: 1.75rem;
