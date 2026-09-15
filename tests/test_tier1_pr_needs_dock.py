@@ -105,3 +105,89 @@ def test_cli_fail_closed_on_bad_git(capsys, monkeypatch):
     rc = gate.main(["origin/main", "HEAD"])
     assert rc == 0
     assert "dock=true" in capsys.readouterr().out
+
+
+def test_docs_skills_receipt_paths_skip_dock():
+    files = [
+        "METHODOLOGY.md",
+        "AGENTS.md",
+        ".grok/skills/flexaidds/SKILL.md",
+        ".grok/skills/flexaidds-dataset-runner/SKILL.md",
+        ".agents/skills/flexaidds-benchmarking/SKILL.md",
+        "benchmarks/protocols/three_engine_entropy_comparison.md",
+        "benchmarks/protocols/science_exclusions.md",
+        "scripts/blind_astex85_receipt_protocol.py",
+        "scripts/check_run_receipt.py",
+        "scripts/check_run_receipt_codes.py",
+        "python/flexaidds/__init__.py",
+    ]
+    assert all(gate.is_post_election_path(p) for p in files)
+    assert gate.files_need_dock(files) is False
+
+
+def test_pr497_matrix_pin_docs_skips_dock():
+    """#497 (9dc9 pin) is skills + METHODOLOGY + protocols + receipt printer."""
+    files = [
+        ".grok/skills/flexaidds-dataset-runner/SKILL.md",
+        ".grok/skills/flexaidds/SKILL.md",
+        "METHODOLOGY.md",
+        "benchmarks/protocols/three_engine_entropy_comparison.md",
+        "docs/implementation/3dsig_red_pair_protocol.md",
+        "docs/implementation/BLIND_ASTEX85_RECEIPT_PROTOCOL.md",
+        "scripts/blind_astex85_receipt_protocol.py",
+        "tests/test_blind_astex85_receipt_protocol.py",
+    ]
+    assert gate.files_need_dock(files) is False
+
+
+def test_pr501_init_docstring_skips_dock():
+    assert gate.files_need_dock(["python/flexaidds/__init__.py"]) is False
+
+
+def test_pr499_softbeta_ghost_flags_skips_dock():
+    files = [
+        "docs/implementation/FORWARD_SUCCESS_RATE_PLAN.md",
+        "docs/implementation/SCORING_PROVENANCE.md",
+        "docs/implementation/softbeta_election_policy.md",
+        "scripts/acf_strict_offline_reelect.py",
+        "scripts/check_run_receipt.py",
+        "scripts/e10_election_vs_scoring.py",
+    ]
+    assert gate.files_need_dock(files) is False
+
+
+def test_engine_paths_still_dock():
+    for path in (
+        "LIB/gaboom.cpp",
+        "LIB/DatasetRunner.cpp",
+        "LIB/Vcontacts.cpp",
+        "src/backends/webgpu/webgpu_eval.cpp",
+        "python/flexaidds/results.py",
+        "python/flexaidds/docking.py",
+        "python/flexaidds/dataset_runner/runner.py",
+        "benchmarks/datasets/astex_diverse.yaml",
+        "CMakeLists.txt",
+        "scripts/generate_flexaid_inp.py",
+    ):
+        assert gate.files_need_dock([path]) is True, path
+
+
+def test_skills_plus_gaboom_still_docks():
+    assert gate.files_need_dock(
+        [".grok/skills/flexaidds/SKILL.md", "LIB/gaboom.cpp"]
+    ) is True
+
+
+def test_init_plus_results_still_docks():
+    assert gate.files_need_dock(
+        ["python/flexaidds/__init__.py", "python/flexaidds/results.py"]
+    ) is True
+
+
+def test_protocol_plus_dataset_yaml_still_docks():
+    assert gate.files_need_dock(
+        [
+            "benchmarks/protocols/three_engine_entropy_comparison.md",
+            "benchmarks/datasets/astex_diverse.yaml",
+        ]
+    ) is True
