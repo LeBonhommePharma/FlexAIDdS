@@ -508,7 +508,10 @@ static void print_usage(const char* progname) {
 	printf("  --campaign                 Parallel virtual screening campaign mode\n");
 	printf("  --coarse-prefilter         Campaign: cube-screen library, dock top-N only\n");
 	printf("  --coarse-prefilter-top-n N Top-N for --coarse-prefilter (default: 100)\n");
-	printf("  --folded                   Skip NATURaL chain growth\n");
+	printf("  --folded                   Skip NATURaL chain growth (wins over --natural)\n");
+	printf("  --natural                  Enable experimental NATURaL DualAssembly growth\n");
+	printf("                             (default OFF; also FLEXAIDDS_NATURAL=1 or\n");
+	printf("                             advanced.enable_natural=true). natural_deltaG=0 otherwise.\n");
 	printf("  --legacy                   Legacy 3-file input mode\n");
 	printf("  --redock <PDBid>           Cognate redock from RCSB PDB ID\n");
 	printf("  --benchmark <set>          Run benchmark dataset (astex, casf2016, etc.)\n");
@@ -740,6 +743,7 @@ int main(int argc, char **argv){
 	FA->refstructure=0;
 	FA->omit_buried=0;
 	FA->assume_folded=0;
+	FA->enable_natural=0;
 	FA->natural_deltaG=0.0;
 	FA->is_protein=1;
 
@@ -936,6 +940,7 @@ int main(int argc, char **argv){
 	bool legacy_mode = false;
 	bool use_rigid = false;
 	bool use_folded = false;
+	bool use_natural = false;
 	bool use_screen = false;
 	bool use_screen_dock = false;
 	int  screen_top_n = 100;
@@ -1108,6 +1113,7 @@ int main(int argc, char **argv){
 				continue;
 			}
 			if (arg == "--folded") { use_folded = true; continue; }
+			if (arg == "--natural") { use_natural = true; continue; }
 			if (arg == "--conc" || arg == "--concentration") {
 				if (a + 1 < argc) user_conc_M = std::atof(argv[++a]);
 				continue;
@@ -1221,6 +1227,11 @@ int main(int argc, char **argv){
 		if (!legacy_mode) {
 			json::Value config = load_config(config_path);
 			if (use_rigid) config = json::merge(config, flexaid_rigid_overrides());
+			if (use_natural) {
+				using V = json::Value;
+				using O = json::Object;
+				config = json::merge(config, V(O{{"advanced", V(O{{"enable_natural", V(true)}})}}));
+			}
 			if (use_folded) {
 				using V = json::Value;
 				using O = json::Object;

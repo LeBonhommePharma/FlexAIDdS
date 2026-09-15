@@ -1917,9 +1917,13 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		}
 	}
 
-	// NATURaL co-translational / co-transcriptional DualAssembly analysis
-	// Skipped when --folded flag or advanced.assume_folded=true (receptor is fully folded)
-	if (!FA->assume_folded && FA->resligand && FA->resligand->fatm && FA->resligand->latm) {
+	// NATURaL DualAssembly growth is fail-closed on default docking.
+	// Opt in: --natural / FLEXAIDDS_NATURAL=1 / advanced.enable_natural=true.
+	// --folded / assume_folded always skips. PoseHelix / PoseLocal stay default
+	// OFF and never feed G_natural (see NATURaLConfig flags).
+	if (!natural::docking_natural_growth_enabled(FA)) {
+		FA->natural_deltaG = 0.0;
+	} else if (FA->resligand && FA->resligand->fatm && FA->resligand->latm) {
 		int lig_start   = FA->resligand->fatm[0];
 		int lig_end     = FA->resligand->latm[0];
 		int n_lig_atoms = lig_end - lig_start + 1;

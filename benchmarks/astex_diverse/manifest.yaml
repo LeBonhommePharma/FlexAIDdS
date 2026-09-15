@@ -33,6 +33,7 @@ metrics:
   - median_rmsd
   - entropy_rescue_rate
 
+expected_baselines_role: ci_gate_only
 expected_baselines:
   docking_power_top1: 0.70
   docking_power_top3: 0.85
@@ -45,6 +46,8 @@ baseline_tolerance: 0.05
 notes:
   - Tier-1 uses 5 high-resolution complexes for fast CI feedback (~10 min).
   - Full 85-complex validation is tier-2 (benchmarks/datasets/astex_diverse.yaml).
+  - Denominator is N=85 including 2HR7 as failure (not an exclusion).
+  - expected_baselines.docking_power_top1 0.70 is ci_gate_only, not a receipted rate.
   - PDB structures are fetched from RCSB; ligand extraction is automated.
   - Success criterion: RMSD < 2.0 Å vs co-crystal reference pose.
   - All 85 entries are listed in astex_diverse_set.csv with resolution and ligand ID.

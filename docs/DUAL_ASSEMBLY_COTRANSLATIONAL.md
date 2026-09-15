@@ -9,6 +9,11 @@ docking trajectory onto human-cell elongation rates. The Aβ42 protofibril (PDB 
 lives under `LIB/NATURaL/` and is exposed through the `dual_assembly` CLI and
 `scripts/run_dual_assembly_cotranslational.sh`.
 
+**Default docking is fail-closed.** `gaboom.cpp` does not run DualAssembly growth
+unless `--natural` / `FLEXAIDDS_NATURAL=1` / `advanced.enable_natural=true`.
+Without that opt-in, `FA->natural_deltaG` is 0. PoseHelix / PoseLocal stay
+default OFF and do not feed `G_natural`.
+
 ### Lineage: 2014 NATURAL vs 2026 NATURaL (do not conflate Zhao 2011 papers)
 
 **2014 NATURAL** = "Native Assembly of Transcriptionally-Unified RNA And Ligand"
@@ -26,8 +31,10 @@ co-Transcriptionally / co-Translationally Unified Receptor–Ligand.
 
 **Zhao 2011 JPCB is a different paper.** Zhao et al., J. Phys. Chem. B **115**, 3987
 (2011) is the ribosome master equation / protein cotranslation model used by
-`RibosomeElongation.h`. Do not cite it as the RNA cotranscriptional folding-kinetics
-source, and do not cite the JCP paper as the ribosome ODE.
+`RibosomeElongation.h` (bibliographic citation only; no DOI was invented).
+Do not attach `10.1021/jp109255g` (Werner et al., J. Phys. Chem. C 2010).
+Do not cite JPCB 2011 as the RNA cotranscriptional folding-kinetics source, and
+do not cite the JCP paper as the ribosome ODE.
 
 NucleationDetector hairpin ΔG is sequence-only (Turner). DualAssemblyEngine CF +
 Shannon instantaneous ΔG is not the seminar ligand coupling. Optional StatMech

@@ -653,7 +653,8 @@ struct FA_Global_struct{
 	int   clashed;                       // skipped individuals due to steric clashes
 	int   omit_buried;                   // skip buried atoms in the Vcontacts procedure
 	int   assume_folded;                 // assume receptor is fully folded — skip NATURaL co-translational/co-transcriptional chain growth
-	double natural_deltaG;              // NATURaL co-translational ΔG (kcal/mol); 0.0 if not run or assume_folded
+	int   enable_natural;                // opt-in DualAssembly growth (default 0). --natural / FLEXAIDDS_NATURAL=1 / advanced.enable_natural=true
+	double natural_deltaG;              // NATURaL co-translational ΔG (kcal/mol); 0.0 unless enable_natural and growth actually ran
 	int   vindex;                        // use indexed boxes and atoms in Vcontacts index_proteins
 
 	// ── Legacy compatibility shims (for cffunction / spfunction / old scoring paths) ──

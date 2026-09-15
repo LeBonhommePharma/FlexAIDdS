@@ -21,10 +21,10 @@ Anything not listed here should be treated as experimental.
 
 | OS | Compiler / runtime | Status | Notes |
 |:--|:--|:--|:--|
-| Linux | GCC >= 10 | Supported | Core target for release validation |
-| Linux | Clang >= 10 | Supported | Core target for release validation |
-| macOS | Apple Clang | Supported | Core CLI and Python surfaces only |
-| Windows | MSVC 2022 | Supported | Core CLI and Python surfaces only |
+| Linux | GCC >= 14 | Supported | CMake floor (`CMakeLists.txt`); C++26 |
+| Linux | Clang >= 18 | Supported | CMake floor; C++26 |
+| macOS | Apple Clang >= 16 (Xcode 16) | Supported | CMake floor; defaults to C++23 for SDK compatibility |
+| Windows | MSVC ≥ 19.40 (VS 2022 17.10+) | Bindings-only | CMake caps MSVC at C++20; full FlexAID engine unsupported |
 
 ## Backend support tiers
 

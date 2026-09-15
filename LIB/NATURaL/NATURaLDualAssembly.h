@@ -128,6 +128,16 @@ NATURaLConfig auto_configure(const atom*  atoms,
                               const resid* residues,
                               int          n_residues);
 
+/// Fail-closed DualAssembly gate for default docking.
+/// Growth runs only when FA->enable_natural is set AND the receptor is not
+/// assumed folded. PoseHelix / PoseLocal stay default OFF and never feed
+/// G_natural / FA->natural_deltaG (see NATURaLConfig flags).
+inline bool docking_natural_growth_enabled(const FA_Global* FA) noexcept {
+    if (FA == nullptr) return false;
+    if (FA->assume_folded) return false;
+    return FA->enable_natural != 0;
+}
+
 // ─── Human in-vivo protofibril protocol planning ────────────────────────────
 //
 // A protofibril is best treated as the fixed docking scaffold when the nascent

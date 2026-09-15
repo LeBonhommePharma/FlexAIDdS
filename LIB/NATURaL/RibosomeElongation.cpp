@@ -1,8 +1,14 @@
 // RibosomeElongation.cpp — Zhao 2011 master equation implementation
 //
-// Reference:
-//   Zhao et al. (2011) "Mechanism of Ribosomal Translocation"
-//   J. Phys. Chem. B 115, 3987–3997.  DOI: 10.1021/jp109255g
+// Reference (bibliographic citation only):
+//   Zhao et al. (2011) J. Phys. Chem. B 115, 3987–3997
+//   (ribosome master equation / protein cotranslation).
+//   no DOI was invented — doi-check: documented
+//   Do not attach 10.1021/jp109255g: that registered DOI is Werner et al.,
+//   J. Phys. Chem. C 2010 (gold nanoparticles), TITLE_MISMATCH vs Zhao.
+//
+// Distinct Zhao 2011 RNA paper (NOT this module):
+//   Zhao, Zhang, Chen, J. Chem. Phys. 135, 245101 (2011) doi:10.1063/1.3671644
 //
 // Codon rates calibrated from:
 //   Dong et al. (1996) J Mol Biol 260:649 (E. coli tRNA gene copies)

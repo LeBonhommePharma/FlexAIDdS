@@ -231,8 +231,11 @@ metrics:
 #   set."
 #
 # Read that alongside `published_baselines` below (0.452, Gaudreault &
-# Najmanovich): these are ASPIRATIONAL targets for FlexAIDdS, not the measured
+# Najmanovich): these are ASPIRATIONAL CI gates for FlexAIDdS, not the measured
 # state of the field, and the gate compares against the aspiration.
+# expected_baselines_role: ci_gate_only — 0.70 is NOT a published or receipted
+# FlexAIDdS docking-power rate. Do not quote it as a result.
+expected_baselines_role: ci_gate_only
 expected_baselines:
   docking_power_top1: 0.70
   docking_power_top3: 0.85

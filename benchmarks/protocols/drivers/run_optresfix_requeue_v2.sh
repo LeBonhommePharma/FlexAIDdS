@@ -187,9 +187,9 @@ fi
 # vs 252 in the nosec batch). P1 and P2 differing ONLY in this arg is what makes P2 a
 # control rather than a duplicate; they were both 1 in v1, which would have run the
 # headline arm in the control configuration and made P2 redundant.
-runjob P1_flex_3seed  "B_shrink" "12345 777777 999999" "$R/state/astex85_codes_84.txt"   5 1 0 1000 1000 || exit 1
-# P2 is the equal-budget control (NO_SEC=1), single seed, same roster.
-runjob P2_nosec_flex  "B_shrink" "12345"               "$R/state/astex85_codes_84.txt"   5 1 1 1000 1000 || exit 1
+runjob P1_flex_3seed  "B_shrink" "12345 777777 999999" "$R/state/astex85_codes.txt"   5 1 0 1000 1000 || exit 1
+# P2 is the equal-budget control (NO_SEC=1), single seed, same N=85 roster (2HR7=failure).
+runjob P2_nosec_flex  "B_shrink" "12345"               "$R/state/astex85_codes.txt"   5 1 1 1000 1000 || exit 1
 # P3 is the induced-fit readings. The optres fix makes FLEXAIDDS_SCORED_ONLY write the
 #    flexed side chains (measured: 67 atoms over GLN/GLU/TRP/TYR + ligand on 1MQ6), so
 #    the displacement metric no longer needs a whole-receptor dump.

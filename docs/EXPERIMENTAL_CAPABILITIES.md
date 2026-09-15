@@ -17,7 +17,10 @@ At the current stage, the following should be treated as experimental:
 - Swift packages and Apple-platform integration layers
 - TypeScript, PWA, dashboard, and browser-facing viewers
 - Bonhomme Fleet and iCloud-driven distributed execution
-- NATURaL and related co-translational or co-transcriptional workflows
+- NATURaL and related co-translational or co-transcriptional workflows.
+  Default `FlexAIDdS` docking is **fail-closed**: DualAssembly growth does not
+  run unless `--natural` / `FLEXAIDDS_NATURAL=1` / `advanced.enable_natural=true`.
+  Without that opt-in, `FA->natural_deltaG` stays 0.
 - PoseHelixThermoRewrite / pose→helix ΔH/ΔS rewrite (2014 NATURAL seminar glue; default OFF; not Astex / not `G_natural`)
 - PoseLocalThermoRewrite (`LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}`): experimental
   docking-pose rewrite of local secondary-structure ΔH/ΔS. RNA, DNA, protein

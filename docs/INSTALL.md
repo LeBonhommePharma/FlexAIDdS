@@ -106,6 +106,7 @@ below the floor rather than producing a subtly different binary:
 | toolchain | minimum |
 |---|---|
 | GCC | 14 |
+| Clang | 18 |
 | AppleClang | 16 (Xcode 16) |
 | MSVC | 19.40 (VS 2022 17.10) — engine still unsupported |
 | CMake | 3.28 |

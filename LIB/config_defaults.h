@@ -202,7 +202,8 @@ inline json::Value flexaid_default_config() {
             {"supernode",          V(false)},
             {"force_interaction",  V(false)},
             {"interaction_factor", V(5.0)},
-            {"assume_folded",      V(false)},  // skip NATURaL co-translational chain growth
+            {"assume_folded",      V(false)},  // skip NATURaL even if enable_natural is on
+            {"enable_natural",     V(false)},  // DualAssembly growth OFF unless --natural / FLEXAIDDS_NATURAL=1
         })},
     });
 }

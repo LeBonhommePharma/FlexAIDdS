@@ -164,6 +164,11 @@ struct DockingResult {
     // Ensemble free-energy estimate (F = -kT ln Z) when available; else CF
     // fallback. CSV column `predicted_dG` is a historical name — not exp. ΔG.
     float predicted_dG{0.0f};
+    // Machine-readable provenance for predicted_dG (CSV columns appended at END).
+    // has_free_energy: Post-GA Helmholtz F from the StatMech ledger.
+    // cf_fallback: CF / parsed-dG stand-in. Do not read that column as ΔG_bind.
+    bool  has_free_energy{false};
+    bool  cf_fallback{true};
     // Configurational ΔH ≈ <E> from the same ledger as predicted_dG (kcal/mol proxy units)
     float predicted_dH{0.0f};
     // Configurational TΔS estimate from the ledger (kcal/mol proxy units)

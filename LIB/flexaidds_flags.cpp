@@ -172,6 +172,7 @@ void seed_runtime_gates() {
         "FLEXAIDDS_MUTATION_GRANULAR",
         "FLEXAIDDS_NAN_RANK_GUARD",
         "FLEXAIDDS_NATIVE_ONLY",
+        "FLEXAIDDS_NATURAL",
         "FLEXAIDDS_NICHE_CARTESIAN",
         "FLEXAIDDS_NO_SEC",
         "FLEXAIDDS_NO_TENCOM",

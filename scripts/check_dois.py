@@ -35,6 +35,10 @@ What it fails on
                     known-bad identifier back into service.
 5. LEDGER_DRIFT   — a retired-ledger entry that the cache says *is* registered,
                     or a ledger entry that no longer appears anywhere.
+6. TITLE_MISMATCH — a live (non-documented) citation whose nearest ``Name et al``
+                    on the same line does not match the cache ``first_author``.
+                    Catches misattributed registered DOIs (Zhao JPCB 2011 tagged
+                    with Werner ``10.1021/jp109255g``).
 
 Offline by default
 ------------------
@@ -141,6 +145,26 @@ _TEXT_SUFFIXES = {
     ".sh", ".cmake", ".rst", ".cfg", ".ini", ".toml", ".csv", ".tsv", ".jsx",
     ".js", ".ts", ".html", ".R", ".r",
 }
+
+
+_ET_AL_LIST = re.compile(
+    r"([A-Z][A-Za-z\-]+(?:\s*,\s*[A-Z][A-Za-z\-]+)*)\s+et\s+al"
+)
+
+
+def cited_surnames_near_doi(line: str, doi: str) -> List[str]:
+    """Author surnames in the nearest ``A, B, C et al`` clause left of *doi*."""
+    idx = line.lower().find(doi.lower())
+    if idx < 0:
+        return []
+    left = line[:idx]
+    matches = list(_ET_AL_LIST.finditer(left))
+    if not matches:
+        return []
+    m = matches[-1]
+    if idx - m.start() > 160:
+        return []
+    return [p.strip() for p in m.group(1).split(",") if p.strip()]
 
 
 def trim_doi(s: str) -> str:
@@ -432,6 +456,15 @@ def check(root: Path, cache: Dict[str, dict], retired: Dict[str, dict],
             findings.append(Finding("UNREGISTERED", o.path, o.lineno,
                                     "%s does not resolve (Handle responseCode %s)"
                                     % (o.doi, entry.get("response_code"))))
+        elif not o.documented:
+            author = str(entry.get("first_author") or "").strip()
+            cited = cited_surnames_near_doi(o.line, o.doi)
+            cited_l = {n.casefold() for n in cited}
+            if author and cited and author.casefold() not in cited_l:
+                findings.append(Finding(
+                    "TITLE_MISMATCH", o.path, o.lineno,
+                    "%s is cached as first_author=%s but this live citation "
+                    "attributes it to %s et al" % (o.doi, author, cited[-1])))
 
     for f in fields:
         if f.value.lower() in retired:
@@ -497,6 +530,8 @@ def selftest(root: Path) -> int:
         "unregistered_live": "# Reference: https://doi.org/%s\n" % bad_doi,
         "zenodo_word_suffix": 'zenodo_doi: "%s"\n' % zenodo_bad,
         "uncached_doi": "# see https://doi.org/%s\n" % uncached,
+        # Registered Hartshorn DOI attributed to Zhao — TITLE_MISMATCH.
+        "title_mismatch": "# Zhao et al. (2011) https://doi.org/%s\n" % POSITIVE_CONTROL,
     }
 
     results = {}

@@ -109,15 +109,17 @@ class TestDatasetRunnerCppAssignmentComments:
 
     def test_predicted_dg_assignment_has_fallback_caveat(self):
         text = _read("LIB/DatasetRunner.cpp")
-        m = re.search(r"result\.predicted_dG\s*=\s*have_free_energy", text)
-        assert m, "expected predicted_dG assignment with free_energy / CF fallback"
+        m = re.search(r"make_predicted_dg\s*\(", text)
+        assert m, "expected make_predicted_dg() for predicted_dG provenance"
         start = max(0, m.start() - 800)
-        window = text[start : m.end() + 120]
+        window = text[start : m.end() + 400]
         assert re.search(
             r"NOT experimental|not experimental|fallback|ensemble",
             window,
             re.I,
         ), "predicted_dG assignment must document ensemble estimate / CF fallback"
+        assert "has_free_energy" in window
+        assert "cf_fallback" in window
 
 
 class TestDocsAndGuidance:
@@ -135,6 +137,8 @@ class TestDocsAndGuidance:
         assert "best_score" in text
         assert re.search(r"contact-function scoring proxy", text, re.I)
         assert "predicted_dG" in text
+        assert "has_free_energy" in text
+        assert "cf_fallback" in text
 
     def test_known_limitations_mentions_best_score(self):
         text = _read("docs/KNOWN_LIMITATIONS.md")

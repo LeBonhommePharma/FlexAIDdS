@@ -35,7 +35,7 @@ B="${1:-$(ls -d "$R"/water_ablation_* 2>/dev/null | sort | tail -1)}"
 BIN="$B/bin"
 CACHE="$R/cache_v2"
 SITES="$R/astex85_sites_clean"
-ROSTER="$R/state/astex85_codes_84.txt"
+ROSTER="$R/state/astex85_codes.txt"  # N=85 including 2HR7-as-failure; no codes_84 roster
 WINDOW=3
 mkdir -p "$B/run" "$B/tmp" "$B/gates"
 export TMPDIR="$B/tmp"

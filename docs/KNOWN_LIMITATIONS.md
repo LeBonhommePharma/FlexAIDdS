@@ -32,7 +32,7 @@ This file documents limitations that matter for installation trust, scientific i
 
 - Contact-function (CF) energies and H_eff are effective scoring proxies, **not** physical enthalpies unless a calibration layer exists.
 - DatasetRunner CSV `best_score` is the CF/contact-function scoring proxy of the elected pose — **not** free energy. Prefer the language "CF score" / `cf_score` even though the column name is historical.
-- DatasetRunner CSV `predicted_dG` is an ensemble free-energy *estimate* (or CF fallback) — **not** experimental binding free energy ΔG unless the full validated ledger path applies.
+- DatasetRunner CSV `predicted_dG` is an ensemble free-energy *estimate* (or CF fallback) — **not** experimental binding free energy ΔG unless the full validated ledger path applies. Machine-readable columns `has_free_energy` and `cf_fallback` (appended at CSV end) say which case it is. Never treat CF fallback as experimental ΔG_bind.
 - No uncalibrated Kd, Ki, or affinity values are emitted as real experimental quantities.
 - Compensation metrics and enthalpy/entropy fractions are diagnostic only and must not be used for ranking or affinity claims.
 - Single-temperature Cv is not experimental binding heat capacity change.

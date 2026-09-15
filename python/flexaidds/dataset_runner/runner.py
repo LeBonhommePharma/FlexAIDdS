@@ -195,7 +195,10 @@ class DatasetConfig:
         docking_mode:          Normative semantics: self_docking | cross_docking |
                                affinity_scoring | virtual_screening | specialized.
         metrics:               Names of metrics to compute (must exist in metrics.py).
-        expected_baselines:    ``{metric: value}`` reference values for regression checks.
+        expected_baselines:    ``{metric: value}`` CI / regression gates, not
+                               published docking-power rates unless
+                               ``expected_baselines_role`` says otherwise.
+        expected_baselines_role: ``ci_gate_only`` for Astex 0.70 — never quote as a receipted rate.
         published_baselines:   ``{metric: value}`` published reference values for comparisons.
         published_source:      Human-readable citation for the published baselines.
         baseline_tolerance:    Fractional tolerance for regression detection (default 0.05).
@@ -231,6 +234,7 @@ class DatasetConfig:
     docking_mode: str = "self_docking"
     metrics: List[str] = field(default_factory=list)
     expected_baselines: Dict[str, float] = field(default_factory=dict)
+    expected_baselines_role: str = ""
     published_baselines: Dict[str, float] = field(default_factory=dict)
     published_source: str = ""
     baseline_tolerance: float = 0.05
@@ -285,6 +289,8 @@ class DatasetConfig:
             "structure_recovery_policy",
             "claude_reevaluated_baselines",
             "claude_reevaluated_rationale",
+            "deck_2017_baselines",
+            "deck_2017_source",
         ):
             raw.pop(extra, None)
         docking_mode = str(raw.pop("docking_mode", "self_docking")).strip().lower()
@@ -313,6 +319,7 @@ class DatasetConfig:
             docking_mode=docking_mode,
             metrics=list(raw.pop("metrics", [])),
             expected_baselines=dict(raw.pop("expected_baselines", {})),
+            expected_baselines_role=str(raw.pop("expected_baselines_role", "")).strip(),
             published_baselines=dict(raw.pop("published_baselines", {})),
             published_source=str(raw.pop("published_source", "")),
             baseline_tolerance=float(raw.pop("baseline_tolerance", 0.05)),
