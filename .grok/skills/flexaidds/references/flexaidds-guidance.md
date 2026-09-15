@@ -27,6 +27,8 @@ Live campaign CSVs keep historical column names. Agents **must** use the semanti
 |-------------------|---------------------------------------------------------------------------------|---------------------------------------------|
 | `best_score`      | CF/contact-function scoring proxy of the elected pose (same concept as `elected_cf` / REMARK CF) | "free energy", "ΔG", "binding affinity"     |
 | `predicted_dG`    | Ensemble free-energy *estimate* F when StatMech ledger is present; may fall back to CF | "experimental ΔG", "true binding free energy" without full Z+vib+solvent validation |
+| `has_free_energy` | `1` iff `predicted_dG` is Helmholtz F from the ledger | Treating CF as ΔG when this flag is 0 |
+| `cf_fallback`     | `1` iff `predicted_dG` is CF / parsed-dG stand-in | "experimental ΔG_bind" for a CF fallback row |
 | `predicted_dH` / `predicted_TdS` | Configurational ledger proxies when available                         | Calorimetric ΔH / TΔS without calibration   |
 | `elected_cf` / `cf_native` / `cf_best_cluster` | Explicit CF fields (correct names)                        | Equating CF to ΔG                           |
 

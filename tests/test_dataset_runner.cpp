@@ -21,6 +21,7 @@
 #include "DatasetRunnerStats.h"  // P0 leaf: pure stats must compile standalone
 #include "DatasetRunnerProvenance.h"  // P1 leaf: provenance.json writer
 #include "DatasetThermoLog.h"
+#include "predicted_dg_contract.h"
 #include "rmsd_crosscheck_engine.h"   // engine calc_Hungarian_RMSD, for the cross-check
 #undef private
 #include "generated/dataset_codes.inc"  // declared source records for the generated rosters
@@ -1787,6 +1788,8 @@ TEST(ReportGeneration, WithResults) {
     std::getline(csv, header);
     EXPECT_TRUE(header.find("pdb_id") != std::string::npos);
     EXPECT_TRUE(header.find("rmsd_to_crystal") != std::string::npos);
+    EXPECT_TRUE(header.find("has_free_energy") != std::string::npos);
+    EXPECT_TRUE(header.find("cf_fallback") != std::string::npos);
 
     // Read first data line
     std::string data_line;
@@ -2447,4 +2450,23 @@ TEST(ReportRuntime, CachedExitCodesRetainRecordedFailures) {
     EXPECT_EQ(docking_exit_code_or_unknown(""), -1);
     EXPECT_EQ(docking_exit_code_or_unknown("0garbage"), -1);
     EXPECT_EQ(docking_exit_code_or_unknown("9999999999999999999999"), -1);
+}
+
+TEST(PredictedDGContract, FreeEnergyIsNotCfFallback) {
+    const auto c = dataset::make_predicted_dg(true, -7.5f, -1.0f, 12.0f);
+    EXPECT_FLOAT_EQ(c.predicted_dG, -7.5f);
+    EXPECT_TRUE(c.has_free_energy);
+    EXPECT_FALSE(c.cf_fallback);
+}
+
+TEST(PredictedDGContract, CfFallbackNeverLooksLikeExperimentalBind) {
+    const auto from_parsed = dataset::make_predicted_dg(false, 0.0f, -3.0f, 9.0f);
+    EXPECT_FLOAT_EQ(from_parsed.predicted_dG, -3.0f);
+    EXPECT_FALSE(from_parsed.has_free_energy);
+    EXPECT_TRUE(from_parsed.cf_fallback);
+
+    const auto from_cf = dataset::make_predicted_dg(false, 0.0f, 0.0f, 4.5f);
+    EXPECT_FLOAT_EQ(from_cf.predicted_dG, 4.5f);
+    EXPECT_FALSE(from_cf.has_free_energy);
+    EXPECT_TRUE(from_cf.cf_fallback);
 }

@@ -157,6 +157,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
     fi
     python3 "${REPO_ROOT}/scripts/blind_astex85_receipt_protocol.py" "${EMIT_ARGS[@]}"
     ok "dry-run: RUN_RECEIPT written to ${OUTPUT_DIR}; not launching 85-target dock"
+    ok "dry-run: docs/ASTEX_CLAIM_RECEIPT.md placeholders stay UNSET (no invented rates)"
     exit 0
 fi
 

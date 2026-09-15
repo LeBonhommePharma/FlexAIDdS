@@ -40,7 +40,9 @@ int build_contacts_cpu(const float* ca_xyz, int N,
     std::vector<std::vector<Contact>> thread_contacts(n_threads);
 
 #ifdef _OPENMP
-    #pragma omp parallel
+    // Same unchecked-index defect as tencm.cpp: thread_contacts is sized from
+    // omp_get_max_threads() outside the region. Clamp the team.
+    #pragma omp parallel num_threads(n_threads)
 #endif
     {
 #ifdef _OPENMP
@@ -148,7 +150,9 @@ void assemble_hessian_cpu(const float* ca_xyz, int N,
     const int n_threads = omp_get_max_threads();
     std::vector<Eigen::MatrixXd> thread_H(n_threads, Eigen::MatrixXd::Zero(M, M));
 
-    #pragma omp parallel
+    // Same unchecked-index defect as tencm.cpp: thread_H is sized from
+    // omp_get_max_threads() outside the region. Clamp the team.
+    #pragma omp parallel num_threads(n_threads)
     {
         const int tid = omp_get_thread_num();
         auto& local_H = thread_H[tid];

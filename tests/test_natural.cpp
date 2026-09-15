@@ -411,6 +411,33 @@ TEST(NATURaLConfig, DefaultsAreReasonable) {
     EXPECT_GT(cfg.mg_concentration_mM, 0.0);
 }
 
+TEST(NATURaLConfig, DefaultDockingNaturalDeltaGIsZeroWithoutFlag) {
+    FA_Global fa{};
+    EXPECT_EQ(fa.enable_natural, 0);
+    EXPECT_EQ(fa.assume_folded, 0);
+    EXPECT_FALSE(docking_natural_growth_enabled(&fa));
+    EXPECT_FALSE(docking_natural_growth_enabled(nullptr));
+    // Same fail-closed assignment gaboom.cpp uses when the gate is off.
+    if (!docking_natural_growth_enabled(&fa)) {
+        fa.natural_deltaG = 0.0;
+    }
+    EXPECT_DOUBLE_EQ(fa.natural_deltaG, 0.0);
+}
+
+TEST(NATURaLConfig, NaturalOptInIsSkippedWhenFolded) {
+    FA_Global fa{};
+    fa.enable_natural = 1;
+    EXPECT_TRUE(docking_natural_growth_enabled(&fa));
+    fa.assume_folded = 1;
+    EXPECT_FALSE(docking_natural_growth_enabled(&fa));
+}
+
+TEST(NATURaLConfig, PoseHelixAndPoseLocalStayDefaultOffAndDoNotFeedGNatural) {
+    NATURaLConfig cfg;
+    EXPECT_FALSE(cfg.enable_pose_helix_rewrite);
+    EXPECT_FALSE(cfg.pose_local_thermo_rewrite);
+}
+
 TEST(NATURaLConfig, IsNucleotideLigandReturnsFalseForEmpty) {
     EXPECT_FALSE(is_nucleotide_ligand(nullptr, 0));
 }

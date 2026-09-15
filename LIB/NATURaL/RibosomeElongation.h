@@ -1,7 +1,9 @@
 // RibosomeElongation.h — Ribosome-speed co-translational elongation model
 //
 // Implements the master equation framework of Zhao et al. (2011)
-// J. Phys. Chem. B 115, 3987–3997:
+// J. Phys. Chem. B 115, 3987–3997 (bibliographic citation only;
+// no DOI was invented — doi-check: documented).
+// 10.1021/jp109255g is Werner et al. J. Phys. Chem. C 2010, not Zhao.
 //
 //   dP_n(t)/dt = k_{n-1} · P_{n-1}(t) − k_n · P_n(t)
 //

@@ -238,3 +238,20 @@ def test_no_bare_log_Xi_attribute_in_production_runner():
         f"a bound method that fails to JSON-serialize, quietly, inside an "
         f"except-and-debug-log block"
     )
+
+
+def test_astex_diverse_yaml_ci_gate_only_and_2hr7_in_n85():
+    yaml_path = (
+        Path(__file__).resolve().parents[1]
+        / "flexaidds"
+        / "dataset_runner"
+        / "datasets"
+        / "astex_diverse.yaml"
+    )
+    cfg = DatasetConfig.from_yaml(yaml_path)
+    assert cfg.expected_baselines_role == "ci_gate_only"
+    assert cfg.expected_baselines.get("docking_power_top1") == 0.70
+    codes = {t.lower() for t in cfg.targets}
+    assert "2hr7" in codes
+    assert len(cfg.targets) == 85
+

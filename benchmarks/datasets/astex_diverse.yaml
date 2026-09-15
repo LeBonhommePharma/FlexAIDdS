@@ -231,8 +231,11 @@ metrics:
 #   set."
 #
 # Read that alongside `published_baselines` below (0.452, Gaudreault &
-# Najmanovich): these are ASPIRATIONAL targets for FlexAIDdS, not the measured
+# Najmanovich): these are ASPIRATIONAL CI gates for FlexAIDdS, not the measured
 # state of the field, and the gate compares against the aspiration.
+# expected_baselines_role: ci_gate_only — 0.70 is NOT a published or receipted
+# FlexAIDdS docking-power rate. Do not quote it as a result.
+expected_baselines_role: ci_gate_only
 expected_baselines:
   docking_power_top1: 0.70
   docking_power_top3: 0.85
@@ -270,8 +273,9 @@ deck_2017_baselines:
     rdock: 0.88
 deck_2017_source: "Morency & Najmanovich, 3Dsig 2017, slides 14 and 16 (Astex Diverse, N=85)"
 
-# NOTE on expected_baselines.docking_power_top1 (0.70): this value is ABOVE
-# both FlexAID (0.66) and FlexAID_dS (0.69) on the benchmark it names, and it
-# has no cited source. It is a gate threshold, not a published figure. It is
-# left unchanged here deliberately -- changing a gate threshold is a separate
-# decision from recording what the literature actually says.
+# NOTE on expected_baselines.docking_power_top1 (0.70): CI gate only
+# (`expected_baselines_role: ci_gate_only`). This value is ABOVE both FlexAID
+# (0.66) and FlexAID_dS (0.69) on the 3Dsig 2017 deck statistic it is often
+# confused with, and it has no receipted FlexAIDdS source. Do not quote 0.70
+# as a published or measured docking-power rate. Changing the gate threshold
+# is a separate decision from recording what the literature actually says.

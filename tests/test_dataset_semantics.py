@@ -82,3 +82,7 @@ def test_dataset_config_loads_astex_diverse():
     cfg = DatasetConfig.from_yaml(yaml_path)
     assert cfg.docking_mode == "self_docking"
     assert cfg.slug == "astex_diverse"
+    assert cfg.expected_baselines_role == "ci_gate_only"
+    assert cfg.expected_baselines.get("docking_power_top1") == 0.70
+    assert "2hr7" in {t.lower() for t in cfg.targets}
+    assert len(cfg.targets) == 85

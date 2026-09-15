@@ -169,10 +169,12 @@ NATURaLConfig auto_configure(const atom*  atoms,
     bool nucl_lig = is_nucleotide_ligand(atoms, n_lig_atoms);
     bool nucl_rec = is_nucleic_acid_receptor(residues, n_residues);
 
-    // Enable for any receptor with residues.
+    // Enable for any receptor with residues (standalone DualAssembly CLI).
     // Protein receptor → ribosomal elongation rates (Zhao 2011 / Dong 1996).
     // Nucleic acid receptor → RNAP rates (Uptain 1997 / Jonkers 2014).
-    // Callers opt out by setting FA->assume_folded (advanced.assume_folded in config).
+    // Default docking does NOT use this `enabled` bit as a gate: gaboom.cpp
+    // requires docking_natural_growth_enabled(FA) (--natural / FLEXAIDDS_NATURAL=1
+    // / advanced.enable_natural=true, and not assume_folded).
     if (n_residues > 0) {
         cfg.enabled                 = true;
         cfg.co_translational_growth = true;

@@ -29,6 +29,7 @@
 #include "ProtocolConfig.h"
 #include "SoftBetaFreeEnergy.h"
 #include "EnvFlags.h"       // flexaids::env_bool — one parser for FLEXAIDDS_* switches
+#include "predicted_dg_contract.h"
 // Receptor-frame provenance for the validator. Gates
 // FLEXAIDDS_WRITE_FLEXED_RECEPTOR (engine writes the as-scored receptor) and
 // FLEXAIDDS_PB_RECEPTOR=crystal|flexed|scored (which receptor PoseBusters is
@@ -6366,6 +6367,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         bool cached_csv_success = false;
         float cached_csv_best_score = 0.0f;
         float cached_csv_predicted_dg = 0.0f;
+        bool cached_csv_has_free_energy = false;
+        bool cached_csv_cf_fallback = true;
         int cached_csv_num_poses = 0;
         int cached_docking_exit_code = -1;
         bool cached_docking_completed = false;
@@ -6449,6 +6452,18 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             success_cell == "1" || success_cell == "true" || success_cell == "True";
                         cached_csv_best_score = parse_float_cell("best_score", 0.0f);
                         cached_csv_predicted_dg = parse_float_cell("predicted_dG", 0.0f);
+                        {
+                            const std::string hf = cell_for("has_free_energy");
+                            cached_csv_has_free_energy =
+                                hf == "1" || hf == "true" || hf == "True";
+                            const std::string cfb = cell_for("cf_fallback");
+                            if (!cfb.empty()) {
+                                cached_csv_cf_fallback =
+                                    cfb == "1" || cfb == "true" || cfb == "True";
+                            } else {
+                                cached_csv_cf_fallback = !cached_csv_has_free_energy;
+                            }
+                        }
                         cached_csv_num_poses = parse_int_cell("num_poses", 0);
                         result.matrix_md5 = cell_for("matrix_md5");
                         cached_csv_wall_time_s = parse_double_cell("wall_time_s", 0.0);
@@ -8099,9 +8114,23 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // predicted_dG CSV column: ensemble F estimate when Post-GA Helmholtz F
         // is available; otherwise best_dG parse or CF fallback. NOT experimental
         // binding free energy ΔG unless the full validated ledger path applies.
-        result.predicted_dG = have_free_energy ? free_energy_F
-                            : (best_dG != 0.0f) ? best_dG
-                                                : best_cf;
+        // Machine-readable flags: has_free_energy + cf_fallback (never treat CF
+        // as experimental ΔG_bind).
+        {
+            const auto dg = make_predicted_dg(
+                have_free_energy, free_energy_F, best_dG, best_cf);
+            result.predicted_dG = dg.predicted_dG;
+            result.has_free_energy = dg.has_free_energy;
+            result.cf_fallback = dg.cf_fallback;
+            if (skip && cached_csv_success) {
+                // Cached rows may already carry provenance; prefer those flags
+                // when the columns exist so a resume does not relabel F as CF.
+                if (cached_csv_has_free_energy) {
+                    result.has_free_energy = true;
+                    result.cf_fallback = cached_csv_cf_fallback;
+                }
+            }
+        }
         // Keep the GA collapse diagnostic alive under its own name.
         result.search_entropy_proxy = have_h_final ? h_final_parsed : 0.0f;
 
@@ -9482,7 +9511,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "compensation_ratio,TdS_shannon_gen500,TdS_shannon_gen1000,"
                            "cf_best_cluster,"
                            "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z,"
-                           "rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5\n";
+                           "rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5,"
+                           "has_free_energy,cf_fallback\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -9577,7 +9607,9 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << "\"" << result.thermo_binding_regime << "\","
                         << result.ensemble_log_Z << ","
                         << result.rmsd_fail_reason << "," << result.docking_exit_code
-                        << "," << (result.docking_completed ? 1 : 0) << "," << result.matrix_md5 << "\n";
+                        << "," << (result.docking_completed ? 1 : 0) << "," << result.matrix_md5
+                        << "," << (result.has_free_energy ? 1 : 0)
+                        << "," << (result.cf_fallback ? 1 : 0) << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -9685,25 +9717,14 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         if (r.rmsd_to_crystal >= 0.0f) {
             rmsds.push_back(r.rmsd_to_crystal);
         }
-        if (entries[i].has_affinity() && r.predicted_dG != 0.0f) {
+        if (entries[i].has_affinity() && r.predicted_dG != 0.0f &&
+            r.has_free_energy && !r.cf_fallback) {
             exp_affinities.push_back(entries[i].experimental_affinity);
-            // NOT a pKd. predicted_dG is a CF/contact-function proxy in
-            // arbitrary units with no validated kcal/mol calibration, so the
-            // 1.3636 kcal/mol-per-log-unit factor does not convert it into an
-            // affinity — applying it only rescales a proxy and then names the
-            // result after a physical quantity it has no claim to.
-            //
-            // The arithmetic is retained verbatim because Pearson r is
-            // invariant (up to sign) under an affine rescale of one variable:
-            // dropping the divisor would leave report.pearson_r numerically
-            // identical while changing nothing about what is actually being
-            // measured. Only the naming is corrected, so the reported
-            // correlation is bit-for-bit unchanged.
-            //
-            // What this correlation means: how well the proxy ORDERS targets
-            // against experiment. It is not evidence of calibrated affinity
-            // prediction, and no pKd may be reported from it.
-            pred_affinities.push_back(-r.predicted_dG / 1.3636); // proxy score, monotone rescale only
+            // NOT a pKd. predicted_dG here is the ensemble F estimate (kcal/mol
+            // proxy units). CF fallback is excluded: never treat CF as
+            // experimental ΔG_bind. The 1.3636 factor is a monotone rescale;
+            // Pearson r is invariant (up to sign) under an affine transform.
+            pred_affinities.push_back(-r.predicted_dG / 1.3636);
         }
     }
 
@@ -9981,7 +10002,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         }
         // Appended at END (not mid-header): column names are position-stable
         // for live campaigns; new diagnostics go last.
-        ofs << ",rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5,pb_ran,pb_n_checks,pb_n_pass,pb_n_fail\n";
+        ofs << ",rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5,pb_ran,pb_n_checks,pb_n_pass,pb_n_fail,has_free_energy,cf_fallback\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -10061,7 +10082,9 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
             ofs << "," << r.rmsd_fail_reason << "," << r.docking_exit_code
                 << "," << (r.docking_completed ? 1 : 0) << "," << r.matrix_md5
                 << "," << (r.pb_ran ? 1 : 0) << "," << r.pb_n_checks
-                << "," << r.pb_n_pass << "," << r.pb_n_fail << "\n";
+                << "," << r.pb_n_pass << "," << r.pb_n_fail
+                << "," << (r.has_free_energy ? 1 : 0)
+                << "," << (r.cf_fallback ? 1 : 0) << "\n";
         }
 
         ofs.close();

@@ -9,6 +9,7 @@
 #include "gaboom.h"
 #include "memetic_gate.h"
 #include "statmech.h"
+#include "EnvFlags.h"
 
 #include <cstring>
 #include <stdexcept>
@@ -414,6 +415,9 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB,
         FA->force_interaction  = jbool(config, "advanced", "force_interaction", false) ? 1 : 0;
         FA->interaction_factor = jflt(config, "advanced", "interaction_factor", 5.0f);
         FA->assume_folded      = jbool(config, "advanced", "assume_folded", false) ? 1 : 0;
+        FA->enable_natural     = jbool(config, "advanced", "enable_natural", false) ? 1 : 0;
+        if (flexaids::env_bool("FLEXAIDDS_NATURAL", false))
+            FA->enable_natural = 1;
     }
 
     // ── Coarse-init pocket scan ──

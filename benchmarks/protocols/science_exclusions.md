@@ -3,25 +3,40 @@
 **Status:** Normative for every roster count in the claim tables.
 **Rule:** a target excluded for a *scientific* reason is recorded here with its
 evidence. A target that merely failed to run is NOT an exclusion — it is a void
-cell and is reported as such.
+cell and is reported as such. A hard or ambiguous case that remains in the
+roster is a **failure when it misses**, not an exclusion.
 
-| Target | Excluded from | Reason | Evidence |
-|--------|---------------|--------|----------|
-| **2HR7** | Astex-84 pose-prediction roster (85 → 84) | The bound species is a **cryoprotectant polyether (PEG-like)**, not a cognate ligand. A pose-prediction endpoint is undefined for it: there is no biologically meaningful "correct" pose to recover, and its 22 heavy atoms in a free polyether give an enormous conformational space. | Measured cost as well as principle, batch `astex85_full_20260830_212437` (555 cells, production settings, 3 restarts): rigid `wall_s` **11933 / 12034 / 12188 s** across seeds 12345 / 777777 / 999999 (3.31–3.39 h), flexible **11011 / 11104 / 11116 s** (3.06–3.09 h) — **all six cells ~3.1–3.4 h, seed spread < 2.2%**, against that batch's median of **315 s**, i.e. **37.9× the median** and the batch maximum. Every cell produced **150 poses**, so the search does not fail; the endpoint is simply not interpretable. |
+## Canonical Astex Diverse denominator: N=85 including 2HR7-as-failure
+
+The Hartshorn 2007 Astex Diverse set is **85** complexes. FlexAIDdS claim
+aggregation uses that frozen roster (`benchmarks/protocols/astex85_target_manifest.json`).
+Rates are always **k/85**. A target absent from a campaign, dropped in admission,
+or RMSD/PoseBusters-failing **counts as a failure**. There is **no**
+`astex85_codes_84.txt` roster: shrinking the denominator by dropping 2HR7 is
+forbidden.
+
+| Target | Status | Why it stays in N=85 | Evidence |
+|--------|--------|----------------------|----------|
+| **2HR7** | **In roster; miss = failure** | Bound species is a cryoprotectant polyether (PEG / CCD P33), so a pose-prediction endpoint is scientifically awkward — but the deposit is in Hartshorn 2007 and the cache prepares cleanly. Excluding it would inflate success by shrinking N. | Batch `astex85_full_20260830_212437`: every cell produced poses; wall times were outliers (~3 h vs median ~315 s). That cost is not an exclusion criterion. |
+
+There are currently **no science exclusions** from the Astex-85 claim denominator.
 
 ## Denominator rule
 
-The canonical roster is **84 targets**, frozen at
-`benchmarks/protocols/astex85_target_manifest.json` (85 codes) minus the
-exclusions above. Roster file: `state/astex85_codes_84.txt`.
+The canonical roster is **85 targets**, frozen at
+`benchmarks/protocols/astex85_target_manifest.json`.
 
-Any table reporting `N/85` is either using the unexcluded manifest or has
-silently readmitted an exclusion; both must be corrected. Any table reporting
-`N/84` must be reconcilable against this file.
+Any table reporting `N/84` by dropping 2HR7 is incorrect for FlexAIDdS claims
+and must be restated as N=85 with 2HR7 counted as failure if it missed. Any
+table reporting `N/85` must be reconcilable against the manifest.
+
+`expected_baselines.docking_power_top1: 0.70` is a **CI gate only**
+(`expected_baselines_role: ci_gate_only`). It is **not** a published or
+receipted FlexAIDdS rate. Do not quote 70% as a result.
 
 ## Reading `wall_s` from a receipt
 
-**Read the field, never a display line.** A first draft of the row above quoted
+**Read the field, never a display line.** A first draft of a 2HR7 cost row quoted
 `11933 / 1203 / 1218 s` and inferred a 10× seed spread. `1203` and `1218` are
 **clipped prefixes** of `12034` and `12188`, produced by a `cut -c1-N` on a
 receipt line for terminal width. The true spread is under 2.2%. Parse
@@ -30,6 +45,7 @@ large intra-target seed spread as a suspected truncation until re-read.
 
 ## What is NOT an exclusion
 
+- **2HR7** — retained in N=85; see table above.
 - **1IGJ** — retained. Its apo file contains no crystallographic waters at all,
   which makes it a *control* for the solvent policy (§2b of the admission
   contract), not a defect.

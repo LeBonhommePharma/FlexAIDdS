@@ -28,6 +28,8 @@ energies:
 |--------|---------|-----------|
 | `best_score` | CF/contact-function scoring proxy of the elected pose (Voronoi CF / REMARK CF). Alias concept: `cf_score` / `elected_cf`. | **No** — never call this free energy |
 | `predicted_dG` | Ensemble free-energy *estimate* F = −kT ln Z when the Post-GA StatMech ledger is available; otherwise may fall back to CF | **Only as ensemble F estimate** — not experimental ΔG_bind unless full Z + vib + solvent/concentration path is active and validated |
+| `has_free_energy` | `1` iff `predicted_dG` is Helmholtz F from the StatMech ledger | Flag only |
+| `cf_fallback` | `1` iff `predicted_dG` is CF / parsed-dG stand-in | **Never treat as experimental ΔG_bind** |
 | `predicted_dH` / `predicted_TdS` | Configurational ledger proxies ⟨E⟩ and T·S_conf when available | Not calorimetric ΔH / TΔS without calibration |
 | `elected_cf`, `cf_native`, `cf_best_cluster` | Explicit CF diagnostics | CF only |
 
@@ -43,7 +45,11 @@ G_total = G_config + G_vib + G_natural + G_other
 ```
 
 - **G_vib**: Vibrational entropy correction (ENCoM / tENCoM)
-- **G_natural**: NATURaL co-translational / receptor strain correction
+- **G_natural**: NATURaL co-translational / receptor strain correction. Default
+  docking is **fail-closed**: DualAssembly growth is OFF unless `--natural` /
+  `FLEXAIDDS_NATURAL=1` / `advanced.enable_natural=true`, so `natural_deltaG==0`
+  and this term does not move the default ledger. PoseHelix / PoseLocal stay
+  default OFF and do not feed `G_natural`.
 - **G_other**: Future terms (e.g., explicit GIST)
 
 Presence is tracked with `has_vib`, `has_natural`, `has_other` flags.
