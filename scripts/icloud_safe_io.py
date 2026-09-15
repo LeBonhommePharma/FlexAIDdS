@@ -99,7 +99,22 @@ def _worker_sha256(path_s: str) -> str:
 
 
 def _worker_exists(path_s: str) -> bool:
-    return os.path.isfile(path_s)
+    # lexists: files *and* directories (mkdir/copy targets).
+    return os.path.lexists(path_s)
+
+
+def _worker_mkdir(path_s: str) -> bool:
+    os.makedirs(path_s, exist_ok=True)
+    return True
+
+
+def _worker_copy(payload: str) -> int:
+    src, dst = payload.split("\0", 1)
+    parent = os.path.dirname(dst)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    shutil.copy2(src, dst)
+    return int(os.path.getsize(dst))
 
 
 def _run_isolated(fn, arg: str, timeout_s: float, default=None):
@@ -123,6 +138,44 @@ def safe_exists(path: PathLike, timeout_s: float = 5.0) -> bool:
         except OSError:
             return False
     return bool(_run_isolated(_worker_exists, str(p), timeout_s, default=False))
+
+
+def safe_mkdir(path: PathLike, timeout_s: float = 20.0) -> bool:
+    """Create a directory (parents ok). Timeout-bounded on CloudDocs."""
+    p = Path(path).expanduser()
+    if not is_clouddocs(p):
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+            return True
+        except OSError:
+            return False
+    return bool(_run_isolated(_worker_mkdir, str(p), timeout_s, default=False))
+
+
+def safe_copy_file(
+    src: PathLike,
+    dst: PathLike,
+    *,
+    timeout_s: float = 600.0,
+) -> Optional[int]:
+    """Copy one local file to dst. CloudDocs destination is timeout-bounded.
+
+    Refuses to *read* CloudDocs sources (materialize first). Returns byte size
+    or None on timeout/error. Never walks a tree.
+    """
+    src_p = Path(src).expanduser()
+    dst_p = Path(dst).expanduser()
+    if is_clouddocs(src_p):
+        return None
+    if not is_clouddocs(dst_p):
+        try:
+            dst_p.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_p, dst_p)
+            return int(dst_p.stat().st_size)
+        except OSError:
+            return None
+    payload = f"{src_p}\0{dst_p}"
+    return _run_isolated(_worker_copy, payload, timeout_s, default=None)
 
 
 def safe_read_bytes(
@@ -297,14 +350,36 @@ def local_log_dir() -> Path:
 def _cli(argv: Sequence[str]) -> int:
     if len(argv) < 2:
         print(
-            "Usage: icloud_safe_io.py md5|sha256|materialize|is-cloud <path>",
+            "Usage: icloud_safe_io.py md5|sha256|materialize|is-cloud|exists|mkdir <path>\n"
+            "       icloud_safe_io.py copy <src> <dst>",
             file=sys.stderr,
         )
         return 2
-    cmd, path = argv[0], argv[1]
+    cmd = argv[0]
+    if cmd == "copy":
+        if len(argv) < 3:
+            print("copy requires src dst", file=sys.stderr)
+            return 2
+        n = safe_copy_file(argv[1], argv[2])
+        if n is None:
+            print("TIMEOUT_OR_ERROR", file=sys.stderr)
+            return 1
+        print(n)
+        return 0
+    if len(argv) < 2:
+        print("missing path", file=sys.stderr)
+        return 2
+    path = argv[1]
     if cmd == "is-cloud":
         print("yes" if is_clouddocs(path) else "no")
         return 0
+    if cmd == "exists":
+        print("yes" if safe_exists(path) else "no")
+        return 0
+    if cmd == "mkdir":
+        ok = safe_mkdir(path)
+        print("ok" if ok else "TIMEOUT_OR_ERROR")
+        return 0 if ok else 1
     if cmd == "md5":
         # materialize first if cloud
         p = materialize(path) if is_clouddocs(path) else Path(path)

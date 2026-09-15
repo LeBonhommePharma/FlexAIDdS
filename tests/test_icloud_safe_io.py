@@ -127,3 +127,22 @@ def test_pin_cache_dir_under_local(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     d = iso.pin_cache_dir()
     assert d == tmp_path / "lr" / "pins" / "materialize"
     assert d.is_dir()
+
+
+def test_safe_mkdir_and_copy_local(tmp_path: Path):
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"payload-bytes")
+    dest_dir = tmp_path / "out" / "nested"
+    assert iso.safe_mkdir(dest_dir) is True
+    n = iso.safe_copy_file(src, dest_dir / "src.bin")
+    assert n == len(b"payload-bytes")
+    assert (dest_dir / "src.bin").read_bytes() == b"payload-bytes"
+
+
+def test_safe_copy_refuses_clouddocs_source(tmp_path: Path):
+    cloud_src = (
+        Path.home()
+        / "Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS_benchmarks/x.dat"
+    )
+    n = iso.safe_copy_file(cloud_src, tmp_path / "x.dat")
+    assert n is None
