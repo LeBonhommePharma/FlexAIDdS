@@ -32,7 +32,7 @@ Record actual process environment used at launch (not ambient shell after the fa
 
 | Env | Notes |
 |-----|--------|
-| `FLEXAIDDS_ACF_STRICT` | E1b — default unset/0 |
+| `FLEXAIDDS_ELECT_LEGACY_ACF` | Engine ACF: unset/0 = `free_energy_strict` (default); `1` = legacy `acf`. Ghost name `FLEXAIDDS_ACF_STRICT` does not exist — do not record it as a live gate. |
 | `FLEXAIDDS_COM_BURIAL_CAP` | Prefer unset; never cite CAP=-130 without full probe set |
 | `FLEXAIDDS_COM_FLOOR` | Soft com clamp if used |
 | `FLEXAIDDS_VCT_NORM` | Intensive com if used |

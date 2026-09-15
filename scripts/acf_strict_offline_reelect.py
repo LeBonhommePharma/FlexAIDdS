@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """W1.1 offline ACF_STRICT election re-rank on frozen campaign heads (no re-dock).
 
+Live engine gate is FLEXAIDDS_ELECT_LEGACY_ACF (unset = free_energy_strict;
+=1 = legacy acf). FLEXAIDDS_ACF_STRICT does not exist — this script name is
+historical. Offline math only; it does not set either env.
+
 For each target: parse ranked pose REMARK CF values; compute:
   - legacy ACF G = Emin - T ln Z over all head CFs (multiplicity-sensitive if dups)
   - strict G via unique CF collapse (mirrors SoftBetaFreeEnergy free_energy_strict)

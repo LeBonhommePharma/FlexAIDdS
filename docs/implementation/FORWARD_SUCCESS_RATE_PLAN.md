@@ -120,8 +120,8 @@ Tags: **KEEP** (do next / in sequence) · **DEFER** (after gates) · **REJECT** 
 | Step | Action | Acceptance test | Must not regress |
 |------|--------|-----------------|------------------|
 | **W0.1** | **E10:** Rescore frozen heads (1G9V com-cap BCR 2.34 vs elected 10.62; C0 partial successes) with independent score (smina/Vinardo or probe_cf panel) | Report: fraction of targets where independent scorer ranks near-native head above elected decoy | No product default change |
-| **W0.2** | **E1b design:** env `FLEXAIDDS_ACF_STRICT=1` (name bikeshed OK) switches `cluster.cpp` emission from `acf` → `free_energy_strict` | Unit test: exact-duplicate CF members **do not** deepen G̃; default OFF = bit-identical | Default path parity |
-| **W0.3** | Document receipt schema for scoring env (CAP, ACF_STRICT, TEMPER, matrix md5) | Template fields present in ops launcher or RUN_RECEIPT writer | — |
+| **W0.2** | **E1b design (historical name):** planned env `FLEXAIDDS_ACF_STRICT=1` (name bikeshed). **Shipped:** that name is a **ghost** (no-op). Live gate is `FLEXAIDDS_ELECT_LEGACY_ACF` (default unset = `free_energy_strict`; `=1` restores legacy `acf`). | Unit test: exact-duplicate CF members **do not** deepen G̃ on the default `free_energy_strict` path | Default path is now strict, not pre-E1b bit-identical |
+| **W0.3** | Document receipt schema for scoring env (CAP, `FLEXAIDDS_ELECT_LEGACY_ACF` — not the ghost `ACF_STRICT`, TEMPER, matrix md5) | Template fields present in ops launcher or RUN_RECEIPT writer | — |
 
 **First three KEEP actions implementable without full-85:** W0.1, W0.2, W0.3 (then W1 serial pilot).
 
@@ -213,8 +213,8 @@ Claim measurement ──W4──►  9dc9, R=10, seed-off, S_top10 + genuine lab
 ## 6. Immediate next 72 hours (concrete)
 
 1. **E10 offline** on frozen 1G9V (+ 2–3 other election-gap targets) → write `workorders/E10_election_vs_scoring.md`.  
-2. **Implement E1b** flag + unit test + default-OFF parity (no full dock).  
-3. **Serial pilot** 6–9 targets, workers=2, 9dc9, defined-cleft if possible, ACF_STRICT on/off A/B.  
+2. **E1b is shipped** as `FLEXAIDDS_ELECT_LEGACY_ACF` (default unset = `free_energy_strict`; `=1` = legacy `acf`). Do not implement or set the ghost `FLEXAIDDS_ACF_STRICT`.  
+3. **Serial pilot** 6–9 targets, workers=2, 9dc9, defined-cleft if possible, `FLEXAIDDS_ELECT_LEGACY_ACF` unset vs `=1` A/B (not the ghost `ACF_STRICT`).  
 4. **Do not** re-fire com-cap full85 or softβ@72d7 autonomous as “entropy validation.”  
 5. Keep **COM_BURIAL_CAP off main**.
 

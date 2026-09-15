@@ -268,7 +268,8 @@ def render_md(results: list[TargetE10], *, title: str) -> str:
             "## Interpretation",
             "",
             "- **election_gap**: sampling found a near-native basin (BCR) but rank-0 election failed — "
-            "primary target for **E1b ACF_STRICT** / election fixes.",
+            "primary target for **E1b `FLEXAIDDS_ELECT_LEGACY_ACF`** / election fixes "
+            "(ghost name `FLEXAIDDS_ACF_STRICT` does not exist).",
             "- **size_bias_suspect**: REMARK soft_beta_G far below pose CF with large cluster frequency "
             "— consistent with ACF ≈ Emin − T ln Z multiplicity inflation.",
             "- Incomplete / UNCITABLE campaigns remain mechanism evidence only.",
