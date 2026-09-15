@@ -45,7 +45,7 @@ Do **not** mix claim rates across paths without labeling engine and flags.
 2. **Softβ S1** defaults **OFF** (`FLEXAIDDS_SOFTBETA_ELECTION=0`). Softβ cannot fix BCR=0.
 3. **Arm B FO@TEMPER21 ≠ Softβ S1.**
 4. Production `ga.inp`: `SHARESCL 10`, `SHAREPEK 5`, `SHAREALF 4` (never 0.20).
-5. Matrix pin: `MC_st0r5.2_6.dat` MD5 `72d7c7396702331d96ff12d18f831796`.
+5. Matrix pin (claim / comparative): `MC_st0r5.2_6.dat` MD5 `9dc93717dfed0698006d88dd6a9627bc` (**9dc9**; repo/true pin). Do not use the historical **72d7** packing-sweetened fork.
 6. Ligand integrity + native CF oracle fail closed before ranking claims.
 7. **No dual-launch** of heavy GA. Serial A → B0 → B.
 8. **Local-first** live OUT; iCloud thin mirror after success.

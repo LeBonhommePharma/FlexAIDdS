@@ -65,7 +65,7 @@ These rules override any older “Softβ ON by default”, “entropy will lift 
 | **C0** | FlexAIDdS DatasetRunner | separate | separate | Out of band until FO dual-suffix election verified |
 
 - **No dual-launch** of heavy GA on one Mac. Serial **A → B0 → B**. Local-first I/O (`scripts/use_local_first_benchmark_storage.sh`); sync iCloud later.
-- **Matrix pin:** `MC_st0r5.2_6.dat` MD5 **`72d7c7396702331d96ff12d18f831796`**.
+- **Matrix pin (claim / comparative):** `MC_st0r5.2_6.dat` MD5 **`9dc93717dfed0698006d88dd6a9627bc`** (**9dc9**; repo/true pin). The **72d7** (`72d7c7396702331d96ff12d18f831796`) packing-sweetened fork is a named historical fork — forbidden for claim and comparative arms. Mixing 9dc9 and 72d7 is mixing physics.
 - **PSHARE:** production **`SHARESCL 10`**, **`SHAREPEK 5`**, **`SHAREALF 4`** (`scripts/generate_flexaid_inp.py`). **Never** ship `SHARESCL 0.20` (pilot typo; ~50× niche radius). Override only via `FLEXAIDDS_GA_SHARESCL` with receipt.
 - **AMINO.def** is the live type file from DEPSPA unless `DEFTYP` is set. `AMINO26.def` on disk ≠ used.
 - **Ligand emission:** `LIB/read_lig.cpp` must set **inclusive** `latm = atm_cnt` so last HETTYP atom is emitted (fix for missing 90017/90027). Rebuild binary after that fix; integrity gate catches regressions.

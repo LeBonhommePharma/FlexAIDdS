@@ -8,7 +8,7 @@ Pins (METHODOLOGY.md §0 / §3; Wave 4 handoff):
   - N = 85
   - native_pose_seeded = 0
   - seed_echo = 0
-  - matrix MD5 = 72d7c7396702331d96ff12d18f831796 (MC_st0r5.2_6.dat)
+  - matrix MD5 = 9dc93717dfed0698006d88dd6a9627bc (MC_st0r5.2_6.dat; 9dc9)
   - default SEED_ELITISM = 0, NATIVE_SEED_FRAC = 0
   - claim success = rank-0 in-place RMSD <= 2.0 Å
 
@@ -29,7 +29,7 @@ from typing import Any, Mapping, Optional
 ROOT = Path(__file__).resolve().parents[1]
 
 N_TARGETS = 85
-MATRIX_MD5_PIN = "72d7c7396702331d96ff12d18f831796"
+MATRIX_MD5_PIN = "9dc93717dfed0698006d88dd6a9627bc"
 MATRIX_NAME = "MC_st0r5.2_6.dat"
 CLAIM_CUTOFF_A = 2.0
 SCHEMA_VERSION = 1

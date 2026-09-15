@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "blind_astex85_receipt_protocol.py"
 REPRO = ROOT / "scripts" / "reproduce_astex85.sh"
-PIN = "72d7c7396702331d96ff12d18f831796"
+PIN = "9dc93717dfed0698006d88dd6a9627bc"
 
 
 def _load():
