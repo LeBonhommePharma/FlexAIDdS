@@ -22,9 +22,9 @@
 
 ---
 
-FlexAID∆S is a thermodynamically-aware molecular docking engine for structure-based drug design. Where conventional docking programs report the single lowest-energy pose, FlexAID∆S treats the entire GA-sampled pose population as a statistical ensemble and extracts a free energy — balancing enthalpy against conformational entropy — to identify binding modes that are both energetically favorable *and* physically accessible at finite temperature. The result is a docking engine that is particularly effective on targets where the correct binding mode is not the lowest-enthalpy pose, a systematic failure mode of classical scoring functions.
+FlexAID∆S is a thermodynamically-aware molecular docking engine for structure-based drug design. Search always ranks poses with the **CF/contact-function scoring proxy** (Voronoi CF). Optional layers on top of that search — engine ACF emission when TEMPER>0, DatasetRunner Softβ S1 (default **OFF**), and classic FO@TEMPER21 — are **three different products** and must not be collapsed into one “entropy ranking.” Ensemble fields emitted after search are `proxy_only` diagnostics in arbitrary CF units: they are not a physical binding free energy, `Kd`, or `Ki`.
 
-FlexAID∆S descends from [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) (Gaudreault & Najmanovich, *J. Chem. Inf. Model.* 2015) and extends it with a score-space ensemble diagnostic layer, corrected atom-type assignments, a physical-realism clash penalty, and a two-gate spread guard that demotes false minima in the ranked output. Its accuracy on the Astex-85 benchmark is **unverified/pending**: this repository publishes no receipted success rate. See [Benchmark: Astex-85](#benchmark-astex-85).
+FlexAID∆S descends from [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) (Gaudreault & Najmanovich, *J. Chem. Inf. Model.* 2015) and extends it with a score-space ensemble diagnostic layer, corrected atom-type assignments, an optional physical-realism clash penalty, and an **opt-in** two-gate spread guard (default **off**). Its accuracy on the Astex-85 benchmark is **unverified/pending**: this repository publishes no receipted success rate. See [Benchmark: Astex-85](#benchmark-astex-85).
 
 ---
 
@@ -87,12 +87,15 @@ flag therefore does not currently enforce a physics filter on the elected pose.
 
 | Feature | FlexAID (2015) | FlexAID∆S |
 |:--------|:--------------:|:---------:|
-| Pose ranking criterion | min(CF) | Cluster-local soft-β `G̃ = H̃ − T·S̃` over the same CF samples (still CF-bound; no physical energy enters) |
+| GA search ranking | min(CF) | min(CF) — same Voronoi **CF/contact-function scoring proxy** |
+| Engine emission order (`T>0`) | min(CF) | Cluster-local soft-β ACF when TEMPER>0 and CF-rank emission is not forced. Score-T, CF a.u. **≠** DatasetRunner Softβ S1 **≠** FO@TEMPER21 |
+| DatasetRunner S1 election | min(CF) | Softβ S1 default **OFF**; Fix B freq-gate then min finite head CF. Opt in with `FLEXAIDDS_SOFTBETA_ELECTION=1` |
+| Classic arm B (3Dsig red-pair) | n/a | FO clustering + **TEMPER 21** engine ACF — not DatasetRunner Softβ rescoring of CF heads |
 | Ensemble analysis | ✗ | ✓ fail-closed proxy/canonical provenance ledger |
 | Impossibility predicate | ✗ | diagnostic only; not wired to final election |
 | Intermolecular clash detection | Approximated (23× undercounting) | ✓ Optional all-pairs clash *penalty* in CF (`pb_clash`, default off); post-election PoseBusters `bust` is the S2 gate |
 | Receptor clash grid | Rebuilt every CF eval | ✓ Loop-invariant hoist (once per dock) |
-| Spread guard (false-minima demotion) | ✗ | ✓ Two-gate: distance + frequency + consensus |
+| Spread guard (false-minima demotion) | ✗ | Opt-in two-gate (`FLEXAIDDS_CLUSTER_SPREAD_MAX` default **0 = off**). Not a live claim-path feature |
 | Atom type: N.2 (sp2 imine) | → N.am (donor, wrong sign) | N.2→N.ar (acceptor, correct) |
 | Atom type: N.3 (amine) | → N.3/type-8 (dead matrix row) | N.3→N.am (type-11, live) |
 | Atom type: C.1 (sp carbon) | → C.1/type-1 (sparse) | C.1→C.2 (type-2, better sampled) |
