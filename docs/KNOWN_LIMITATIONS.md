@@ -38,6 +38,12 @@ This file documents limitations that matter for installation trust, scientific i
 - Single-temperature Cv is not experimental binding heat capacity change.
 - True experimental ΔCp requires separate bound and unbound reference ensembles.
 - Joint ensemble and cleft annotation features are experimental until further benchmarked.
+- NATURaL DualAssembly *growth* currently runs on the default FlexAID GA epilogue
+  for any receptor with residues unless `--folded` / `advanced.assume_folded`.
+  Treat `G_natural` / `FA->natural_deltaG` as an experimental co-translational
+  diagnostic on that path, not a validated Astex term. PoseHelix / PoseLocal
+  rewrites remain default OFF and do not feed `G_natural`. Details:
+  `docs/audit/CODE_AND_BENCHMARKS_AUDIT_2026-09-15.md`.
 
 ### Current Security Status (May 2026)
 

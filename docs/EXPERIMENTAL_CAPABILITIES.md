@@ -17,7 +17,15 @@ At the current stage, the following should be treated as experimental:
 - Swift packages and Apple-platform integration layers
 - TypeScript, PWA, dashboard, and browser-facing viewers
 - Bonhomme Fleet and iCloud-driven distributed execution
-- NATURaL and related co-translational or co-transcriptional workflows
+- NATURaL and related co-translational or co-transcriptional workflows.
+  **Default-path warning:** PoseHelix / PoseLocal rewrites stay default OFF and
+  do not write `G_natural`. DualAssembly *growth* is different: `auto_configure`
+  sets `enabled=true` for any receptor with residues, and `LIB/gaboom.cpp` runs
+  `DualAssemblyEngine` on the GA epilogue unless `--folded` /
+  `advanced.assume_folded`. That writes `FA->natural_deltaG` (pose-independent
+  constant; intra-target mode order unchanged). There is no
+  `FLEXAIDDS_POSE_HELIX_THERMO_REWRITE` environment variable. See
+  `docs/audit/CODE_AND_BENCHMARKS_AUDIT_2026-09-15.md`.
 - PoseHelixThermoRewrite / pose→helix ΔH/ΔS rewrite (2014 NATURAL seminar glue; default OFF; not Astex / not `G_natural`)
 - PoseLocalThermoRewrite (`LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}`): experimental
   docking-pose rewrite of local secondary-structure ΔH/ΔS. RNA, DNA, protein
