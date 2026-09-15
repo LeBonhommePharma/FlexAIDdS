@@ -67,7 +67,7 @@ Never report Softβ \(\tilde G\) differences as kcal/mol experimental free-energ
 |-----|---------|---------|
 | **`FLEXAIDDS_SOFTBETA_ELECTION`** | **0 (OFF)** | Preferred name: Softβ S1 over clustered heads |
 | `FLEXAIDDS_ELECTION_SHANNON_F` | 0 | Legacy alias — same bit as Softβ S1 |
-| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Force Softβ OFF (legacy ZH / ≈CF path) |
+| `FLEXAIDDS_ELECTION_LEGACY_ZH` | 0 | Force Softβ S1 **OFF**. Does **not** restore a ZH composite; the OFF path is min finite head CF. |
 | `FLEXAIDDS_ELECTION_SOFT_T` | 0 → resolve | Soft-β \(T\) override |
 
 Either ON alias enables Softβ; `LEGACY_ZH=1` always forces OFF.
@@ -86,13 +86,15 @@ export FLEXAIDDS_SOFTBETA_ELECTION=1
 
 `scripts/run_C0_claim_clean.sh` defaults Softβ S1 to **0** (explicit opt-in required).
 
-### Engine cluster ACF emission (E1b — Wave 0)
+### Engine cluster ACF emission (E1b — shipped polarity)
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| **`FLEXAIDDS_ACF_STRICT`** | **0 (OFF)** | When `1`, `LIB/cluster.cpp` uses `soft_beta::free_energy_strict` (UniqueGeometry) for `Clus_ACF` instead of legacy `soft_beta::acf`. Exact-CF-duplicate members no longer deepen \(\tilde G\) via \(T\ln N\) multiplicity. |
+| **`FLEXAIDDS_ELECT_LEGACY_ACF`** | **unset / 0** | Live gate in `LIB/cluster.cpp` and `LIB/BindingMode.cpp`. **Unset** → `soft_beta::free_energy_strict` (UniqueGeometry) for `Clus_ACF`. **`=1`** → restore legacy `soft_beta::acf` (multiplicity-inflated \(T\ln N\)). Parsed with `flexaids::env_bool`. |
 
-Default OFF is **bit-identical** to the pre-E1b product path. Opt in only for pilots measuring election-gap targets (e.g. BCR≤2.5 Å with elected RMSD>2). See `docs/implementation/FORWARD_SUCCESS_RATE_PLAN.md` Wave 0–1.
+**Ghost:** `FLEXAIDDS_ACF_STRICT` **does not exist** in `LIB/`. Setting it is a no-op. Do not document it as the E1b switch.
+
+Default product path is **strict ON** (legacy ACF **OFF**). That is **not** bit-identical to the pre-E1b `acf` emission. DatasetRunner Softβ S1 (when opted in) uses non-strict `free_energy()` — a different \(\tilde G\) than engine ACF@T and than FO@TEMPER21. See `docs/implementation/FORWARD_SUCCESS_RATE_PLAN.md` Wave 0–1 for the historical design name.
 
 ---
 
@@ -115,22 +117,24 @@ Default OFF is **bit-identical** to the pre-E1b product path. Opt in only for pi
 ```
 if FLEXAIDDS_SOFTBETA_ELECTION (or SHANNON_F) and not LEGACY_ZH:
     soft_T = ELECTION_SOFT_T or dock TEMPER or 298
-    rank modes by Ĝ_i = soft_beta::mode_free_energy(mode_i, soft_T).G
+    rank modes by Ĝ_i = soft_beta::free_energy(mode_i, soft_T).G   # non-strict
     elect min Ĝ
     log [SOFTBETA-ELECT] Softβ S1 ON … (not sampling; cannot fix BCR=0)
 else:
     do not claim Softβ improvement
-    DatasetRunner keeps legacy ZH composite (ranking continuity; not Softβ)
-    pure CF rank-0 helper: soft_beta::elect_cf_rank0 / elect_gated(..., false)
-    log [SOFTBETA-ELECT] Softβ S1 OFF (default)
+    DatasetRunner elects **min finite head CF** (Fix B freq-gate still applies
+    on the default objective). Legacy exp(−CF/0.592) ZH composite is **removed**.
+    FLEXAIDDS_ELECTION_LEGACY_ZH=1 only forces this OFF path; it does not
+    restore ZH scoring.
+    log [SOFTBETA-ELECT] Softβ S1 OFF (default): elect min finite head CF
 ```
 
 Crystal RMSD is **not** an input.
 
-**Ranking-preservation note:** Default OFF path in DatasetRunner is still the pre-existing
-legacy ZH composite (not a forced rewrite to pure min-CF), so enabling this policy
-does not flip claim ranking vs prior Softβ-OFF builds. The pure CF helpers in
-`SoftBetaFreeEnergy.h` are the clean gated API for tests and future explicit wiring.
+**Ranking-preservation note:** Default OFF path in DatasetRunner is **min finite
+head CF**, not a ZH composite. Do not teach the OFF path as “legacy ZH.”
+`FLEXAIDDS_ELECTION_LEGACY_ZH` is a force-OFF bit whose name is historical.
+The pure CF helpers in `SoftBetaFreeEnergy.h` remain the gated API for tests.
 
 Unit gates: `SoftBetaIdentity::*`, `SoftBetaGatedElection::*` in `tests/test_classic_entropy_ranking.cpp`; ProtocolConfig Softβ defaults in `tests/test_protocol_config.cpp`.
 

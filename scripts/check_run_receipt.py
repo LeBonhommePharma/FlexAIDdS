@@ -54,7 +54,7 @@ REQUIRED = ("matrix_md5", "git_commit")
 CAMPAIGN_REQUIRED = ("schema", "frozen_utc", "matrix_md5")
 BINARY_KEYS = ("binary_sha256", "binary_path")
 SCORING_ENV_KEYS = (
-    "FLEXAIDDS_ACF_STRICT",
+    "FLEXAIDDS_ELECT_LEGACY_ACF",
     "FLEXAIDDS_COM_BURIAL_CAP",
     "FLEXAIDDS_COM_FLOOR",
     "FLEXAIDDS_VCT_NORM",
