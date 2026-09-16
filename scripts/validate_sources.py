@@ -90,7 +90,6 @@ BUILT_IN_IGNORES: List[str] = [
     "LIB/vendor/**",
     "LIB/old/**",
     "LIB/wif083.cpp",           # historical internal tool
-    "LIB/python_bindings.cpp",  # legacy pybind11 stub (intentionally not used)
     "**/__pycache__/**",
     "**/build/**",
     "**/CMakeFiles/**",

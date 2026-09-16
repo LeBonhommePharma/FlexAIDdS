@@ -39,7 +39,6 @@ LIB/GPUContextPool.h
 LIB/GrandPartitionFunction.h
 LIB/GridDecomposer.h
 LIB/HBondEvaluator.h
-LIB/HardwareDispatch.h
 LIB/InStreamClustering.h
 LIB/LibrarySplitter.h
 LIB/LigandRingFlex/LigandRingFlex.h
@@ -61,7 +60,6 @@ LIB/NATURaL/NascentChainScheduler.h
 LIB/NATURaL/NucleationDetector.h
 LIB/NATURaL/RibosomeElongation.h
 LIB/NATURaL/TransloconInsertion.h
-LIB/NATURaL/disco_natural.hpp
 LIB/PTMAttachment/PTMAttachment.h
 LIB/ParallelCampaign.h
 LIB/ParallelDock.h
@@ -96,9 +94,7 @@ LIB/TurboQuantMetalBridge.h
 LIB/TwoStageScreen.h
 LIB/UnifiedHardwareDispatch.h
 LIB/Vcontacts.h
-LIB/VoronoiCFBatch_SoA.h
 LIB/assign_formal_charges.h
-LIB/async_dispatch.h
 LIB/config_defaults.h
 LIB/config_parser.h
 LIB/cpu_eval.h
@@ -113,10 +109,8 @@ LIB/ga_diversity.h
 LIB/gaboom.h
 LIB/gpu_batch_distance.h
 LIB/gpu_buffer.h
-LIB/gpu_event.h
 LIB/gpu_fast_optics_metal.h
 LIB/hardware_detect.h
-LIB/hardware_dispatch.h
 LIB/hbond_potential.h
 LIB/hip_eval.h
 LIB/ion_utils.h
@@ -126,7 +120,6 @@ LIB/metal_coordination.h
 LIB/metal_eval.h
 LIB/nrgrank_matrix.h
 LIB/read_input_utils.h
-LIB/rocm_additions.h
 LIB/shannon_ga.h
 LIB/simd_distance.h
 LIB/tENCoM/pdb_calpha.h

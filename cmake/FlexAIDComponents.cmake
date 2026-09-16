@@ -37,7 +37,6 @@ target_include_directories(FlexAID_VoronoiCF INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB
 )
 target_sources(FlexAID_VoronoiCF INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/VoronoiCFBatch_SoA.h
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB/VoronoiCFBatch.h
 )
 target_link_libraries(FlexAID_VoronoiCF INTERFACE
