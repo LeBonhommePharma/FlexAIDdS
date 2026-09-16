@@ -166,6 +166,33 @@ Rules that follow:
 - A cross-path result is not evidence until the divergence responsible has been ablated.
 - Changing either harness's defaults is a methodology change: it lands here first.
 
+### 0.1.1 Tier-1 CI quality gate — sampling vs ranking
+
+The 4-target Astex job (`.github/workflows/benchmark-tier1.yml`, seed
+`FLEXAIDDS_TIER1_SEED=20260816`, roster `1gpk,1mq6,1xm6,2cet`) is a
+**regression detector**, not an Astex-85 docking-power claim. Executable
+contract: `docs/TIER1_CI_CONTRACT.md` and
+`python/flexaidds/dataset_runner/tier1_contract.py`.
+
+- **Hard (blocking):** liveness / productivity / completeness (#326), roster
+  replay, CF matrix pin 9dc9 (`MC_st0r5.2_6.dat` MD5
+  `9dc93717dfed0698006d88dd6a9627bc`), election-objective lock
+  (`cf_minus_ts`), `sampling_power` (any pose RMSD ≤ 2.0 Å over the pinned
+  draw), `mean_rmsd` / `median_rmsd` (min-RMSD / library quality).
+- **Advisory (measured, non-blocking)** until `ci_ranking_status: registered`:
+  `docking_power_top1` / `top3` and `entropy_rescue_rate`. The 0.70 / 0.85
+  figures remain `expected_baselines_role: ci_gate_only` and must not be
+  quoted as a receipted FlexAIDdS rate. A measured top-1 of 0.0 with
+  near-natives in the 10-pose library is ranking collapse, not Softβ /
+  entropy failure, and not a DualAssembly-only bug. YAML that keeps
+  `unregistered` but marks those metrics `hard` is a config error.
+- **Do not** retune the CF matrix to green this gate. **Do not** introduce
+  Cartesian ligand entropy as a CF weight. A future registered election may
+  use pose-density clustering (conformational) and torsional-consistent
+  tENCoM (vibrational).
+- Live docks write `TIER1_RECEIPT.json`. Replay the draw with
+  `PYTHONPATH=python python3 -m flexaidds.dataset_runner.tier1_contract --replay-roster --seed 20260816`.
+
 ## 0.2 Provenance — what a receipt must capture
 
 ### Audit repair contract (September 2026)

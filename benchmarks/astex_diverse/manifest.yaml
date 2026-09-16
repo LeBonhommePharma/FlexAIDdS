@@ -44,7 +44,10 @@ expected_baselines:
 baseline_tolerance: 0.05
 
 notes:
-  - Tier-1 uses 5 high-resolution complexes for fast CI feedback (~10 min).
+  - CI Tier-1 is 4 targets, not 5: seed 20260816 draws 1gpk,1mq6,1xm6,2cet
+    (anchors + rotating slots). See docs/TIER1_CI_CONTRACT.md.
+  - Ranking (docking_power_top1 0.70) is advisory until a registered election
+    rule; hard gates are sampling / completion / matrix / roster replay.
   - Full 85-complex validation is tier-2 (benchmarks/datasets/astex_diverse.yaml).
   - Denominator is N=85 including 2HR7 as failure (not an exclusion).
   - expected_baselines.docking_power_top1 0.70 is ci_gate_only, not a receipted rate.

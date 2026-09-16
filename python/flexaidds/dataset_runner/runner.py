@@ -78,6 +78,17 @@ from .metrics import (
     entropy_rescue_rate,
     docking_power,
 )
+from .tier1_contract import (
+    DEFAULT_ELECTION_OBJECTIVE,
+    VALID_RANKING_STATUS,
+    assert_election_objective,
+    assert_matrix_pin,
+    assert_tier1_roster_lock,
+    assert_unregistered_ranking_is_advisory,
+    gate_class_for,
+    parse_ci_gate_class,
+    split_regression_flags,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -120,16 +131,21 @@ THERMO_METRICS: set[str] = {
 # docking_power_* as if it were a real docking success rate.
 DRY_RUN_METRICS_NOTE: str = (
     "dry_run=True: poses are synthetic (pipeline smoke test only). "
-    "docking_power_* metrics are omitted because they would not reflect real "
-    "docking success rates. Any remaining metrics (scoring_power_*, "
-    "entropy_rescue_rate, etc.) are also computed on synthetic data and must "
-    "not be reported as production results."
+    "docking_power_* and sampling_power metrics are omitted because they "
+    "would not reflect real docking success rates. Any remaining metrics "
+    "(scoring_power_*, entropy_rescue_rate, etc.) are also computed on "
+    "synthetic data and must not be reported as production results."
 )
 
 
 def _is_docking_power_metric(name: str) -> bool:
     """True for docking_power_* keys (including bootstrap CI suffixes)."""
     return "docking_power_" in name
+
+
+def _is_real_dock_rate_metric(name: str) -> bool:
+    """Rates that require a real engine library, not synthetic dry-run poses."""
+    return _is_docking_power_metric(name) or name == "sampling_power"
 
 
 RANKING_OBJECTIVES = ("cf_minus_ts", "legacy_cf_minus_s")
@@ -148,17 +164,17 @@ def _file_sha256(path: Path) -> Optional[str]:
 
 
 def _strip_docking_power_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
-    """Drop docking_power_* entries so synthetic dry-run rates are never sold as real."""
-    return {k: v for k, v in metrics.items() if not _is_docking_power_metric(k)}
+    """Drop real-dock rate entries so synthetic dry-run rates are never sold as real."""
+    return {k: v for k, v in metrics.items() if not _is_real_dock_rate_metric(k)}
 
 
 def _filter_requested_metrics_for_dry_run(
     requested: Optional[List[str]],
 ) -> Optional[List[str]]:
-    """Remove docking_power_* from a requested metric list for dry-run runs."""
+    """Remove real-dock rates from a requested metric list for dry-run runs."""
     if requested is None:
         return None
-    filtered = [m for m in requested if not _is_docking_power_metric(m)]
+    filtered = [m for m in requested if not _is_real_dock_rate_metric(m)]
     return filtered
 
 
@@ -199,6 +215,16 @@ class DatasetConfig:
                                published docking-power rates unless
                                ``expected_baselines_role`` says otherwise.
         expected_baselines_role: ``ci_gate_only`` for Astex 0.70 — never quote as a receipted rate.
+        ci_gate_class:         ``{metric: "hard"|"advisory"}``. Missing keys
+                               default to ``hard`` so other datasets stay
+                               fail-closed. Astex ranking metrics are advisory.
+        ci_election_objective: Pinned ranking objective for the CI receipt.
+        ci_ranking_status:     ``unregistered`` until an election rule is
+                               registered as a hard gate; ``registered`` after.
+        tier1_expected_roster: Locked draw for the pinned seed. A mismatch
+                               refuses to dock.
+        matrix_pin_md5:        CF matrix identity pin (9dc9). Empty = no pin.
+        matrix_pin_name:       Filename of the pinned matrix.
         published_baselines:   ``{metric: value}`` published reference values for comparisons.
         published_source:      Human-readable citation for the published baselines.
         baseline_tolerance:    Fractional tolerance for regression detection (default 0.05).
@@ -235,6 +261,12 @@ class DatasetConfig:
     metrics: List[str] = field(default_factory=list)
     expected_baselines: Dict[str, float] = field(default_factory=dict)
     expected_baselines_role: str = ""
+    ci_gate_class: Dict[str, str] = field(default_factory=dict)
+    ci_election_objective: str = ""
+    ci_ranking_status: str = ""
+    tier1_expected_roster: List[str] = field(default_factory=list)
+    matrix_pin_md5: str = ""
+    matrix_pin_name: str = ""
     published_baselines: Dict[str, float] = field(default_factory=dict)
     published_source: str = ""
     baseline_tolerance: float = 0.05
@@ -320,6 +352,16 @@ class DatasetConfig:
             metrics=list(raw.pop("metrics", [])),
             expected_baselines=dict(raw.pop("expected_baselines", {})),
             expected_baselines_role=str(raw.pop("expected_baselines_role", "")).strip(),
+            ci_gate_class=parse_ci_gate_class(raw.pop("ci_gate_class", {})),
+            ci_election_objective=str(raw.pop("ci_election_objective", "")).strip(),
+            ci_ranking_status=str(raw.pop("ci_ranking_status", "")).strip().lower(),
+            tier1_expected_roster=[
+                str(t).strip().lower()
+                for t in raw.pop("tier1_expected_roster", [])
+                if str(t).strip()
+            ],
+            matrix_pin_md5=str(raw.pop("matrix_pin_md5", "")).strip().lower(),
+            matrix_pin_name=str(raw.pop("matrix_pin_name", "")).strip(),
             published_baselines=dict(raw.pop("published_baselines", {})),
             published_source=str(raw.pop("published_source", "")),
             baseline_tolerance=float(raw.pop("baseline_tolerance", 0.05)),
@@ -335,6 +377,12 @@ class DatasetConfig:
             # correct to hand a subprocess a relative directory, regardless of
             # where the runner itself was invoked from.
             config.data_dir = Path(data_dir_raw).expanduser().resolve()
+        if config.ci_ranking_status and config.ci_ranking_status not in VALID_RANKING_STATUS:
+            raise ValueError(
+                f"ci_ranking_status must be unregistered|registered, got "
+                f"{config.ci_ranking_status!r}"
+            )
+        assert_unregistered_ranking_is_advisory(config)
         return config
 
     def _tier_selection_params(self, tier: int) -> Tuple[int, str, Optional[int]]:
@@ -628,6 +676,7 @@ _LOWER_IS_BETTER = frozenset({
 _HIGHER_IS_BETTER = frozenset({
     "docking_power_top1",
     "docking_power_top3",
+    "sampling_power",
     "ef_1pct",
     "ef_5pct",
     "entropy_rescue_rate",
@@ -775,6 +824,20 @@ class DatasetResult:
         self.inconclusive_metrics = missing
         return flags
 
+    def blocking_regressions(self) -> Dict[str, bool]:
+        """Quality flags that must fail CI (``ci_gate_class: hard``)."""
+        blocking, _advisory = split_regression_flags(
+            self.config, self.regression_flags
+        )
+        return blocking
+
+    def advisory_regressions(self) -> Dict[str, bool]:
+        """Quality flags that are reported but must not fail CI."""
+        _blocking, advisory = split_regression_flags(
+            self.config, self.regression_flags
+        )
+        return advisory
+
     def to_dict(self) -> dict:
         """Serialise to a JSON-compatible dict."""
         payload = {
@@ -795,6 +858,11 @@ class DatasetResult:
             "metrics": self.metrics,
             "ci_95": {k: list(v) for k, v in self.ci_95.items()},
             "regression_flags": self.regression_flags,
+            "blocking_regressions": self.blocking_regressions(),
+            "advisory_regressions": self.advisory_regressions(),
+            "ci_gate_class": dict(getattr(self.config, "ci_gate_class", None) or {}),
+            "ci_ranking_status": getattr(self.config, "ci_ranking_status", "") or "",
+            "ci_election_objective": getattr(self.config, "ci_election_objective", "") or "",
             "expected_baselines": self.config.expected_baselines,
             "published_baselines": self.config.published_baselines,
             "published_source": self.config.published_source,
@@ -926,8 +994,8 @@ class BenchmarkReport:
             ]
 
         if dr.metrics:
-            lines += ["| Metric | Value | 95% CI | Baseline | Published | Regressed? |",
-                      "|--------|-------|--------|----------|-----------|------------|"]
+            lines += ["| Metric | Value | 95% CI | Baseline | Published | Gate | Flag |",
+                      "|--------|-------|--------|----------|-----------|------|------|"]
             for metric, value in sorted(dr.metrics.items()):
                 ci = dr.ci_95.get(metric)
                 ci_str = f"[{ci[0]:.3f}, {ci[1]:.3f}]" if ci else "—"
@@ -935,12 +1003,32 @@ class BenchmarkReport:
                 baseline_str = f"{baseline:.3f}" if baseline is not None else "—"
                 published = dr.config.published_baselines.get(metric)
                 published_str = f"{published:.3f}" if published is not None else "—"
+                klass = (
+                    gate_class_for(dr.config, metric)
+                    if metric in dr.config.expected_baselines
+                    else "—"
+                )
                 regressed = dr.regression_flags.get(metric, False)
-                flag = "⚠ YES" if regressed else "OK"
+                if not regressed:
+                    flag = "OK"
+                elif klass == "advisory":
+                    flag = "⚠ advisory"
+                else:
+                    flag = "⚠ HARD"
                 lines.append(
-                    f"| {metric} | {value:.4f} | {ci_str} | {baseline_str} | {published_str} | {flag} |"
+                    f"| {metric} | {value:.4f} | {ci_str} | {baseline_str} | "
+                    f"{published_str} | {klass} | {flag} |"
                 )
             lines.append("")
+            if dr.advisory_regressions():
+                lines += [
+                    "> **Advisory ranking / ΔS metrics missed aspirational "
+                    "baselines.** This does **not** fail the CI job. Do not "
+                    "read it as Softβ or entropy failure. Hard gates are "
+                    "sampling (min-RMSD / library) + completion + matrix + "
+                    "roster replay. See `docs/TIER1_CI_CONTRACT.md`.",
+                    "",
+                ]
 
         if dr.config.published_source:
             lines += [
@@ -1031,6 +1119,9 @@ class BenchmarkReport:
                 name=d["dataset"],
                 description="",
                 expected_baselines=d.get("expected_baselines", {}),
+                ci_gate_class=parse_ci_gate_class(d.get("ci_gate_class", {}) or {}),
+                ci_ranking_status=str(d.get("ci_ranking_status", "") or ""),
+                ci_election_objective=str(d.get("ci_election_objective", "") or ""),
                 structural_states=d.get("structural_states", ["holo"]),
             )
             dr = DatasetResult(
@@ -2275,6 +2366,21 @@ class DatasetRunner:
         canonical_ids = {target.casefold(): target for target in targets}
         declared_roster = ([(target, states[0]) for target in targets]
                            if manifest_identity else list(scheduled_items))
+        # Fail closed before docking: a seed/YAML drift must not silently
+        # evaluate a different 4-target draw against pinned sampling floors.
+        assert_tier1_roster_lock(config, scheduled_targets, tier)
+        assert_election_objective(
+            config, getattr(self, "ranking_objective", DEFAULT_ELECTION_OBJECTIVE)
+        )
+        if (
+            not self.dry_run
+            and str(getattr(config, "matrix_pin_md5", "") or "").strip()
+        ):
+            assert_matrix_pin(
+                binary=self.binary,
+                expected_md5=config.matrix_pin_md5,
+                dry_run=self.dry_run,
+            )
         slug = config.slug
         eff_temp = self._effective_temperature(slug)
         if slug in THERMO_DATASETS and eff_temp != self.temperature:

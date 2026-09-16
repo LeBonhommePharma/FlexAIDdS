@@ -30,6 +30,7 @@ Treat this skill as the shared benchmark contract. Any agent can work the benchm
 - **3Dsig red-bar success:** **S_top10** (any of ranks 0..9 RMSD ≤ 2.0 Å), 10 sims × 2e6 evals, 10k bootstrap median. Historical 2017 3Dsig presentation medians (~0.66 / ~0.69) are **not** a current receipted FlexAIDdS success rate. Benchmarking not closed.
 - **S1** = rank-0 only; **BCR** = min RMSD over cluster heads (diagnostic sampling ceiling). Softβ/FO election cannot raise S1 if BCR>2.
 - Modern packages: success for claims may also require PoseBusters — RMSD-only is not enough for PB claim tables.
+- **PR Tier-1 Astex job** is a sampling/regression detector, not a ranking claim. Defer to `docs/TIER1_CI_CONTRACT.md` and METHODOLOGY.md §0.1.1.
 
 Before touching a live run:
 

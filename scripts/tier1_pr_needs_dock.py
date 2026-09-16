@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Decide whether a PR can move Tier-1 docking_power_top1.
+"""Decide whether a PR can move Tier-1 sampling or CF search.
 
 PoseBust is post-election physical validity (METHODOLOGY.md). Changing
-LIB/PoseBust/** cannot change RMSD ranking, so the 4-target Astex quality
-gate is noise against an aspirational 0.70 top-1 baseline.
+LIB/PoseBust/** cannot change RMSD ranking or the GA library, so the
+4-target Astex sampling gate is noise on those diffs.
 
 The workflow still *starts* on LIB/**, python/**, and benchmarks/**
 (required checks stay green rather than path-filter skipped). This script
 then skips the dock when every changed path is post-election / docs /
 skills / receipt-protocol.
+
+Ranking (docking_power_top1) is advisory under docs/TIER1_CI_CONTRACT.md;
+the skip is about sampling / search / matrix, not the aspirational 0.70
+top-1 figure.
 
 Fail closed: if the diff cannot be classified, run the dock. Engine paths
 (LIB/** except PoseBust, src/, DatasetRunner, python package modules other
@@ -78,7 +82,7 @@ _SKIP_PREFIXES = (
 
 
 def is_post_election_path(rel: str) -> bool:
-    """True when this path cannot move docking_power_top1."""
+    """True when this path cannot move sampling, CF search, or the CI gate."""
     rel = rel.replace("\\", "/")
     if rel in _SKIP_EXACT:
         return True
@@ -160,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         movers = [p for p in files if not is_post_election_path(p)]
         preview = ", ".join(movers[:8])
         extra = " ..." if len(movers) > 8 else ""
-        emit_dock(True, f"PR can move docking_power_top1: {preview}{extra}")
+        emit_dock(True, f"PR can move sampling / CF search: {preview}{extra}")
     else:
         emit_dock(
             False,

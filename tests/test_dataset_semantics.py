@@ -84,5 +84,11 @@ def test_dataset_config_loads_astex_diverse():
     assert cfg.slug == "astex_diverse"
     assert cfg.expected_baselines_role == "ci_gate_only"
     assert cfg.expected_baselines.get("docking_power_top1") == 0.70
+    assert cfg.expected_baselines.get("sampling_power") == 0.50
+    assert cfg.ci_gate_class.get("docking_power_top1") == "advisory"
+    assert cfg.ci_gate_class.get("sampling_power") == "hard"
+    assert cfg.ci_ranking_status == "unregistered"
+    assert cfg.tier1_expected_roster == ["1gpk", "1mq6", "1xm6", "2cet"]
+    assert cfg.matrix_pin_md5 == "9dc93717dfed0698006d88dd6a9627bc"
     assert "2hr7" in {t.lower() for t in cfg.targets}
     assert len(cfg.targets) == 85

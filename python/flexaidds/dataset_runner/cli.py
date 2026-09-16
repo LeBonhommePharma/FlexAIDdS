@@ -35,6 +35,20 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from .tier1_contract import (
+    DEFAULT_ELECTION_OBJECTIVE,
+    MATRIX_PIN_MD5,
+    PINNED_ANCHORS,
+    build_receipt,
+    find_matrix_file,
+    gate_snapshot,
+    md5_file,
+    quality_exit_code,
+    sha256_file,
+    split_regression_flags,
+    write_receipt,
+)
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -443,6 +457,11 @@ def main(argv: list[str] | None = None) -> int:
     # Targets that legitimately yield nothing can be allowlisted via
     # FLEXAIDDS_BENCH_ALLOW_EMPTY (comma-separated dataset slugs) rather than
     # by weakening the gate globally.
+    #
+    # Gate 4 splits hard sampling/completion metrics from advisory ranking
+    # metrics (METHODOLOGY.md §0.1.1). Aspirational docking_power_top1 0.70
+    # must not fail CI while near-natives sit in the 10-pose library.
+    inconclusive: list[str] = []
     if not runner.dry_run:
         inconclusive = _benchmark_inconclusive_reasons(report.datasets)
         if inconclusive:
@@ -451,18 +470,107 @@ def main(argv: list[str] | None = None) -> int:
                 "This is a hard failure, not 'no regression':\n  - "
                 + "\n  - ".join(inconclusive)
             )
-            return 3
 
-    # Return non-zero if any regressions detected (gate 4: quality)
-    any_regression = any(
-        any(dr.regression_flags.values())
-        for dr in report.datasets
+    blocking: dict[str, bool] = {}
+    advisory: dict[str, bool] = {}
+    for dr in report.datasets:
+        b, a = split_regression_flags(dr.config, dr.regression_flags)
+        blocking.update({f"{dr.config.slug}:{k}": True for k in b})
+        advisory.update({f"{dr.config.slug}:{k}": True for k in a})
+
+    code = quality_exit_code(
+        inconclusive=inconclusive,
+        blocking=blocking,
+        dry_run=runner.dry_run,
     )
-    if any_regression:
-        logging.warning("REGRESSION DETECTED — one or more metrics dropped below baseline.")
-        return 1
+    if not runner.dry_run:
+        _maybe_write_tier1_receipt(
+            report,
+            runner,
+            results_dir=args.results_dir,
+            inconclusive=inconclusive,
+            blocking=blocking,
+            advisory=advisory,
+            exit_code=code,
+        )
 
-    return 0
+    if code == 0 and advisory:
+        logging.warning(
+            "ADVISORY ranking/ΔS metrics missed aspirational baselines "
+            "(non-blocking; not a Softβ/entropy verdict): %s",
+            ", ".join(sorted(advisory)),
+        )
+    if code == 1:
+        logging.warning(
+            "REGRESSION DETECTED — hard CI gate(s) failed: %s",
+            ", ".join(sorted(blocking)),
+        )
+    return code
+
+
+def _maybe_write_tier1_receipt(
+    report,
+    runner,
+    *,
+    results_dir: str,
+    inconclusive: list[str],
+    blocking: dict[str, bool],
+    advisory: dict[str, bool],
+    exit_code: int,
+) -> None:
+    """Write TIER1_RECEIPT.json for Astex tier-1 so the draw is replayable."""
+    astex = [dr for dr in report.datasets if dr.config.slug == "astex_diverse" and int(dr.tier) == 1]
+    if not astex:
+        return
+    dr = astex[0]
+    cfg = dr.config
+    seed = cfg.resolve_tier1_seed() if hasattr(cfg, "resolve_tier1_seed") else cfg.tier1_seed
+    roster = list(dr.targets_attempted) or list(getattr(cfg, "tier1_expected_roster", []) or [])
+    matrix_path = find_matrix_file(binary=getattr(runner, "binary", None))
+    matrix_md5 = md5_file(matrix_path) if matrix_path is not None else (
+        str(getattr(cfg, "matrix_pin_md5", "") or MATRIX_PIN_MD5)
+    )
+    binary = str(getattr(runner, "binary", "") or getattr(dr, "binary", "") or "")
+    hard_names = [
+        m for m, klass in (cfg.ci_gate_class or {}).items() if klass == "hard"
+    ]
+    advisory_names = [
+        m for m, klass in (cfg.ci_gate_class or {}).items() if klass == "advisory"
+    ]
+    payload = build_receipt(
+        seed=int(seed or 0),
+        roster=roster,
+        anchors=list(cfg.anchor_targets) or list(PINNED_ANCHORS),
+        matrix_md5=matrix_md5,
+        matrix_path=str(matrix_path) if matrix_path is not None else None,
+        binary=binary,
+        binary_sha256=sha256_file(Path(binary)) if binary else None,
+        election_objective=(
+            cfg.ci_election_objective
+            or getattr(dr, "ranking_objective", "")
+            or DEFAULT_ELECTION_OBJECTIVE
+        ),
+        ci_ranking_status=cfg.ci_ranking_status or "unregistered",
+        git_sha=str(getattr(dr, "git_sha", "") or ""),
+        hard_gates=gate_snapshot(
+            dr.metrics, cfg.expected_baselines, dr.regression_flags, hard_names
+        ),
+        advisory_ranking=gate_snapshot(
+            dr.metrics, cfg.expected_baselines, dr.regression_flags, advisory_names
+        ),
+        inconclusive=inconclusive,
+        blocking={k.split(":", 1)[-1]: True for k in blocking},
+        exit_code=exit_code,
+        extra={
+            "targets_completed": list(dr.targets_completed),
+            "targets_failed": list(dr.targets_failed),
+            "total_poses": getattr(dr, "total_poses", 0),
+            "flexaid_crashes": getattr(dr, "flexaid_crashes", 0),
+        },
+    )
+    dest = Path(results_dir) / "TIER1_RECEIPT.json"
+    write_receipt(dest, payload)
+    print(f"Tier-1 receipt saved: {dest}")
 
 
 if __name__ == "__main__":

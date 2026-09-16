@@ -114,6 +114,8 @@ bash scripts/run_pilot8_canary_gates.sh --arm B0 --pdb 1P62,1T40 ...
 
 **Build pin discipline:** Before any real dock or claim, run `python3 .grok/skills/flexaidds/scripts/resolve_build.py --check`. For fail-closed CI/agent sessions set `FLEXAIDDS_REQUIRE_BUILD=1` so missing/stale builds are hard errors, not WARN.
 
+**Tier-1 Astex CI** (4-target PR gate) splits sampling from ranking: see `docs/TIER1_CI_CONTRACT.md` and METHODOLOGY.md §0.1.1. Do not treat `docking_power_top1=0.70` as a hard merge gate or a receipted rate. Do not retune the CF matrix to green that job.
+
 **Storage:** Live GA/OUT/logs/binaries → **local** `$FLEXAIDDS_LOCAL_ROOT` (default `~/flexaidds_results`). iCloud is a **thin durable mirror** (`result.csv`, RUN_RECEIPT, thin OPS) only — see `docs/ICLOUD_BENCHMARK_STORAGE.md` and `AGENTS.md` § Benchmark storage. Never claim from iCloud-only live GA trees that hang FileProvider.
 
 ### Ops monitor scope
