@@ -64,6 +64,13 @@ struct CheckpointOutcome {
     double pose_local_dH_kcal = 0.0;
     double pose_local_dS_cal_per_mol_K = 0.0;
     double pose_local_dG_kcal = 0.0;
+
+    // Experimental PoseHelixThermoRewrite diagnostic (default unused).
+    // Finite zeros when inactive. Never a substitute for dG_A_kcal / dG_B_kcal.
+    bool   pose_helix_thermo_applied = false;
+    double pose_helix_dH_kcal = 0.0;
+    double pose_helix_dS_cal_per_mol_K = 0.0;
+    double pose_helix_dG_kcal = 0.0;
 };
 
 // ─── NascentChainScheduler ───────────────────────────────────────────────────

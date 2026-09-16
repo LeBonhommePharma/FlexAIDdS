@@ -13,6 +13,7 @@
 
 #include "FibrilGrowthOracle.h"
 #include "NascentChainScheduler.h"
+#include "PoseHelixThermoRewrite.h"
 #include "PoseLocalThermoRewrite.h"
 #include "../statmech.h"
 
@@ -43,16 +44,20 @@ struct DualAssemblyConfig {
     double      acceptance_threshold        = 0.5;
 
     // Experimental 2014 NATURAL pose→helix ΔH/ΔS rewrite (PoseHelixThermoRewrite).
-    // Default OFF. DualAssemblyRunner does not invoke it (GA callbacks currently
-    // supply pose RMSDs, not atom coords). Follow-up: wire when a real-GA backend
-    // emits ReceptorNtCoord / LigandPose snapshots. See docs/POSE_HELIX_THERMO_REWRITE.md.
-    bool        enable_pose_helix_rewrite   = false;
+    // Default OFF. Env: FLEXAIDDS_POSE_HELIX_THERMO_REWRITE=1.
+    // When on, DualAssemblyRunner feeds GAResult receptor_nts + ligand_poses
+    // into rewrite_helices_from_poses. Missing coords or empty decision_helices
+    // fail closed (pose_helix_thermo_applied stays false). Diagnostic only —
+    // never overwrites dG_A_kcal / dG_B_kcal. See docs/POSE_HELIX_THERMO_REWRITE.md.
+    bool                      enable_pose_helix_rewrite = false;
+    std::vector<HelixSegment> decision_helices;
+    PoseHelixRewriteConfig    pose_helix_cfg{};
 
     // Experimental pose→local SS ΔH/ΔS rewrite (PoseLocalThermoRewrite). Default OFF.
     // Env override: FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE=1.
-    // When on AND pose_rewrite_elements + pose_rewrite_poses are labelled,
-    // DualAssemblyRunner stores a diagnostic mixture on CheckpointOutcome and
-    // does not overwrite dG_A_kcal / dG_B_kcal or StatMech G_natural.
+    // Preferred source: GAResult atom coords converted to PoseView contacts.
+    // Fallback: labelled pose_rewrite_poses (no coords required).
+    // Missing both sources fail closed. Does not overwrite dG_A / dG_B.
     bool enable_pose_local_thermo_rewrite = false;
     std::vector<DecisionElement> pose_rewrite_elements;
     std::vector<PoseView>        pose_rewrite_poses;
@@ -67,6 +72,12 @@ struct DualAssemblyConfig {
 struct GAResult {
     statmech::StatMechEngine engine;
     std::vector<double>      pose_rmsds; // any continuous pose coordinate; 1D is enough
+    // Optional elected/GA Cartesian snapshots for experimental pose→SS rewrite.
+    // Empty = missing coords. DualAssemblyRunner fail-closes rewrite when a
+    // rewrite flag is ON but these are empty (PoseLocal may still use labelled
+    // pose_rewrite_poses from DualAssemblyConfig).
+    std::vector<ReceptorNtCoord> receptor_nts;
+    std::vector<LigandPose>      ligand_poses;
 };
 
 // Sim A — target = protofibril, ligand = nascent chain at length L_k

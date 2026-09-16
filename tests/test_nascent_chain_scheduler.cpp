@@ -591,8 +591,228 @@ TEST(DualAssemblyRunner, PoseLocalThermoRewriteDefaultsOff)
 {
     natural::DualAssemblyConfig cfg;
     EXPECT_FALSE(cfg.enable_pose_local_thermo_rewrite);
+    EXPECT_FALSE(cfg.enable_pose_helix_rewrite);
     EXPECT_TRUE(cfg.pose_rewrite_elements.empty());
     EXPECT_TRUE(cfg.pose_rewrite_poses.empty());
+    EXPECT_TRUE(cfg.decision_helices.empty());
+}
+
+namespace {
+natural::HelixSegment runner_decision_helix()
+{
+    natural::HelixSegment h;
+    h.stem_i_begin = 0;
+    h.stem_i_end   = 1;
+    h.loop_begin   = 2;
+    h.loop_end     = 3;
+    h.stem_j_begin = 4;
+    h.stem_j_end   = 5;
+    h.label        = "decision";
+    return h;
+}
+
+natural::GAResult stacking_ga(double T, double dG, unsigned seed)
+{
+    natural::GAResult g = synthetic_engine(T, 8, 1.0, dG, seed);
+    natural::ReceptorNtCoord nt;
+    nt.nt_index = 0;
+    nt.x = 0.0;
+    nt.y = 0.0;
+    nt.z = 0.0;
+    nt.is_aromatic = true;
+    nt.nz = 1.0;
+    natural::LigandAtomCoord a;
+    a.x = 0.0;
+    a.y = 0.0;
+    a.z = 3.5;
+    a.is_aromatic = true;
+    a.nz = 1.0;
+    natural::LigandPose p;
+    p.rank = 0;
+    p.score_kcal = dG;
+    p.atoms.push_back(a);
+    g.receptor_nts.push_back(nt);
+    g.ligand_poses.push_back(p);
+    return g;
+}
+
+natural::DualAssemblyConfig runner_cfg(const std::string& tag)
+{
+    natural::DualAssemblyConfig cfg;
+    cfg.protofibril_pdb = "fake.pdb";
+    cfg.sequence_fasta  = std::string(80, 'A');
+    cfg.checkpoint_interval = 20;
+    cfg.include_reciprocal_controls = false;
+    cfg.sim_c_enabled = false;
+    cfg.output_csv = std::string("/tmp/dual_assembly_") + tag + ".csv";
+    cfg.nascent_pdb_dir = std::string("/tmp/dual_assembly_") + tag + "_pdbs";
+    return cfg;
+}
+} // namespace
+
+TEST(DualAssemblyRunner, PoseRewriteDefaultOffIgnoresGaCoords)
+{
+    natural::DualAssemblyConfig cfg = runner_cfg("rewrite_default_off");
+    cfg.decision_helices.push_back(runner_decision_helix());
+    natural::DecisionElement el;
+    el.ss = natural::SSClass::RNA_STEM_LOOP;
+    el.label = "hp";
+    el.na_start = 0;
+    el.na_end = 10;
+    cfg.pose_rewrite_elements.push_back(el);
+
+    auto sim_a = [](const std::string&, const std::string&, int L_k, double T) {
+        return stacking_ga(T, -4.0, 21u + static_cast<unsigned>(L_k));
+    };
+    auto trunc = [](const std::string&, int L_k, const std::string&) {
+        return std::string("/tmp/dual_assembly_rewrite_off_L") + std::to_string(L_k) + ".pdb";
+    };
+
+    natural::DualAssemblyRunner runner(std::move(cfg), sim_a, nullptr, nullptr, trunc);
+    auto history = runner.run();
+    ASSERT_FALSE(history.empty());
+    bool saw_eligible = false;
+    for (const auto& [ck, out] : history) {
+        if (ck.in_tunnel || ck.chaperone_shielded || !ck.direct_encounter_allowed)
+            continue;
+        EXPECT_FALSE(out.pose_helix_thermo_applied);
+        EXPECT_FALSE(out.pose_local_thermo_applied);
+        EXPECT_DOUBLE_EQ(out.pose_helix_dH_kcal, 0.0);
+        EXPECT_DOUBLE_EQ(out.pose_local_dH_kcal, 0.0);
+        EXPECT_TRUE(std::isfinite(out.dG_A_kcal));
+        saw_eligible = true;
+        break;
+    }
+    EXPECT_TRUE(saw_eligible);
+}
+
+TEST(DualAssemblyRunner, PoseHelixOptInWithGaCoordsCallsRewrite)
+{
+    natural::DualAssemblyConfig cfg = runner_cfg("helix_coords_on");
+    cfg.enable_pose_helix_rewrite = true;
+    cfg.decision_helices.push_back(runner_decision_helix());
+
+    auto sim_a = [](const std::string&, const std::string&, int L_k, double T) {
+        return stacking_ga(T, -4.0, 31u + static_cast<unsigned>(L_k));
+    };
+    auto trunc = [](const std::string&, int L_k, const std::string&) {
+        return std::string("/tmp/dual_assembly_helix_on_L") + std::to_string(L_k) + ".pdb";
+    };
+
+    natural::DualAssemblyRunner runner(std::move(cfg), sim_a, nullptr, nullptr, trunc);
+    auto history = runner.run();
+    ASSERT_FALSE(history.empty());
+    bool saw_rewrite = false;
+    for (const auto& [ck, out] : history) {
+        if (ck.in_tunnel || ck.chaperone_shielded || !ck.direct_encounter_allowed)
+            continue;
+        EXPECT_TRUE(out.pose_helix_thermo_applied);
+        EXPECT_LT(out.pose_helix_dH_kcal, 0.0);
+        EXPECT_TRUE(std::isfinite(out.pose_helix_dG_kcal));
+        EXPECT_NE(out.dG_A_kcal, out.pose_helix_dG_kcal);
+        EXPECT_FALSE(out.pose_local_thermo_applied);
+        saw_rewrite = true;
+        break;
+    }
+    EXPECT_TRUE(saw_rewrite);
+}
+
+TEST(DualAssemblyRunner, PoseHelixMissingCoordsFailClosed)
+{
+    natural::DualAssemblyConfig cfg = runner_cfg("helix_missing_coords");
+    cfg.enable_pose_helix_rewrite = true;
+    cfg.decision_helices.push_back(runner_decision_helix());
+
+    auto sim_a = [](const std::string&, const std::string&, int L_k, double T) {
+        return synthetic_engine(T, 8, 1.0, -4.0, 41u + static_cast<unsigned>(L_k));
+    };
+    auto trunc = [](const std::string&, int L_k, const std::string&) {
+        return std::string("/tmp/dual_assembly_helix_miss_L") + std::to_string(L_k) + ".pdb";
+    };
+
+    natural::DualAssemblyRunner runner(std::move(cfg), sim_a, nullptr, nullptr, trunc);
+    auto history = runner.run();
+    ASSERT_FALSE(history.empty());
+    bool saw_eligible = false;
+    for (const auto& [ck, out] : history) {
+        if (ck.in_tunnel || ck.chaperone_shielded || !ck.direct_encounter_allowed)
+            continue;
+        EXPECT_FALSE(out.pose_helix_thermo_applied);
+        EXPECT_DOUBLE_EQ(out.pose_helix_dH_kcal, 0.0);
+        EXPECT_TRUE(std::isfinite(out.dG_A_kcal));
+        saw_eligible = true;
+        break;
+    }
+    EXPECT_TRUE(saw_eligible);
+}
+
+TEST(DualAssemblyRunner, PoseLocalOptInWithGaCoordsCallsRewrite)
+{
+    natural::DualAssemblyConfig cfg = runner_cfg("local_coords_on");
+    cfg.enable_pose_local_thermo_rewrite = true;
+    natural::DecisionElement el;
+    el.ss = natural::SSClass::RNA_STEM_LOOP;
+    el.label = "hp";
+    el.na_start = 0;
+    el.na_end = 10;
+    cfg.pose_rewrite_elements.push_back(el);
+
+    auto sim_a = [](const std::string&, const std::string&, int L_k, double T) {
+        return stacking_ga(T, -4.0, 51u + static_cast<unsigned>(L_k));
+    };
+    auto trunc = [](const std::string&, int L_k, const std::string&) {
+        return std::string("/tmp/dual_assembly_local_on_L") + std::to_string(L_k) + ".pdb";
+    };
+
+    natural::DualAssemblyRunner runner(std::move(cfg), sim_a, nullptr, nullptr, trunc);
+    auto history = runner.run();
+    ASSERT_FALSE(history.empty());
+    bool saw_rewrite = false;
+    for (const auto& [ck, out] : history) {
+        if (ck.in_tunnel || ck.chaperone_shielded || !ck.direct_encounter_allowed)
+            continue;
+        EXPECT_TRUE(out.pose_local_thermo_applied);
+        EXPECT_NEAR(out.pose_local_dH_kcal, natural::kXia1998RnaWcStackMean_dH_kcal, 1e-12);
+        EXPECT_TRUE(std::isfinite(out.pose_local_dG_kcal));
+        EXPECT_NE(out.dG_A_kcal, out.pose_local_dG_kcal);
+        saw_rewrite = true;
+        break;
+    }
+    EXPECT_TRUE(saw_rewrite);
+}
+
+TEST(DualAssemblyRunner, PoseLocalMissingCoordsFailClosed)
+{
+    natural::DualAssemblyConfig cfg = runner_cfg("local_missing_coords");
+    cfg.enable_pose_local_thermo_rewrite = true;
+    natural::DecisionElement el;
+    el.ss = natural::SSClass::RNA_STEM_LOOP;
+    el.label = "hp";
+    el.na_start = 0;
+    el.na_end = 10;
+    cfg.pose_rewrite_elements.push_back(el);
+
+    auto sim_a = [](const std::string&, const std::string&, int L_k, double T) {
+        return synthetic_engine(T, 8, 1.0, -4.0, 61u + static_cast<unsigned>(L_k));
+    };
+    auto trunc = [](const std::string&, int L_k, const std::string&) {
+        return std::string("/tmp/dual_assembly_local_miss_L") + std::to_string(L_k) + ".pdb";
+    };
+
+    natural::DualAssemblyRunner runner(std::move(cfg), sim_a, nullptr, nullptr, trunc);
+    auto history = runner.run();
+    ASSERT_FALSE(history.empty());
+    bool saw_eligible = false;
+    for (const auto& [ck, out] : history) {
+        if (ck.in_tunnel || ck.chaperone_shielded || !ck.direct_encounter_allowed)
+            continue;
+        EXPECT_FALSE(out.pose_local_thermo_applied);
+        EXPECT_DOUBLE_EQ(out.pose_local_dH_kcal, 0.0);
+        EXPECT_TRUE(std::isfinite(out.dG_A_kcal));
+        saw_eligible = true;
+        break;
+    }
+    EXPECT_TRUE(saw_eligible);
 }
 
 TEST(DualAssemblyRunner, PoseLocalThermoRewriteIsDiagnosticOnly)

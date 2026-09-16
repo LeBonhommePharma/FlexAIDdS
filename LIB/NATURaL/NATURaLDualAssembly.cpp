@@ -30,6 +30,7 @@
 //   – ShannonThermoStack / compute_growth_entropy uses AVX-512 histogramming
 #include "TuiColor.h"
 #include "NATURaLDualAssembly.h"
+#include "PoseRewriteGaBridge.h"
 #include "RibosomeElongation.h"
 #include "TransloconInsertion.h"
 #include "NucleationDetector.h"
@@ -947,13 +948,10 @@ PoseHelixRewriteResult DualAssemblyEngine::compute_pose_helix_rewrite(
     empty.applied = false;
     if (!config_.enable_pose_helix_rewrite) return empty;
     if (!is_rna_receptor_) return empty;
-    if (config_.decision_helices.empty()) return empty;
     PoseHelixRewriteConfig cfg = config_.pose_helix;
     cfg.T_K = config_.temperature_K;
-    PoseHelixRewriteResult r = rewrite_helices_from_poses(
-        config_.decision_helices, rna_nts, poses, cfg);
-    r.applied = true;
-    return r;
+    return pose_helix_from_ga_or_closed(
+        true, config_.decision_helices, rna_nts, poses, cfg);
 }
 
 #endif // FLEXAIDS_OMIT_DUAL_ASSEMBLY_ENGINE

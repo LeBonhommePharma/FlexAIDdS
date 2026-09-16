@@ -142,8 +142,14 @@ LocalThermoMixture rewrite_local_thermo_from_poses(poses, elements, cfg);
 Environment `FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE` (1/true/yes/on) may opt in.
 CLI: `dual_assembly --pose-local-thermo-rewrite`.
 
-When the flag is on **and** labelled `pose_rewrite_elements` +
-`pose_rewrite_poses` are supplied, `DualAssemblyRunner` stores the mixture in
+Preferred source is DualAssemblyRunner `GAResult` atom coords
+(`receptor_nts` + `ligand_poses`), converted to `PoseView` contacts by
+`LIB/NATURaL/PoseRewriteGaBridge.h`. Labelled `pose_rewrite_poses` remain a
+fallback when the GA backend does not emit coords. When the flag is on but
+coords and labelled poses are both missing, the path fail-closes
+(`pose_local_thermo_applied` stays false).
+
+When a mixture is produced, `DualAssemblyRunner` stores it in
 `CheckpointOutcome` diagnostic fields (`pose_local_*`). It does **not** overwrite
 `dG_A_kcal` / `dG_B_kcal` or set `has_natural`. The 21-column trajectory CSV is
 unchanged.

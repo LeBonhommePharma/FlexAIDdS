@@ -64,14 +64,22 @@ of `atom_struct`, so unit tests do not need a full engine.
 
 ## DualAssembly hook (default OFF)
 
-`NATURaLConfig.enable_pose_helix_rewrite` defaults to **false**.
+`NATURaLConfig.enable_pose_helix_rewrite` and
+`DualAssemblyConfig::enable_pose_helix_rewrite` default to **false**.
+Environment `FLEXAIDDS_POSE_HELIX_THERMO_REWRITE` (1/true/yes/on) may opt in
+the DualAssemblyRunner path. CLI: `dual_assembly --pose-helix-thermo-rewrite`.
 
 - `DualAssemblyEngine::run()` never applies patches to CF or `final_deltaG_`.
 - `DualAssemblyEngine::compute_pose_helix_rewrite(rna, poses)` is a sidecar: it
-  returns empty unless the flag is on **and** the receptor is nucleic acid.
-- `DualAssemblyRunner` does not call the rewrite (injected GA results currently
-  carry pose RMSDs, not atom coords). Follow-up: wire when a real-GA backend
-  emits snapshots.
+  returns empty (`applied=false`) unless the flag is on, the receptor is nucleic
+  acid, decision helices are annotated, **and** GA atom coords are present.
+  Missing coords fail closed.
+- `DualAssemblyRunner` feeds `GAResult::receptor_nts` / `ligand_poses` into
+  `rewrite_helices_from_poses` when the flag is on. Empty snapshots fail closed
+  (`CheckpointOutcome::pose_helix_thermo_applied` stays false). Diagnostic
+  scalars are stored on the outcome; `dG_A_kcal` / `dG_B_kcal` are not overwritten.
+
+Plumbing: `LIB/NATURaL/PoseRewriteGaBridge.h`.
 
 ## Not claim-ready
 

@@ -116,7 +116,8 @@ struct NATURaLConfig {
     // ── Experimental pose→helix ΔH/ΔS rewrite (2014 NATURAL seminar) ──
     // Default OFF. DualAssemblyEngine::run() never folds these patches into CF
     // or FA->natural_deltaG. Call DualAssemblyEngine::compute_pose_helix_rewrite()
-    // explicitly on an RNA receptor. Not claim-ready; not Astex election.
+    // explicitly on an RNA receptor with GA atom coords. Missing coords fail
+    // closed (applied=false). Not claim-ready; not Astex election.
     bool                      enable_pose_helix_rewrite = false;
     PoseHelixRewriteConfig    pose_helix{};
     std::vector<HelixSegment>  decision_helices;
@@ -235,7 +236,9 @@ public:
     bool is_active() const noexcept { return config_.enabled; }
 
     // Experimental sidecar (2014 NATURAL pose→helix ΔH/ΔS).
-    // Empty unless enable_pose_helix_rewrite is true AND the receptor is RNA.
+    // Empty + applied=false unless enable_pose_helix_rewrite is true, the
+    // receptor is nucleic acid, decision_helices are annotated, AND rna_nts /
+    // poses carry Cartesian atoms. Missing coords fail closed.
     // Never mutates final_deltaG_ / CF / FA->natural_deltaG.
     PoseHelixRewriteResult compute_pose_helix_rewrite(
         const std::vector<ReceptorNtCoord>& rna_nts,

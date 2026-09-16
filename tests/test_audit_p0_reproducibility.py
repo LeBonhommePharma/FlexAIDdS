@@ -47,6 +47,14 @@ class TestNaturalFailClosed:
         hdr = _read("LIB/NATURaL/NATURaLDualAssembly.h")
         assert "enable_pose_helix_rewrite = false" in hdr
         assert "pose_local_thermo_rewrite = false" in hdr
+        runner = _read("LIB/NATURaL/DualAssemblyRunner.h")
+        assert "enable_pose_helix_rewrite = false" in runner
+        assert "enable_pose_local_thermo_rewrite = false" in runner
+        impl = _read("LIB/NATURaL/DualAssemblyRunner.cpp")
+        assert "FLEXAIDDS_POSE_HELIX_THERMO_REWRITE" in impl
+        assert "FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE" in impl
+        gaboom = _read("LIB/gaboom.cpp")
+        assert "PoseHelix / PoseLocal stay default" in gaboom
 
 
 class TestPredictedDGFlags:

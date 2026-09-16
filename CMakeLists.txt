@@ -3402,6 +3402,15 @@ flexaids_add_unit_test(test_protocol_config
         TEST_NAME PoseHelixThermoRewriteTests
     )
 
+    # Opt-in DualAssembly / NATURAL GA-coord plumbing (header-only bridge).
+    flexaids_add_unit_test(test_pose_rewrite_ga_bridge
+        SOURCES
+            tests/test_pose_rewrite_ga_bridge.cpp
+            LIB/NATURaL/PoseHelixThermoRewrite.cpp
+            LIB/NATURaL/PoseLocalThermoRewrite.cpp
+        TEST_NAME PoseRewriteGaBridgeTests
+    )
+
     # test_nascent_chain_scheduler — cotranslational DualAssembly suite
     add_executable(test_nascent_chain_scheduler
         tests/test_nascent_chain_scheduler.cpp
