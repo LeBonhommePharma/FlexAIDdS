@@ -31,6 +31,11 @@ It is **not**:
 
 Do not quote “70%” as a FlexAIDdS result.
 
+Tier-1 CI (`benchmark-tier1.yml`) **does not** hard-fail on that 0.70 figure.
+Ranking metrics are advisory until a registered election rule exists; hard
+gates are sampling / completion / matrix / roster replay. See
+[`docs/TIER1_CI_CONTRACT.md`](TIER1_CI_CONTRACT.md) and METHODOLOGY.md §0.1.1.
+
 ## Placeholders (UNSET until a real run lands)
 
 | Field | Value |

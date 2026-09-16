@@ -210,3 +210,16 @@ def test_reason_survives_results_without_timeout_field():
     del dr.entry_timeouts
     (reason,) = [r for r in _benchmark_inconclusive_reasons([dr]) if "liveness" in r]
     assert "CRASHED with code -6" in reason
+
+
+def test_missing_sampling_power_is_completeness():
+    """sampling_power is now an expected_baselines key; leaving it unmeasured
+    must be INCONCLUSIVE, not an advisory ranking miss."""
+    dr = _dr(
+        "astex_diverse",
+        completed=["1gpk"],
+        total_poses=10,
+        missing_metrics=["sampling_power"],
+    )
+    reasons = _benchmark_inconclusive_reasons([dr])
+    assert any("completeness" in r and "sampling_power" in r for r in reasons)

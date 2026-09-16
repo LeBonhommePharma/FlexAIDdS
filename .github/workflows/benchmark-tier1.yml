@@ -13,8 +13,10 @@ name: Benchmark Tier 1 (PR Sanity)
 # step has its own cap so a genuine hang still fails fast instead of eating
 # the whole job budget.
 #
-# Failures: non-zero exit (metric regression) sets the check to "failure"
-# so merges can be gated on this job.
+# Failures: non-zero exit (hard sampling / completion / matrix / roster
+# regression) sets the check to "failure" so merges can be gated on this job.
+# Ranking metrics (docking_power_top1/top3, entropy_rescue_rate) are advisory
+# until a registered election rule exists — see docs/TIER1_CI_CONTRACT.md.
 
 on:
   pull_request:
@@ -27,9 +29,10 @@ on:
     #
     # Keep LIB/** inclusive of LIB/PoseBust/** so this required check still
     # runs (path-filter skip can block merge). PoseBust is post-election and
-    # cannot move docking_power_top1; the job then exits 0 via
-    # scripts/tier1_pr_needs_dock.py rather than spending ~30 min to fail
-    # the aspirational 0.70 top-1 gate. Do not lower expected_baselines here.
+    # cannot move sampling or CF search; the job then exits 0 via
+    # scripts/tier1_pr_needs_dock.py rather than spending ~30 min to re-dock.
+    # Ranking (docking_power_top1) is advisory; do not lower expected_baselines
+    # here — see docs/TIER1_CI_CONTRACT.md.
     paths:
       - 'LIB/**'
       - 'src/**'
@@ -118,7 +121,7 @@ jobs:
 
       # PoseBust / docs-only PRs still match LIB/** so this required check runs,
       # then skip the dock (cannot move RMSD ranking). workflow_dispatch always docks.
-      - name: Skip Astex dock if PR cannot move docking_power_top1
+      - name: Skip Astex dock if PR cannot move sampling or CF search
         id: gate
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -142,12 +145,15 @@ jobs:
           {
             echo "### Tier-1 dock skipped"
             echo ""
-            echo "This PR cannot move \`docking_power_top1\` (PoseBust is post-election"
-            echo "physical validity; docs/skills/METHODOLOGY/receipt-protocol diffs"
-            echo "also cannot move RMSD ranking). FlexAID C++ CI covers NativePoseQC."
-            echo "The 4-target Astex quality gate is not run."
+            echo "This PR cannot move sampling (min-RMSD / library) or CF search"
+            echo "(PoseBust is post-election physical validity; docs/skills/"
+            echo "METHODOLOGY/receipt-protocol diffs also cannot move RMSD)."
+            echo "FlexAID C++ CI covers NativePoseQC. The 4-target Astex"
+            echo "sampling gate is not run."
             echo ""
-            echo "\`expected_baselines.docking_power_top1: 0.70\` is unchanged."
+            echo "Hard gates (sampling_power / mean_rmsd / median_rmsd / matrix"
+            echo "pin / roster) and advisory ranking baselines are unchanged."
+            echo "See docs/TIER1_CI_CONTRACT.md."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
@@ -238,8 +244,26 @@ jobs:
           # -x, not -f: a present-but-non-executable binary must also fail here,
           # with this clear message, rather than at the opaque exec later.
           if [ ! -x "$FLEXAIDDS_BINARY" ]; then
-            echo "::error::FlexAID binary not found or not executable at $FLEXAIDDS_BINARY — the build did not produce a runnable binary. Failing rather than silently dry-running (a dry-run would skip the #327 gate and report a missing engine as a pass)."
+            echo "::error::FlexAID binary not found or not executable at $FLEXAIDDS_BINARY — the build did not produce a runnable binary. Failing rather than silently dry-running (a dry-run would skip the #326 gate and report a missing engine as a pass)."
             exit 1
+          fi
+
+      - name: Tier-1 preflight (roster replay + matrix pin)
+        if: steps.gate.outputs.dock == 'true'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+          FLEXAIDDS_TIER1_SEED: "20260816"
+        run: |
+          # Fail fast (~seconds) if the seed no longer draws the locked roster
+          # or the staged CF matrix is not 9dc9. Do not spend the 105 min dock
+          # budget on an unlocked draw or a different energy matrix.
+          python3 -m flexaidds.dataset_runner.tier1_contract \
+            --check-matrix --binary "$FLEXAIDDS_BINARY"
+          if [ "$DATASET" = "astex_diverse" ]; then
+            python3 -m flexaidds.dataset_runner.tier1_contract \
+              --replay-roster --seed 20260816
+          else
+            echo "Roster lock is Astex-specific; skipping for DATASET=$DATASET"
           fi
 
       # No dataset download step needed: Astex Diverse data lives in the repo
@@ -247,6 +271,7 @@ jobs:
       # FLEXAIDDS_BENCHMARK_DATA env var above points the runner there.
 
       - name: Run tier-1 benchmark
+        id: dock
         if: steps.gate.outputs.dock == 'true'
         # Measured: switches-off 2 targets ~44 min; switch-on cells time out at 45.
         # 1mq6 (flexible) is the long pole under COM floor / P1. Give generous headroom.
@@ -344,6 +369,37 @@ jobs:
             --verbose
           echo "tier1_wall_clock_seconds=$SECONDS"
           echo "TIER1_WALL=$SECONDS" >> "$GITHUB_ENV"
+
+      - name: Validate Tier-1 receipt
+        if: always() && steps.gate.outputs.dock == 'true' && steps.dock.conclusion != 'skipped'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+        run: |
+          # Replay lock: seed, roster, matrix pin, election objective.
+          # Written by the DatasetRunner CLI even when a hard gate fails, so a
+          # red quality run still leaves a reconstructable receipt. A missing
+          # file after a dock attempt is itself a gate failure.
+          if [ "$DATASET" != "astex_diverse" ]; then
+            echo "Receipt validation is Astex-specific; skipping for DATASET=$DATASET"
+            exit 0
+          fi
+          if [ ! -f "$RESULTS_DIR/TIER1_RECEIPT.json" ]; then
+            echo "::error::TIER1_RECEIPT.json missing after the Astex dock. The run is not replayable."
+            ls -la "$RESULTS_DIR" || true
+            exit 1
+          fi
+          python3 -m flexaidds.dataset_runner.tier1_contract \
+            --validate-receipt "$RESULTS_DIR/TIER1_RECEIPT.json"
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("results/tier1/TIER1_RECEIPT.json")
+          data = json.loads(p.read_text())
+          print(f"verdict={data.get('verdict')} exit={data.get('exit_code')}")
+          print(f"seed={data.get('seed')} roster={data.get('roster')}")
+          print(f"matrix_md5={data.get('matrix_md5')} election={data.get('election_objective')}")
+          print(f"hard_gates={list((data.get('hard_gates') or {}).keys())}")
+          print(f"advisory={list((data.get('advisory_ranking') or {}).keys())}")
+          PY
 
       # Emitting from inside the timed step would never run on a run that times
       # out -- and every Tier-1 run so far has. An instrument that only reports

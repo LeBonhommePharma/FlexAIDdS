@@ -74,6 +74,7 @@ jobs:
           python/tests/test_runner_*.py
           python/tests/test_metrics_*.py
           python/tests/test_dataset_runner*.py
+          python/tests/test_tier1_*.py
           python/tests/test_early_termination_tracking.py
           python/tests/test_regression_direction.py
           python/tests/test_baseline_tolerance_sign.py

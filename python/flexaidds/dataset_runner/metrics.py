@@ -11,6 +11,7 @@ Metric catalogue
 * log_auc               — Logarithmic AUC for early enrichment
 * scoring_power         — Pearson r + RMSE vs experimental affinities
 * docking_power         — % top-ranked poses with RMSD <= threshold
+* sampling_power        — % targets with ANY pose RMSD <= threshold (library / S_top10)
 * target_specificity_zscore — Z-score of binder scores vs random background
 * hit_rate_top_n        — Fraction of true binders in top-N predictions
 * bootstrap_ci          — 95% CI via non-parametric bootstrapping
@@ -364,6 +365,38 @@ def docking_power(
     return n_success / denom if denom > 0 else 0.0
 
 
+def sampling_power(
+    poses: Sequence[PoseScore],
+    rmsd_threshold: float = 2.0,
+    n_targets: Optional[int] = None,
+) -> float:
+    """Fraction of attempted targets with any pose RMSD <= threshold.
+
+    This is **library / S_top10 sampling success**, not ranking success.
+    Rank is ignored. A target is a success if *any* emitted pose satisfies
+    ``0.0 <= rmsd <= rmsd_threshold``. Missing targets count as failures
+    when ``n_targets`` is pinned, matching :func:`docking_power`.
+
+    Use this to tell "the GA never sampled a near-native" from "the CF
+    election ranked a non-native first". Sentinel RMSDs never succeed.
+    """
+    from collections import defaultdict
+
+    by_target: dict[str, list[PoseScore]] = defaultdict(list)
+    for p in poses:
+        by_target[p.target_id].append(p)
+
+    n_success = 0
+    for target_poses in by_target.values():
+        if any(rmsd_is_success(p.rmsd, rmsd_threshold) for p in target_poses):
+            n_success += 1
+
+    denom = n_targets if n_targets is not None else len(by_target)
+    if denom < len(by_target):
+        raise ValueError("Sampling denominator is smaller than the observed roster")
+    return n_success / denom if denom > 0 else 0.0
+
+
 # ---------------------------------------------------------------------------
 # Target specificity Z-score
 # ---------------------------------------------------------------------------
@@ -510,6 +543,7 @@ def compute_all_metrics(
         "docking_power_top3",
         "generator_docking_power_top1",
         "entropy_reranked_docking_power_top1",
+        "sampling_power",
         "mean_rmsd",
         "median_rmsd",
         "ef_1pct",
@@ -542,6 +576,14 @@ def compute_all_metrics(
     if "entropy_reranked_docking_power_top1" in to_compute or "docking_power_top1" in to_compute:
         results["entropy_reranked_docking_power_top1"] = docking_power(
             poses, top_n=1, n_targets=n_targets)
+
+    # Library / S_top10 sampling ceiling. Rank is ignored. Empty attempts
+    # stay in the denominator when n_targets is pinned, so a silent
+    # top-1=0 from zero poses cannot hide behind a missing sampling rate:
+    # sampling_power measures 0.0 and the #326 productivity gate still
+    # fires on total_poses==0.
+    if "sampling_power" in to_compute:
+        results["sampling_power"] = sampling_power(poses, n_targets=n_targets)
 
     # Pose-accuracy aggregates: per-target best-pose RMSD, then mean/median
     # across targets — mirrors benchmark.BenchmarkSummary's median-of-best-pose

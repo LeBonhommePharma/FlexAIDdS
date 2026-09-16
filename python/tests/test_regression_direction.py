@@ -61,6 +61,13 @@ def test_higher_is_better_metric_flags_on_decrease():
     assert dr.check_regressions()["docking_power_top1"] is True
 
 
+def test_sampling_power_floor_flags_on_decrease():
+    dr = _result({"sampling_power": 0.0}, {"sampling_power": 0.50})
+    assert dr.check_regressions()["sampling_power"] is True
+    dr_ok = _result({"sampling_power": 0.75}, {"sampling_power": 0.50})
+    assert dr_ok.check_regressions()["sampling_power"] is False
+
+
 def test_registries_are_disjoint():
     assert not (_LOWER_IS_BETTER & _HIGHER_IS_BETTER)
 

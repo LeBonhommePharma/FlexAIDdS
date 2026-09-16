@@ -115,11 +115,22 @@ def test_astex_diverse_yaml_uses_random_selection():
             # a drift here silently changes every CI draw on one copy but not
             # the other.
             tuple(d.get("tier1_wall_time_exclusions") or ()),
+            tuple(d.get("tier1_expected_roster") or ()),
+            d.get("matrix_pin_md5"),
+            d.get("ci_ranking_status"),
         ))
     # 4 = the free-coverage point: one batch of 4 workers, same wall as 2.
     # 20260816 = CI FLEXAIDDS_TIER1_SEED; yaml pin matches so local repro
     # without the env var still draws the same subset.
-    assert seen[0] == ("random", 4, 20260816, ("1of6", "2bys"))
+    assert seen[0] == (
+        "random",
+        4,
+        20260816,
+        ("1of6", "2bys"),
+        ("1gpk", "1mq6", "1xm6", "2cet"),
+        "9dc93717dfed0698006d88dd6a9627bc",
+        "unregistered",
+    )
     assert seen[0] == seen[1], f"astex_diverse copies disagree: {seen}"
 
 

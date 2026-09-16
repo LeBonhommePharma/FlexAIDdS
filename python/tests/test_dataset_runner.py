@@ -13,6 +13,7 @@ from flexaidds.dataset_runner.runner import (
     EntryTaskManager,
     _filter_requested_metrics_for_dry_run,
     _is_docking_power_metric,
+    _is_real_dock_rate_metric,
     _strip_docking_power_metrics,
 )
 
@@ -68,22 +69,27 @@ def test_strip_docking_power_helpers():
     assert _is_docking_power_metric("docking_power_top3")
     assert not _is_docking_power_metric("scoring_power_pearson_r")
     assert not _is_docking_power_metric("entropy_rescue_rate")
+    assert _is_real_dock_rate_metric("sampling_power")
+    assert _is_real_dock_rate_metric("docking_power_top1")
+    assert not _is_real_dock_rate_metric("entropy_rescue_rate")
 
     raw = {
         "docking_power_top1": 0.99,
         "docking_power_top3": 1.0,
+        "sampling_power": 1.0,
         "entropy_rescue_rate": 0.4,
         "scoring_power_pearson_r": 0.5,
     }
     cleaned = _strip_docking_power_metrics(raw)
     assert "docking_power_top1" not in cleaned
     assert "docking_power_top3" not in cleaned
+    assert "sampling_power" not in cleaned
     assert cleaned["entropy_rescue_rate"] == 0.4
     assert cleaned["scoring_power_pearson_r"] == 0.5
 
     assert _filter_requested_metrics_for_dry_run(None) is None
     assert _filter_requested_metrics_for_dry_run(
-        ["docking_power_top1", "entropy_rescue_rate"]
+        ["docking_power_top1", "sampling_power", "entropy_rescue_rate"]
     ) == ["entropy_rescue_rate"]
 
 
@@ -129,6 +135,7 @@ def test_dry_run_omits_docking_power_metrics(tmp_path):
         f"dry-run must not report docking_power_* as real rates; got {docking_keys} "
         f"with values {[dr.metrics[k] for k in docking_keys]}"
     )
+    assert "sampling_power" not in dr.metrics
 
     # Regression checks are skipped in dry-run — synthetic rates must not
     # be compared to production baselines.
@@ -160,6 +167,7 @@ def test_dry_run_default_all_metrics_still_strips_docking_power(tmp_path):
     assert dr.dry_run is True
     assert not any(k.startswith("docking_power_") for k in dr.metrics)
     assert not any(k.startswith("docking_power_") for k in dr.ci_95)
+    assert "sampling_power" not in dr.metrics
 
 
 # ── grand_xi serialization regression (PR #311, Codex review) ────────────────

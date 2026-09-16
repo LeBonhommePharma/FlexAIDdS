@@ -52,8 +52,11 @@ original IDs after sorting the output election. An absent elected rank remains
 a generator miss, even if a later output is near-native.
 `generator_docking_power_top1` follows the emitted election;
 `entropy_reranked_docking_power_top1` and the historical `docking_power_top1`
-key use the declared Python proxy objective. Synthetic dry runs suppress all
-docking-power endpoints. No RMSD-only endpoint is a validated docking claim.
+key use the declared Python proxy objective. `sampling_power` is the library /
+S_top10 ceiling (any pose RMSD ≤ 2.0 Å); it is the hard Tier-1 sampling gate
+and is not a ranking claim. Synthetic dry runs suppress all docking-power
+endpoints and `sampling_power`. No RMSD-only endpoint is a validated docking claim.
+Tier-1 CI ranking vs sampling split: `docs/TIER1_CI_CONTRACT.md`.
 
 The repair's regression fixtures establish temperature dependence, a scalar
 ranking reversal, unchanged zero-entropy scores, fixed denominator accounting,
