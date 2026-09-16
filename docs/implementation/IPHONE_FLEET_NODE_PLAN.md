@@ -249,3 +249,44 @@ start after C0. C5 requires everything.
 - Unattended overnight background compute on iOS.
 - Any FP64 thermodynamic reduction on Apple GPUs (Metal has no `double`).
 - A Pro Max–specific thermal advantage; Apple publishes one claim for both sizes.
+
+## 9. Validation record — Linux cloud VM, 2026-09-16
+
+Scope: what can be checked without Apple hardware. No docks were launched; no
+campaign checkout or binary was touched. Host: Linux x86_64, GCC 14.2, CMake 4.4.3,
+tree at `a15bcd63` (merge of this plan).
+
+**§0 premise — GA fitness stays on CPU.** Built `test_unified_dispatch` and
+`test_hardware_detect_dispatch` with `-DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release`
+and ran them via `ctest -R "UnifiedDispatchTests|HardwareDetectDispatchTests"`:
+2/2 suites passed; 73 of 74 GoogleTest cases passed, 1 skipped
+(`ShannonDispatchTest.AVX512MatchesScalar`, host lacks AVX-512). The two pins the
+plan relies on, `BackendSelection.FitnessEvalDefaultsToCpuBackend` and
+`BackendSelection.GpuOverrideDoesNotApplyToFitnessEval`, both pass.
+
+**Code-grounded claims re-checked against the tree** (all confirmed):
+
+| Claim in plan | Where |
+|---|---|
+| `best_backend(FITNESS_EVAL)` returns `select_cpu_backend()` even under GPU override | `LIB/UnifiedHardwareDispatch.cpp` (`case KernelType::FITNESS_EVAL`, override branch) |
+| Metal Shannon/Boltzmann dispatch at `energies.size() >= 256` | `LIB/UnifiedHardwareDispatch.cpp` |
+| TFLOPS table stops at `case 17...` (no A19/A20 rows) | `swift/Sources/FleetScheduler/DeviceCapability.swift` |
+| `modelIdentifier()` returns `hostName` on iOS | `DeviceCapability.swift` |
+| `timeoutSeconds` default 3600 | `swift/Sources/FleetScheduler/WorkChunk.swift` |
+| `deviceThroughput` is a last-value overwrite | `swift/Sources/FleetScheduler/FleetScheduler.swift` |
+| Shannon Metal path is FP32 only | `LIB/ShannonThermoStack/ShannonMetalBridge.mm`, `shannon_metal.metal` |
+| Metallib loaded from compile-time `*_METALLIB_PATH`, then `newDefaultLibrary` | `ShannonMetalBridge.mm`, `MetalRMSDBridge.mm` |
+| RMSD kernel tiles over row ranges | `LIB/MetalRMSDBridge.mm` |
+| Bridges already use `MTLResourceStorageModeShared` | all five `*.mm` bridges |
+| `Package.swift` declares `.iOS(.v17)` and reads `FLEXAIDDS_CORE_LIB_DIR` | `swift/Package.swift` |
+| `macos_metal_compile_smoke` exists; `ios_core_compile_smoke` does not yet | `.github/workflows/ci.yml` |
+| `WorkKind`, `estimatedPeakBytes`, `performanceCoreCount`, `backendProvenance` absent | `swift/Sources/FleetScheduler/` (C0/C4 are net-new) |
+
+**Not runnable here, still open:** G1/G3 (XCTest needs `swift test` on a Mac with
+the core archive), G2 (on-device thermal trace), G4 (iOS CMake preset + USB
+transport), G5 (Astex parity with a phone in the loop). Nothing in this record
+constitutes evidence for those gates.
+
+Toolchain note for Linux validators: this repo needs GCC ≥ 14 and a CMake that knows
+the GNU C++26 dialect (≥ 3.30). Ubuntu 24.04's stock GCC 13 / CMake 3.28 fail at
+configure; `apt install g++-14` plus `pip install "cmake>=3.30"` is sufficient.
