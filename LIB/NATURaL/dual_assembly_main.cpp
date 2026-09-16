@@ -16,6 +16,7 @@
 //                 [--synthetic]    # use built-in synthetic GA backend (MVP default)
 //                 [--real-ga]      # reserved; exits until FlexAID GA callback lands
 //                 [--pose-local-thermo-rewrite]  # experimental; default OFF
+//                 [--pose-helix-thermo-rewrite]  # experimental; default OFF
 //
 // The MVP ships a built-in synthetic GA backend (Gaussian pose distributions whose
 // width narrows as L_k grows) so the full pipeline can be exercised end-to-end on
@@ -54,6 +55,7 @@ struct Args {
     bool   sim_c_enabled       = true;
     bool   synthetic           = true;   // MVP default
     bool   pose_local_thermo_rewrite = false;  // experimental, default OFF
+    bool   pose_helix_thermo_rewrite = false;  // experimental, default OFF
     std::string output_csv     = "cotranslational_trajectory.csv";
     std::string nascent_pdb_dir = ".";
 };
@@ -99,6 +101,7 @@ Args parse_args(int argc, char** argv) {
         else if (k == "--synthetic")           a.synthetic           = true;
         else if (k == "--real-ga")             a.synthetic           = false;
         else if (k == "--pose-local-thermo-rewrite") a.pose_local_thermo_rewrite = true;
+        else if (k == "--pose-helix-thermo-rewrite") a.pose_helix_thermo_rewrite = true;
         else if (k == "--output-csv")          a.output_csv          = next(k.c_str());
         else if (k == "--nascent-pdb-dir")     a.nascent_pdb_dir     = next(k.c_str());
         else if (k == "--help" || k == "-h") { usage(); std::exit(0); }
@@ -214,6 +217,7 @@ int main(int argc, char** argv) {
         cfg.output_csv                   = a.output_csv;
         cfg.nascent_pdb_dir              = a.nascent_pdb_dir;
         cfg.enable_pose_local_thermo_rewrite = a.pose_local_thermo_rewrite;
+        cfg.enable_pose_helix_rewrite        = a.pose_helix_thermo_rewrite;
 
         natural::SimAFn sim_a = make_synthetic_sim_a();
         natural::SimBFn sim_b = make_synthetic_sim_b();

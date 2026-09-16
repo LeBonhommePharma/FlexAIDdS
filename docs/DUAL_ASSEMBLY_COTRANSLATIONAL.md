@@ -386,6 +386,8 @@ a long trajectory is partially readable on disk even if the run is interrupted.
   • `LIB/NATURaL/PoseHelixThermoRewrite.{h,cpp}` — experimental sidecar; RNA DualAssembly
     hook is `NATURaLConfig.enable_pose_helix_rewrite` (false) +
     `DualAssemblyEngine::compute_pose_helix_rewrite()`. `run()` does not apply patches.
+    DualAssemblyRunner opt-in uses `GAResult` atom coords via
+    `LIB/NATURaL/PoseRewriteGaBridge.h` (fail-closed if coords missing).
   • `LIB/NATURaL/PoseLocalThermoRewrite.{h,cpp}` — experimental generalized pose→local SS
     ΔH/ΔS rewrite (RNA/DNA/helix/sheet, class-specific tables). Runner hook is
     `DualAssemblyConfig.enable_pose_local_thermo_rewrite` (false). Diagnostic only;
@@ -430,12 +432,16 @@ a long trajectory is partially readable on disk even if the run is interrupted.
 
   • The MVP truncates the nascent chain in extended geometry only. ESMFold integration for
     per-residue secondary-structure-aware truncation is post-MVP.
-  • Pose→helix ΔH/ΔS rewrite is experimental and default OFF. DualAssemblyRunner does not
-    call it (no atom-level poses from the injected GA). DualAssemblyEngine::run() does not
-    add patches to CF or `FA->natural_deltaG`.
-  • Pose→local SS ΔH/ΔS rewrite (`PoseLocalThermoRewrite`) is experimental and default OFF.
-    When enabled it writes diagnostic fields on `CheckpointOutcome` only; it does not
-    mutate `dG_A` / `dG_B` or add CSV columns.
+  • Pose→helix ΔH/ΔS rewrite is experimental and default OFF
+    (`enable_pose_helix_rewrite`, `FLEXAIDDS_POSE_HELIX_THERMO_REWRITE`).
+    DualAssemblyRunner feeds `GAResult` atom coords into
+    `PoseHelixThermoRewrite` when opted in; missing coords fail closed.
+    DualAssemblyEngine::run() does not add patches to CF or `FA->natural_deltaG`.
+  • Pose→local SS ΔH/ΔS rewrite (`PoseLocalThermoRewrite`) is experimental and default OFF
+    (`enable_pose_local_thermo_rewrite`, `FLEXAIDDS_POSE_LOCAL_THERMO_REWRITE`).
+    DualAssemblyRunner prefers GA atom coords (labelled `pose_rewrite_poses` as
+    fallback). When enabled it writes diagnostic fields on `CheckpointOutcome`
+    only; it does not mutate `dG_A` / `dG_B` or add CSV columns.
   • The transcription tracks do not dock directly against the protofibril
     (`direct_encounter_allowed = false`). Polysome-mode (multiple nascent chains at
     staggered lengths sharing one mRNA against a single protofibril) is a future

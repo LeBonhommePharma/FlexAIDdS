@@ -14,6 +14,8 @@
 #include "../LIB/NATURaL/NATURaLDualAssembly.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -436,6 +438,95 @@ TEST(NATURaLConfig, PoseHelixAndPoseLocalStayDefaultOffAndDoNotFeedGNatural) {
     NATURaLConfig cfg;
     EXPECT_FALSE(cfg.enable_pose_helix_rewrite);
     EXPECT_FALSE(cfg.pose_local_thermo_rewrite);
+}
+
+namespace {
+resid rna_ade_residue()
+{
+    resid r{};
+    std::snprintf(r.name, sizeof(r.name), "ADE");
+    return r;
+}
+
+HelixSegment rna_decision_helix()
+{
+    HelixSegment h;
+    h.stem_i_begin = 0;
+    h.stem_i_end   = 1;
+    h.loop_begin   = 2;
+    h.loop_end     = 3;
+    h.stem_j_begin = 4;
+    h.stem_j_end   = 5;
+    h.label        = "decision";
+    return h;
+}
+
+ReceptorNtCoord rna_stem_nt()
+{
+    ReceptorNtCoord n;
+    n.nt_index = 0;
+    n.x = 0.0;
+    n.y = 0.0;
+    n.z = 0.0;
+    n.is_aromatic = true;
+    n.nz = 1.0;
+    return n;
+}
+
+LigandPose rna_stacking_pose()
+{
+    LigandAtomCoord a;
+    a.x = 0.0;
+    a.y = 0.0;
+    a.z = 3.5;
+    a.is_aromatic = true;
+    a.nz = 1.0;
+    LigandPose p;
+    p.rank = 0;
+    p.score_kcal = -1.0;
+    p.atoms.push_back(a);
+    return p;
+}
+} // namespace
+
+TEST(DualAssemblyEngine, PoseHelixSidecarDefaultOffEvenWithCoords)
+{
+    resid rec = rna_ade_residue();
+    NATURaLConfig cfg;
+    cfg.decision_helices.push_back(rna_decision_helix());
+    DualAssemblyEngine engine(cfg, nullptr, nullptr, nullptr, &rec, 1);
+    const auto r = engine.compute_pose_helix_rewrite({rna_stem_nt()},
+                                                     {rna_stacking_pose()});
+    EXPECT_FALSE(r.applied);
+    EXPECT_TRUE(r.ensemble.empty());
+    EXPECT_DOUBLE_EQ(engine.final_deltaG(), 0.0);
+}
+
+TEST(DualAssemblyEngine, PoseHelixSidecarFailClosedMissingCoords)
+{
+    resid rec = rna_ade_residue();
+    NATURaLConfig cfg;
+    cfg.enable_pose_helix_rewrite = true;
+    cfg.decision_helices.push_back(rna_decision_helix());
+    DualAssemblyEngine engine(cfg, nullptr, nullptr, nullptr, &rec, 1);
+    const auto r = engine.compute_pose_helix_rewrite({}, {});
+    EXPECT_FALSE(r.applied);
+    EXPECT_TRUE(r.ensemble.empty());
+}
+
+TEST(DualAssemblyEngine, PoseHelixSidecarAppliesWithGaCoords)
+{
+    resid rec = rna_ade_residue();
+    NATURaLConfig cfg;
+    cfg.enable_pose_helix_rewrite = true;
+    cfg.decision_helices.push_back(rna_decision_helix());
+    DualAssemblyEngine engine(cfg, nullptr, nullptr, nullptr, &rec, 1);
+    const auto r = engine.compute_pose_helix_rewrite({rna_stem_nt()},
+                                                     {rna_stacking_pose()});
+    EXPECT_TRUE(r.applied);
+    ASSERT_FALSE(r.ensemble.empty());
+    EXPECT_LT(r.ensemble.front().delta_H_kcal, 0.0);
+    EXPECT_DOUBLE_EQ(engine.final_deltaG(), 0.0);
 }
 
 TEST(NATURaLConfig, IsNucleotideLigandReturnsFalseForEmpty) {
