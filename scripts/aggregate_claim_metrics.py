@@ -164,7 +164,10 @@ def elected_rmsd_labelled(row: dict[str, str]) -> tuple[float, str]:
     value = _f(row, "rmsd_to_crystal")
     if math.isfinite(value):
         return value, "serial"
-    return _f(row, "rmsd_top1"), "serial_legacy_top1"
+    # rmsd_top1 is untyped provenance. Arm A parse_flexaid_arm_results.pose_rmsd
+    # prefers REMARK "(symmetry corrected)" then "(no symmetry)"; that is not
+    # serial identity. Do not label this fallback serial. See issue #509 item 2.
+    return _f(row, "rmsd_top1"), "rmsd_top1_untyped"
 
 
 def elected_rmsd(row: dict[str, str]) -> float:

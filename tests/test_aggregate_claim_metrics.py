@@ -149,6 +149,49 @@ def test_hungarian_never_substitutes_for_serial(agg):
     assert not agg.is_strict_success(row)
 
 
+def test_rmsd_top1_fallback_label_is_untyped_not_serial(agg):
+    """Arm A rmsd_top1 is not serial; claim tables must not say serial_legacy_top1."""
+    row = _row(rmsd_to_crystal="", rmsd_top1="1.20")
+    val, metric = agg.elected_rmsd_labelled(row)
+    assert metric == "rmsd_top1_untyped"
+    assert "serial" not in metric
+    assert metric != "serial_legacy_top1"
+    assert val == pytest.approx(1.20)
+    assert agg.is_s1(row) is True
+    assert agg.is_strict_success(row) is False
+
+
+def test_rmsd_top1_fail_still_fails_s1_and_does_not_claim_serial(agg):
+    row = _row(rmsd_to_crystal="", rmsd_top1="6.8360")
+    val, metric = agg.elected_rmsd_labelled(row)
+    assert metric == "rmsd_top1_untyped"
+    assert val == pytest.approx(6.8360)
+    assert agg.is_s1(row) is False
+
+
+def test_rmsd_top1_does_not_override_serial_or_symmcorr_labels(agg):
+    serial_row = _row(rmsd_to_crystal="6.8", rmsd_top1="1.0")
+    _, metric = agg.elected_rmsd_labelled(serial_row)
+    assert metric == "serial"
+    assert agg.is_s1(serial_row) is False
+    corr_row = _row(rmsd_to_crystal="6.8", rmsd_symmcorr="1.1", rmsd_top1="0.4")
+    val, metric = agg.elected_rmsd_labelled(corr_row)
+    assert metric == "symmcorr"
+    assert val == pytest.approx(1.1)
+    assert agg.is_s1(corr_row) is True
+
+
+def test_claim_report_metric_used_does_not_say_serial_legacy_top1(agg):
+    report = _aggregate(agg, [_row(rmsd_to_crystal="", rmsd_top1="1.2")])
+    used = report["metrics"]["S1"]["metric_used"]
+    assert used == "rmsd_top1_untyped"
+    assert used != "serial_legacy_top1"
+    assert "serial" not in used
+    assert report["metrics"]["S1"]["n"] == 1
+    assert report["metrics"]["STRICT"]["n"] == 0
+    assert report["strict_metric_inheritance"]["s1_metric"] == "rmsd_top1_untyped"
+
+
 def test_s2_recomputes_pb_and_requires_pose_identity(agg):
     assert not agg.is_s2(_row(pb_pass="0", success_pb="1"), True)
     assert not agg.is_s2(_row(posebusters_pose_sha256=""), True)
