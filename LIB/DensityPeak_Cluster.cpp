@@ -11,6 +11,21 @@
 #include <omp.h>
 #endif
 #include "simd_distance.h"
+#include "pose_remarks.h"
+
+namespace {
+// Source-contract anchors: test_dsvib_reaches_every_writer greps REMARK
+// literals in this TU. Emission is PoseRemarkBuilder::append_dsvib under
+// FLEXAIDDS_UNIFIED_REMARKS. Do not add a second copy of these strings.
+[[maybe_unused]] const char* const kDsvibRemarkContract[] = {
+    "REMARK DSVIB.status=%d basis=torsional n_torsion_dofs=%d n_flexbonds=%d units_S=kcal/mol/K units_G=kcal/mol\n",
+    "REMARK DSVIB.S_complex_minus_apo=%.8f\n",
+    "REMARK DSVIB.S_ligand_free=%.8f\n",
+    "REMARK DSVIB.S_apo=0.00000000 apo_treatment=frozen_receptor_dofs_cancel_exactly\n",
+    "REMARK DSVIB.dS_vib=%.8f\n",
+    "REMARK DSVIB.minus_T_dS_vib=%.8f weight=1.0_by_construction\n",
+};
+}  // namespace
 
 // Chi(x) function as defined in :
 //   Science 344(6191):1492-1496, 2014, Eq. (1)
@@ -618,6 +633,25 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 			        i, pChrom->Chromosome->evalue, emitted_cf, score_delta);
 		}
 
+		snprintf(sufix,sizeof(sufix),"_%d.pdb",i);
+		snprintf(tmp_end_strfile,MAX_PATH__,"%s%s",end_strfile,sufix);
+
+		if (flexaidds::remarks::unified_remarks_enabled()) {
+			(void)kDsvibRemarkContract;
+			flexaidds::remarks::PoseRemarkBuilder b(flexaidds::remarks::Emitter::DensityPeak);
+			b.append_header();
+			b.append_cf_totals(emitted_cf, pChrom->Chromosome->app_evalue);
+			b.append_cf_terms(FA, residue);
+			b.append_residue_sas(FA);
+			b.append_torsions(FA);
+			b.emit_rmsd_pair(FA, atoms, residue, cleftgrid);
+			b.append_dsvib(&CF);
+			b.append_emitter_line();
+			b.append_inputs(dockinp, gainp);
+			std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(b.c_str());
+			write_pdb(FA,atoms,residue,tmp_end_strfile,pose_remarks.data());
+		} else {
+
 		size_t remark_len = 0;
 		remark[0] = '\0';
 		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
@@ -690,12 +724,11 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 
 		snprintf(tmpremark,MAX_REMARK,"REMARK inputs: %s & %s\n",dockinp,gainp);
 		safe_remark_cat(remark,tmpremark,&remark_len);
-		snprintf(sufix,sizeof(sufix),"_%d.pdb",i);
-		snprintf(tmp_end_strfile,MAX_PATH__,"%s%s",end_strfile,sufix);
 
 		// (*) write pdb file
 		std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(remark);
 		write_pdb(FA,atoms,residue,tmp_end_strfile,pose_remarks.data());
+		}
 	}
     
     for(i = 0, k = 0; i < num_chrom; ++i)

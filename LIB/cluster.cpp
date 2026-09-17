@@ -22,6 +22,7 @@
 // directory is created and no file is written, so the emitted artifact set is
 // byte-identical to HEAD.
 #include "flexed_receptor.h"
+#include "pose_remarks.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -680,6 +681,28 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		                              ? chrom[Clus_TOP[j]].app_evalue
 		                              : emitted_app;
 
+		snprintf(sufix, sizeof(sufix), "_%d.pdb",j);
+		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
+
+		if (flexaidds::remarks::unified_remarks_enabled()) {
+			// Shared writer. emit_rmsd_pair() owns a local Hungarian flag, so
+			// the sticky-flag defect has nowhere to live on this path. Default
+			// OFF keeps the historical block below (including sticky Hungarian)
+			// so gate-OFF CF poses stay byte-identical to pre-change.
+			flexaidds::remarks::PoseRemarkBuilder b(flexaidds::remarks::Emitter::CF);
+			b.append_header();
+			b.append_cf_totals(emitted_cf, emit_app_value);
+			b.append_cf_terms(FA, residue);
+			b.append_residue_sas(FA);
+			b.append_torsions(FA);
+			b.emit_rmsd_pair(FA, atoms, residue, cleftgrid);
+			b.append_dsvib(&cf);
+			b.append_emitter_line();
+			b.append_inputs(dockinp, gainp);
+			std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(b.c_str());
+			write_pdb(FA,atoms,residue,tmp_end_strfile,pose_remarks.data());
+		} else {
+
 		size_t remark_len = 0;
 		remark[0] = '\0';
 		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
@@ -909,12 +932,9 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		}
 		snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n",dockinp,gainp);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(sufix, sizeof(sufix), "_%d.pdb",j);
-		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
-		//printf("filename=<%s>\n",tmp_end_strfile);
-		//PAUSE;
 		std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(remark);
 		write_pdb(FA,atoms,residue,tmp_end_strfile,pose_remarks.data());
+		}
 
 		// ── Write the receptor AS SCORED (FLEXAIDDS_WRITE_FLEXED_RECEPTOR) ──
 		// DEFAULT OFF. Nothing above this point is touched: the pose PDB has

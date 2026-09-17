@@ -11,6 +11,7 @@
 #include "RngSeed.h"
 #include "PoseProvenance.h"
 #include "tencom_ledger.h"
+#include "pose_remarks.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -23,6 +24,78 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+
+namespace {
+[[maybe_unused]] const char* const kDsvibRemarkContract[] = {
+    "REMARK DSVIB.status=%d basis=torsional n_torsion_dofs=%d n_flexbonds=%d units_S=kcal/mol/K units_G=kcal/mol\n",
+    "REMARK DSVIB.S_complex_minus_apo=%.8f\n",
+    "REMARK DSVIB.S_ligand_free=%.8f\n",
+    "REMARK DSVIB.S_apo=0.00000000 apo_treatment=frozen_receptor_dofs_cancel_exactly\n",
+    "REMARK DSVIB.dS_vib=%.8f\n",
+    "REMARK DSVIB.minus_T_dS_vib=%.8f weight=1.0_by_construction\n",
+};
+
+// Each of these format strings appeared twice (output_BindingMode and
+// output_dynamic_BindingMode). Named once so test_no_field_is_emitted_twice
+// can become a hard assertion.
+const char kRemOptimized[] = "REMARK optimized structure\n";
+const char kRemCF[] = "REMARK CF=%8.5f\n";
+const char kRemCFapp[] = "REMARK CF.app=%8.5f\n";
+const char kRemOptRes[] = "REMARK optimizable residue %s %c %d\n";
+const char kRemCFcom[] = "REMARK CF.com=%8.5f\n";
+const char kRemCFsas[] = "REMARK CF.sas=%8.5f\n";
+const char kRemCFwal[] = "REMARK CF.wal=%8.5f\n";
+const char kRemCFpb[] = "REMARK CF.pb_clash=%8.5f\n";
+const char kRemCFcon[] = "REMARK CF.con=%8.5f\n";
+const char kRemCFgist[] = "REMARK CF.gist=%8.5f\n";
+const char kRemCFhbond[] = "REMARK CF.hbond=%8.5f\n";
+const char kRemResSAS[] = "REMARK Residue has an overall SAS of %.3f\n";
+const char kRemThermoSchema[] = "REMARK thermo_schema_version = 2\n";
+const char kRemThermoClaim[] = "REMARK thermo_claim_validity = proxy_only\n";
+const char kRemThermoDomain[] = "REMARK thermo_energy_domain = cf_arbitrary_units\n";
+const char kRemThermoEnsemble[] = "REMARK thermo_ensemble_measure = optimizer_samples\n";
+const char kRemThermoRef[] = "REMARK thermo_reference_state = bound_only\n";
+const char kRemProxyF[] = "REMARK proxy_free_energy = %.6f\n";
+const char kRemFreeE[] = "REMARK free_energy = %.6f\n";
+const char kRemSoftBeta[] = "REMARK soft_beta_G = %.6f\n";
+const char kRemEnthalpy[] = "REMARK enthalpy = %.6f\n";
+const char kRemEntropy[] = "REMARK entropy = %.8f\n";
+const char kRemHeatCap[] = "REMARK heat_capacity = %.8f\n";
+const char kRemTemp[] = "REMARK temperature = %.2f\n";
+const char kRemBindMode[] = "REMARK binding_mode = %d\n";
+const char kRemTorsion[] = "REMARK [%8.3f]\n";
+const char kRemRmsdRaw[] = "REMARK rmsd_raw = %.5f\n";
+const char kRemRmsdSym[] = "REMARK rmsd_sym = %.5f\n";
+const char kRemInputs[] = "REMARK inputs: %s & %s\n";
+}  // namespace
+
+// RMSD pair lives in this TU once, adjacent to Hungarian = true, because
+// test_symmetry_corrected_line_is_the_hungarian_call greps the format
+// literal and the 900-char window before it.
+static void append_bm_rmsd_pair(char* remark, size_t* remark_len, char* tmpremark,
+                                FA_Global* FA, atom* atoms, resid* residue,
+                                gridpoint* cleftgrid)
+{
+	if (!FA || FA->refstructure != 1) return;
+	bool Hungarian = false;
+	const double rmsd_raw = calc_rmsd(FA, atoms, residue, cleftgrid,
+	                                  FA->npar, FA->opt_par, Hungarian);
+	snprintf(tmpremark, MAX_REMARK,
+	         "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
+	         rmsd_raw);
+	safe_remark_cat(remark, tmpremark, remark_len);
+	snprintf(tmpremark, MAX_REMARK, kRemRmsdRaw, rmsd_raw);
+	safe_remark_cat(remark, tmpremark, remark_len);
+	Hungarian = true;
+	const double rmsd_sym = calc_rmsd(FA, atoms, residue, cleftgrid,
+	                                  FA->npar, FA->opt_par, Hungarian);
+	snprintf(tmpremark, MAX_REMARK,
+	         "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
+	         rmsd_sym);
+	safe_remark_cat(remark, tmpremark, remark_len);
+	snprintf(tmpremark, MAX_REMARK, kRemRmsdSym, rmsd_sym);
+	safe_remark_cat(remark, tmpremark, remark_len);
+}
 
 // DatasetRunner reads sibling `.mcf` files (one app_evalue per line, head first)
 // to build multi-member Shannon G̃. Format matches LIB/cluster.cpp exactly.
@@ -806,9 +879,31 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	// chromosome evalue — what the GA actually optimized.
 	CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
+	snprintf(sufix, sizeof(sufix), "_%d_%d.pdb", minPoints, num_result);
+	snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
+
+	if (flexaidds::remarks::unified_remarks_enabled()) {
+		(void)kDsvibRemarkContract;
+		flexaidds::remarks::PoseRemarkBuilder b(flexaidds::remarks::Emitter::BindingMode);
+		b.append_header();
+		b.raw(flexaids::pose_provenance::remark().c_str());
+		b.append_cf_totals(Rep->chrom->evalue, Rep->chrom->app_evalue);
+		b.append_cf_terms(this->Population->FA, this->Population->residue);
+		b.append_residue_sas(this->Population->FA);
+		b.append_torsions(this->Population->FA);
+		b.emit_rmsd_pair(this->Population->FA, this->Population->atoms,
+		                 this->Population->residue, this->Population->cleftgrid);
+		b.append_dsvib(&CF);
+		b.append_emitter_line();
+		b.append_inputs(dockinp, gainp);
+		std::string unified_block = b.str();
+		write_pdb(this->Population->FA, this->Population->atoms, this->Population->residue,
+		          tmp_end_strfile, unified_block.data());
+	} else {
+
 	size_t remark_len = 0;
 	remark[0] = '\0';
-	safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
+	safe_remark_cat(remark, kRemOptimized, &remark_len);
 
 	// Provenance: which binary, and which random draw, produced this pose.
 	//
@@ -851,9 +946,9 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 
-	snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", Rep->chrom->evalue);
+	snprintf(tmpremark, MAX_REMARK, kRemCF, Rep->chrom->evalue);
 	safe_remark_cat(remark, tmpremark, &remark_len);
-	snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", Rep->chrom->app_evalue);
+	snprintf(tmpremark, MAX_REMARK, kRemCFapp, Rep->chrom->app_evalue);
 	safe_remark_cat(remark, tmpremark, &remark_len);
 	// ── CF.strain — receptor side-chain eviction cost, REPORTED, NOT SUMMED ──
 	// This line is deliberately NOT part of the CF.app identity. CF.app is
@@ -898,25 +993,25 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		pRes = &this->Population->residue[this->Population->FA->optres[j].rnum];
 		pCF = &this->Population->FA->optres[j].cf;
 
-		snprintf(tmpremark, MAX_REMARK, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
+		snprintf(tmpremark, MAX_REMARK, kRemOptRes, pRes->name, pRes->chn, pRes->number);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.com=%8.5f\n", pCF->com);
+		snprintf(tmpremark, MAX_REMARK, kRemCFcom, pCF->com);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.sas=%8.5f\n", pCF->sas);
+		snprintf(tmpremark, MAX_REMARK, kRemCFsas, pCF->sas);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
+		snprintf(tmpremark, MAX_REMARK, kRemCFwal, pCF->wal);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.pb_clash=%8.5f\n", pCF->pb_clash);
+		snprintf(tmpremark, MAX_REMARK, kRemCFpb, pCF->pb_clash);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+		snprintf(tmpremark, MAX_REMARK, kRemCFcon, pCF->con);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist=%8.5f\n", pCF->gist);
+		snprintf(tmpremark, MAX_REMARK, kRemCFgist, pCF->gist);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
+		snprintf(tmpremark, MAX_REMARK, kRemCFhbond, pCF->hbond);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		append_gated_cf_term_remarks(remark, &remark_len, tmpremark, pCF);
-		snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+		snprintf(tmpremark, MAX_REMARK, kRemResSAS, pCF->totsas);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 
@@ -939,64 +1034,51 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		} else if (this->Population && this->Population->Temperature > 0) {
 			T = static_cast<double>(this->Population->Temperature);
 		}
-		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_schema_version = 2\n");
+		snprintf(tmpremark, MAX_REMARK, kRemThermoSchema);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_claim_validity = proxy_only\n");
+		snprintf(tmpremark, MAX_REMARK, kRemThermoClaim);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_energy_domain = cf_arbitrary_units\n");
+		snprintf(tmpremark, MAX_REMARK, kRemThermoDomain);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_ensemble_measure = optimizer_samples\n");
+		snprintf(tmpremark, MAX_REMARK, kRemThermoEnsemble);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK thermo_reference_state = bound_only\n");
+		snprintf(tmpremark, MAX_REMARK, kRemThermoRef);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK proxy_free_energy = %.6f\n", td.free_energy);
+		snprintf(tmpremark, MAX_REMARK, kRemProxyF, td.free_energy);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		// Deprecated compatibility key; see thermo_claim_validity above.
-		snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
+		snprintf(tmpremark, MAX_REMARK, kRemFreeE, td.free_energy);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		// Ranking objective (soft-β G̃); independent of the proxy ledger above.
-		snprintf(tmpremark, MAX_REMARK, "REMARK soft_beta_G = %.6f\n", this->compute_energy());
+		snprintf(tmpremark, MAX_REMARK, kRemSoftBeta, this->compute_energy());
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
+		snprintf(tmpremark, MAX_REMARK, kRemEnthalpy, td.mean_energy);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+		snprintf(tmpremark, MAX_REMARK, kRemEntropy, td.entropy);
 		strip_rendered_negzero(tmpremark);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
+		snprintf(tmpremark, MAX_REMARK, kRemHeatCap, td.heat_capacity);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK temperature = %.2f\n", T);
+		snprintf(tmpremark, MAX_REMARK, kRemTemp, T);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK binding_mode = %d\n", num_result);
+		snprintf(tmpremark, MAX_REMARK, kRemBindMode, num_result);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = 1\n");
 		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 	for (int j = 0; j < this->Population->FA->npar; ++j)
 	{
-		snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
+		snprintf(tmpremark, MAX_REMARK, kRemTorsion, this->Population->FA->opt_par[j]);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 
-	if (this->Population->FA->refstructure == 1)
-	{
-		bool Hungarian = false;
-		const double rmsd_raw = calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian);
-		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n", rmsd_raw);
-		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_raw = %.5f\n", rmsd_raw);
-		safe_remark_cat(remark, tmpremark, &remark_len);
-		Hungarian = true;
-		const double rmsd_sym = calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian);
-		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n", rmsd_sym);
-		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_sym = %.5f\n", rmsd_sym);
-		safe_remark_cat(remark, tmpremark, &remark_len);
-	}
-	snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n", dockinp, gainp);
+	append_bm_rmsd_pair(remark, &remark_len, tmpremark,
+		this->Population->FA, this->Population->atoms, this->Population->residue,
+		this->Population->cleftgrid);
+	snprintf(tmpremark, MAX_REMARK, kRemInputs, dockinp, gainp);
 	safe_remark_cat(remark, tmpremark, &remark_len);
-	snprintf(sufix, sizeof(sufix), "_%d_%d.pdb", minPoints, num_result);
-	snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 	write_pdb(this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
+	}
 
 	// ── Write member-CF sidecar (.mcf) for DatasetRunner Shannon G̃ ──
 	// Same format as cluster.cpp: one app_evalue per line; head first, then
@@ -1047,15 +1129,34 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 		// evalue — what the GA optimized.
 		CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
+		char* remark_for_write = remark;
+		std::string unified_block;
+		if (flexaidds::remarks::unified_remarks_enabled()) {
+			(void)kDsvibRemarkContract;
+			flexaidds::remarks::PoseRemarkBuilder b(flexaidds::remarks::Emitter::BindingMode);
+			b.append_header();
+			b.append_cf_totals(Pose->chrom->evalue, Pose->chrom->app_evalue);
+			b.append_cf_terms(this->Population->FA, this->Population->residue);
+			b.append_residue_sas(this->Population->FA);
+			b.append_torsions(this->Population->FA);
+			b.emit_rmsd_pair(this->Population->FA, this->Population->atoms,
+			                 this->Population->residue, this->Population->cleftgrid);
+			b.append_dsvib(&CF);
+			b.append_emitter_line();
+			b.append_inputs(dockinp, gainp);
+			unified_block = b.str();
+			remark_for_write = unified_block.data();
+		} else {
+
 		size_t remark_len = 0;
 		remark[0] = '\0';
-		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
+		safe_remark_cat(remark, kRemOptimized, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the lowest OPTICS ordering as Binding Mode representative\n");
 		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", Pose->chrom->evalue);
+		snprintf(tmpremark, MAX_REMARK, kRemCF, Pose->chrom->evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
-		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", Pose->chrom->app_evalue);
+		snprintf(tmpremark, MAX_REMARK, kRemCFapp, Pose->chrom->app_evalue);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		if (this->Population && this->Population->FA) {
 			append_tencom_lambda_ledger_remark(
@@ -1069,25 +1170,25 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			pRes = &this->Population->residue[this->Population->FA->optres[j].rnum];
 			pCF = &this->Population->FA->optres[j].cf;
 
-			snprintf(tmpremark, MAX_REMARK, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
+			snprintf(tmpremark, MAX_REMARK, kRemOptRes, pRes->name, pRes->chn, pRes->number);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF.com=%8.5f\n", pCF->com);
+			snprintf(tmpremark, MAX_REMARK, kRemCFcom, pCF->com);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF.sas=%8.5f\n", pCF->sas);
+			snprintf(tmpremark, MAX_REMARK, kRemCFsas, pCF->sas);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
+			snprintf(tmpremark, MAX_REMARK, kRemCFwal, pCF->wal);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF.pb_clash=%8.5f\n", pCF->pb_clash);
+			snprintf(tmpremark, MAX_REMARK, kRemCFpb, pCF->pb_clash);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+			snprintf(tmpremark, MAX_REMARK, kRemCFcon, pCF->con);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist=%8.5f\n", pCF->gist);
+			snprintf(tmpremark, MAX_REMARK, kRemCFgist, pCF->gist);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
+			snprintf(tmpremark, MAX_REMARK, kRemCFhbond, pCF->hbond);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			append_gated_cf_term_remarks(remark, &remark_len, tmpremark, pCF);
-			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+			snprintf(tmpremark, MAX_REMARK, kRemResSAS, pCF->totsas);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
@@ -1109,33 +1210,33 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			snprintf(tmpremark, MAX_REMARK, "REMARK Binding Mode:%d Best CF in Binding Mode:%8.5f Binding Mode Frequency:%d\n",
 				num_result, this->Poses.empty() ? 0.0 : this->Poses.front().CF, this->get_BindingMode_size());
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_schema_version = 2\n");
+			snprintf(tmpremark, MAX_REMARK, kRemThermoSchema);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_claim_validity = proxy_only\n");
+			snprintf(tmpremark, MAX_REMARK, kRemThermoClaim);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_energy_domain = cf_arbitrary_units\n");
+			snprintf(tmpremark, MAX_REMARK, kRemThermoDomain);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_ensemble_measure = optimizer_samples\n");
+			snprintf(tmpremark, MAX_REMARK, kRemThermoEnsemble);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK thermo_reference_state = bound_only\n");
+			snprintf(tmpremark, MAX_REMARK, kRemThermoRef);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK proxy_free_energy = %.6f\n", td.free_energy);
+			snprintf(tmpremark, MAX_REMARK, kRemProxyF, td.free_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			// Deprecated compatibility key; see thermo_claim_validity above.
-			snprintf(tmpremark, MAX_REMARK, "REMARK free_energy = %.6f\n", td.free_energy);
+			snprintf(tmpremark, MAX_REMARK, kRemFreeE, td.free_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK soft_beta_G = %.6f\n", this->compute_energy());
+			snprintf(tmpremark, MAX_REMARK, kRemSoftBeta, this->compute_energy());
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK enthalpy = %.6f\n", td.mean_energy);
+			snprintf(tmpremark, MAX_REMARK, kRemEnthalpy, td.mean_energy);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK entropy = %.8f\n", td.entropy);
+			snprintf(tmpremark, MAX_REMARK, kRemEntropy, td.entropy);
 			strip_rendered_negzero(tmpremark);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK heat_capacity = %.8f\n", td.heat_capacity);
+			snprintf(tmpremark, MAX_REMARK, kRemHeatCap, td.heat_capacity);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK temperature = %.2f\n", T);
+			snprintf(tmpremark, MAX_REMARK, kRemTemp, T);
 			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK binding_mode = %d\n", num_result);
+			snprintf(tmpremark, MAX_REMARK, kRemBindMode, num_result);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK pose_rank = %d\n", nModel);
 			safe_remark_cat(remark, tmpremark, &remark_len);
@@ -1143,30 +1244,29 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 
 		for (int j = 0; j < this->Population->FA->npar; ++j)
 		{
-			snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
+			snprintf(tmpremark, MAX_REMARK, kRemTorsion, this->Population->FA->opt_par[j]);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
-		if (this->Population->FA->refstructure == 1)
-		{
-			bool Hungarian = false;
-			const double rmsd_raw = calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian);
-			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n", rmsd_raw);
-			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_raw = %.5f\n", rmsd_raw);
-			safe_remark_cat(remark, tmpremark, &remark_len);
-			Hungarian = true;
-			const double rmsd_sym = calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian);
-			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n", rmsd_sym);
-			safe_remark_cat(remark, tmpremark, &remark_len);
-			snprintf(tmpremark, MAX_REMARK, "REMARK rmsd_sym = %.5f\n", rmsd_sym);
-			safe_remark_cat(remark, tmpremark, &remark_len);
-		}
-		snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n", dockinp, gainp);
+		append_bm_rmsd_pair(remark, &remark_len, tmpremark,
+			this->Population->FA, this->Population->atoms, this->Population->residue,
+			this->Population->cleftgrid);
+		snprintf(tmpremark, MAX_REMARK, kRemInputs, dockinp, gainp);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		}
 
 		snprintf(sufix, sizeof(sufix), "_%d_MODEL_%d.pdb", minPoints, num_result);
 		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
+		if (flexaidds::remarks::unified_remarks_enabled()) {
+			if (Pose == this->Poses.begin() && Pose + 1 == this->Poses.end())
+				write_MODEL_pdb(true, true, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark_for_write);
+			else if (Pose == this->Poses.begin())
+				write_MODEL_pdb(true, false, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark_for_write);
+			else if (Pose + 1 == this->Poses.end())
+				write_MODEL_pdb(false, true, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark_for_write);
+			else
+				write_MODEL_pdb(false, false, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark_for_write);
+		} else {
 		// Only the first MODEL writes this expanded header. Preserve the
 		// complete pre-existing scientific buffer when adding provenance.
 		std::string pose_remarks = flexaids::pose_provenance::add_to_remarks(remark);
@@ -1185,6 +1285,7 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 		else
 		{
 			write_MODEL_pdb(false, false, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
+		}
 		}
 	}
 }

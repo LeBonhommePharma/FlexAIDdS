@@ -2,6 +2,20 @@
 #include "gaboom.h"
 #include "RngSeed.h"
 #include "ga_constants.h"
+#include "pose_remarks.h"
+
+#include <string>
+
+namespace {
+[[maybe_unused]] const char* const kDsvibRemarkContract[] = {
+    "REMARK DSVIB.status=%d basis=torsional n_torsion_dofs=%d n_flexbonds=%d units_S=kcal/mol/K units_G=kcal/mol\n",
+    "REMARK DSVIB.S_complex_minus_apo=%.8f\n",
+    "REMARK DSVIB.S_ligand_free=%.8f\n",
+    "REMARK DSVIB.S_apo=0.00000000 apo_treatment=frozen_receptor_dofs_cancel_exactly\n",
+    "REMARK DSVIB.dS_vib=%.8f\n",
+    "REMARK DSVIB.minus_T_dS_vib=%.8f weight=1.0_by_construction\n",
+};
+}  // namespace
 
 #include <random>
 #include <algorithm>
@@ -394,6 +408,22 @@ void FastOPTICS::output_3d_OPTICS_ordering(char* end_strfile, char* tmp_end_strf
 			// early-return blows up the raw penalty); report the stored
 			// chromosome evalue — what the GA optimized.
 			CF = ic2cf(this->FA, this->VC, this->atoms, this->residue, this->cleftgrid, this->GB->num_genes, this->FA->opt_par);
+			char* remark_for_write = remark;
+			std::string unified_block;
+			if (flexaidds::remarks::unified_remarks_enabled()) {
+				(void)kDsvibRemarkContract;
+				flexaidds::remarks::PoseRemarkBuilder b(flexaidds::remarks::Emitter::FastOPTICS);
+				b.append_header();
+				b.append_cf_totals(Pose->chrom->evalue, Pose->chrom->app_evalue);
+				b.append_cf_terms(this->FA, this->residue);
+				b.append_residue_sas(this->FA);
+				b.append_torsions(this->FA);
+				b.emit_rmsd_pair(this->FA, this->atoms, this->residue, this->cleftgrid);
+				b.append_dsvib(&CF);
+				b.append_emitter_line();
+				unified_block = b.str();
+				remark_for_write = unified_block.data();
+			} else {
 			size_t remark_len = 0;
 			remark[0] = '\0';
 			safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
@@ -446,27 +476,28 @@ void FastOPTICS::output_3d_OPTICS_ordering(char* end_strfile, char* tmp_end_strf
 				calc_rmsd(this->FA,this->atoms,this->residue,this->cleftgrid,this->FA->npar,this->FA->opt_par, Hungarian));
 				safe_remark_cat(remark, tmpremark, &remark_len);
 			}
+			}
 
 			// 5. write_pdb(FA,atoms,residue,tmp_end_strfile,remark)
 			if(Pose == this->OPTICS.begin() && Pose+1 == this->OPTICS.end())
 			{
 				// case where there is only one pose to write (Pose == OPTICS.begin() && Pose++ == OPTICS.end())
-				write_MODEL_pdb(true, true, nModel, this->FA,this->atoms,this->residue,tmp_end_strfile,remark);
+				write_MODEL_pdb(true, true, nModel, this->FA,this->atoms,this->residue,tmp_end_strfile,remark_for_write);
 			}
 			else if(Pose == this->OPTICS.begin())
 			{
 				// first MODEL to be written
-				write_MODEL_pdb(true, false, nModel, this->FA,this->atoms,this->residue,tmp_end_strfile,remark);
+				write_MODEL_pdb(true, false, nModel, this->FA,this->atoms,this->residue,tmp_end_strfile,remark_for_write);
 			}
 			else if(Pose+1 == this->OPTICS.end())
 			{
 				// last MODEL to be written
-				write_MODEL_pdb(false, true, nModel, this->FA,this->atoms,this->residue,tmp_end_strfile,remark);
+				write_MODEL_pdb(false, true, nModel, this->FA,this->atoms,this->residue,tmp_end_strfile,remark_for_write);
 			}
 			else
 			{
 				// any MODEL in between to be written
-				write_MODEL_pdb(false, false, nModel, this->FA,this->atoms,this->residue,tmp_end_strfile,remark);
+				write_MODEL_pdb(false, false, nModel, this->FA,this->atoms,this->residue,tmp_end_strfile,remark_for_write);
 			}
 	}
 }
