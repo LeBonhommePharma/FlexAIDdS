@@ -326,6 +326,25 @@ def test_score_arm_parse_pose_filename_restart_and_rank():
     assert arm.parse_pose_filename(Path("1G9V_INI.pdb"), "1G9V") is None
 
 
+def test_score_arm_elect_restart_uses_elected_filename_not_first_glob():
+    """S_top10 must follow the elected restart, not glob order (restart 0)."""
+    arm = _load_score_arm()
+    heads = [
+        (0, 0, Path("1L7F_r0_0.pdb")),
+        (0, 1, Path("1L7F_r0_1.pdb")),
+        (6, 0, Path("1L7F_r6_0.pdb")),
+        (6, 1, Path("1L7F_r6_1.pdb")),
+        (6, 2, Path("1L7F_r6_2.pdb")),
+    ]
+    assert arm.elect_restart(heads, "/abs/out/1L7F_r6_0.pdb") == 6
+    top10 = arm.select_top10_poses(heads, 6)
+    assert [p.name for p in top10] == [
+        "1L7F_r6_0.pdb",
+        "1L7F_r6_1.pdb",
+        "1L7F_r6_2.pdb",
+    ]
+
+
 def test_score_arm_propagates_symmcorr_unavailable(monkeypatch, tmp_path: Path):
     arm = _load_score_arm()
     target = tmp_path / "1AAA"

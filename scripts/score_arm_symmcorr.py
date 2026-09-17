@@ -195,9 +195,13 @@ def elect_restart(heads: list[tuple[Optional[int], int, Path]], elected_path: st
         base = Path(elected_path).name
         if base.endswith(".gz"):
             base = base[:-3]
+        elected_stem = Path(base).stem
         for restart, _rank, path in heads:
-            names = {path.name, path.stem + ".pdb", Path(base).name}
-            if path.name in names or Path(base).stem == path.stem or path.name == base + ".gz":
+            # Compare against the *elected* basename only. Building `names`
+            # from `path.name` made `path.name in names` true for every head,
+            # so the first glob hit (restart 0) always won and S_top10 scored
+            # the wrong restart.
+            if path.name == base or path.stem == elected_stem or path.name == base + ".gz":
                 return restart
     restarts = sorted({r for r, rank, _ in heads if r is not None and rank == 0})
     if restarts:
