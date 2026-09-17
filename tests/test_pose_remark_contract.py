@@ -221,10 +221,39 @@ def test_calc_rmsd_double_call_order_is_preserved(literals):
 
 
 @pytest.mark.parametrize("field", DSVIB_FIELDS)
-def test_dsvib_reaches_every_writer(field, literals):
-    missing = [f for f in POSE_WRITERS
-               if not any(field in lit for lit in literals[f])]
-    assert not missing, f"{field} missing from {missing}"
+def test_dsvib_field_is_composed_by_the_shared_writer(field):
+    """The DSVIB format literals must live in the shared composer.
+
+    REWRITTEN 2026-09-17. The previous version scanned each POSE_WRITER for the
+    DSVIB literals and passed -- for the wrong reason. Each writer carries a
+    `[[maybe_unused]] kDsvibRemarkContract[]` array of those literals near the
+    top of the file, referenced only by a `(void)` cast. Deleting the real
+    `append_dsvib()` call left the test GREEN. A guard that survives removal of
+    the thing it guards is not a guard.
+    """
+    lits = re.findall(r'"REMARK[^"]*"', _src("pose_remarks.cpp"))
+    assert any(field in lit for lit in lits), (
+        f"{field} is not composed in pose_remarks.cpp -- the shared writer "
+        f"cannot emit a field whose format literal it does not hold"
+    )
+
+
+@pytest.mark.parametrize("writer", POSE_WRITERS)
+def test_every_writer_calls_append_dsvib_on_the_gated_path(writer):
+    """Companion assertion: reach, checked at the CALL not at the literal.
+
+    Together these two are the non-vacuous form of "DSVIB reaches every
+    writer": the composer holds the format strings, and every backend invokes
+    it. Either assertion alone is satisfiable without the field reaching disk.
+    """
+    src = _src(writer)
+    assert "unified_remarks_enabled" in src, (
+        f"{writer} does not consult the unified-remarks gate")
+    assert "append_dsvib" in src, (
+        f"{writer} never calls append_dsvib(), so selecting this backend drops "
+        f"the entropy receipt from every pose -- exit 0, no missing file. This "
+        f"is the defect that made the FastOPTICS path unusable for an entropy "
+        f"arm before the shared writer existed.")
 
 
 def test_no_field_is_emitted_twice_within_one_file(literals):
@@ -323,11 +352,26 @@ def test_cluster_serial_rmsd_uses_hungarian_false_then_true():
     assert i_false.start() < raw < i_true.start() < sym
 
 
-def test_bindingmode_still_scopes_hungarian_per_pose():
-    """#509: cluster.cpp should keep matching this BindingMode pattern."""
+def test_bindingmode_scopes_the_hungarian_flag_per_pose():
+    """#509 property: BindingMode must not let the flag leak between poses.
+
+    REWRITTEN 2026-09-17 while rebasing the shared writer onto main. The
+    original asserted the MECHANISM -- at least two `bool Hungarian = false;`
+    declarations -- which was the only way to satisfy the property while each
+    writer hand-rolled its own RMSD pair. The shared writer satisfies the SAME
+    property differently: emit_rmsd_pair() declares the flag in its own scope,
+    so there is no enclosing scope to leak from and the local declarations are
+    correctly gone. Asserting the mechanism made this test fail on a tree that
+    had fixed the defect more thoroughly than the test knew how to check.
+
+    So: accept either mechanism, require one of them.
+    """
     text = BINDING_MODE.read_text(encoding="utf-8")
-    locals_false = re.findall(r"bool\s+Hungarian\s*=\s*false\s*;", text)
-    assert len(locals_false) >= 2, (
-        "BindingMode.cpp must keep per-pose `bool Hungarian = false` "
-        "(false→raw then true→sym)"
-    )
+    hand_rolled = len(re.findall(r"bool\s+Hungarian\s*=\s*false\s*;", text))
+    delegates = "emit_rmsd_pair" in text
+    assert hand_rolled >= 2 or delegates, (
+        "BindingMode.cpp must either declare `bool Hungarian = false` per pose "
+        "(>=2 occurrences, the legacy mechanism) or delegate to "
+        f"emit_rmsd_pair(), which owns the flag. Found {hand_rolled} local "
+        f"declaration(s), delegates={delegates}: the flag can leak across "
+        "poses and mislabel ranks >=1.")
