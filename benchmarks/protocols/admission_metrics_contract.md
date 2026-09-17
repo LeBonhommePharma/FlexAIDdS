@@ -24,7 +24,7 @@ eligibility fields are complete.
 
 | Metric | Per-observation test | Role |
 |---|---|---|
-| S1 | Finite nonnegative elected in-place graph-symmetry RMSD at the §0 cutoff; otherwise labelled serial/legacy ordered fallback | RMSD-only diagnostic |
+| S1 | Finite nonnegative elected in-place graph-symmetry RMSD at the §0 cutoff from the labelled `rmsd_symmcorr` sidecar. On the claim path the sidecar is mandatory for **every** arm (control and FlexAIDdS). Missing/partial sidecar is fail-closed `UNSET`, not engine REMARK Hungarian/serial. Labelled serial fallback is `--diagnostic-only` only. | RMSD-only diagnostic; claim=symmcorr |
 | S2 | S1 and `pb_pass=1`, with a valid elected pose SHA-256 matching `posebusters_pose_sha256` | RMSD/PB receipt diagnostic |
 | STRICT | Recomputed serial RMSD, PB, score, validator and protocol receipt conjunction below | Primary **receipt-level** headline |
 | S3 | Finite nonnegative `conditional_scanned_pool_ceiling`, else `best_cluster_rmsd` / `rmsd_bcr`, at the §0 cutoff | Conditional scanned-pool diagnostic; never any-pose success |
@@ -141,6 +141,12 @@ subset must state its own assessability rule and count and is a distinct estiman
   and a valid pose SHA-256. Joins require both target and pose hash. Duplicate
   sidecar target/pose identities and absent/mismatching pose hashes are errors.
   Multiple poses of one target can coexist only under distinct hashes.
+- Claim path (any non-`--diagnostic-only` aggregation, including `--arm` control
+  or treatment): `--symmcorr` is required and must cover **every selected row**
+  of that arm. A sidecar that scores only FlexAIDdS while control keeps engine
+  REMARK Hungarian/`rmsd_top1` is a contract error (`UNSET`, exit 2). Classic
+  control still has the `atoms[k+l]` Hungarian defect; FlexAIDdS does not — so
+  REMARK-only Hungarian/serial is not a comparative claim instrument (#509).
 - Live files are local-first. CloudDocs must be staged through
   `scripts/icloud_safe_io.py`; this aggregator refuses direct CloudDocs reads.
 
@@ -167,10 +173,10 @@ must never clear `seed_echo`, rewrite `pose_source`, or become an any-pose claim
 ## 7. CLI and validation
 
 ```bash
-python3 scripts/aggregate_claim_metrics.py --csv results.csv --json metrics.json
-python3 scripts/aggregate_claim_metrics.py --csv results.csv --expected-seeds 12345,23456,34567
-python3 scripts/aggregate_claim_metrics.py --csv results.csv --arm A --manifest frozen_targets.json
-python3 scripts/aggregate_claim_metrics.py --csv results.csv --symmcorr elected_symmcorr.csv --headline s1
+python3 scripts/aggregate_claim_metrics.py --csv results.csv --symmcorr elected_symmcorr.csv --json metrics.json
+python3 scripts/aggregate_claim_metrics.py --csv results.csv --symmcorr elected_symmcorr.csv --expected-seeds 12345,23456,34567
+python3 scripts/aggregate_claim_metrics.py --csv results.csv --arm A --symmcorr control_symmcorr.csv --manifest frozen_targets.json
+python3 scripts/aggregate_claim_metrics.py --csv results.csv --arm C --symmcorr treatment_symmcorr.csv --headline s1
 python3 scripts/aggregate_claim_metrics.py --csv legacy.csv --legacy-observed-denominator --diagnostic-only --headline s1
 ```
 

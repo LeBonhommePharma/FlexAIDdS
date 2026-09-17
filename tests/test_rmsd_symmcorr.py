@@ -225,6 +225,10 @@ def test_serial_fallback_is_conservative_and_labelled():
     assert metric == "serial"
     assert val == pytest.approx(6.8360)
     assert agg.is_s1(row) is False
+    unset_val, unset_metric = agg.elected_rmsd_labelled(row, allow_serial_fallback=False)
+    assert unset_metric == agg.SYMMCORR_UNSET
+    assert agg.is_s1(row, allow_serial_fallback=False) is False
+    assert unset_val != unset_val  # NaN
 
 
 def test_hungarian_is_never_consulted():
