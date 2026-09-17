@@ -231,7 +231,7 @@ def test_serial_fallback_is_conservative_and_labelled():
     assert unset_val != unset_val  # NaN
 
 
-def test_rmsd_top1_fallback_is_untyped_not_serial_legacy():
+def test_rmsd_top1_fallback_is_engine_hungarian_not_serial_legacy():
     """#509 item 2: Arm A rmsd_top1 is not serial identity."""
     row = {
         "pdb_id": "1TZ8",
@@ -240,7 +240,7 @@ def test_rmsd_top1_fallback_is_untyped_not_serial_legacy():
         "seed_echo": "0",
     }
     val, metric = agg.elected_rmsd_labelled(row)
-    assert metric == "rmsd_top1_untyped"
+    assert metric == "engine_hungarian_top1_UNCALIBRATED"
     assert metric != "serial_legacy_top1"
     assert "serial" not in metric
     assert val == pytest.approx(1.0871)
