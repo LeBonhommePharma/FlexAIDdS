@@ -618,6 +618,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
       
 	for(j=0;j<num_of_results;++j)
 	{
+		Hungarian = false;
 		printf("emitting ranked pose %d/%d (TOP chrom=%d)...\n",
 		       j + 1, num_of_results, Clus_TOP[j]);
 		fflush(stdout);
@@ -888,6 +889,10 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		}
 		//snprintf(tmpremark, MAX_REMARK, "REMARK seed=%ld\n",FA->seed_ini);
 		if(FA->refstructure == 1){
+			// #509: per-pose reset. Function-scoped Hungarian stays true after the
+			// first serial REMARK and would otherwise label ranks ≥1 as Hungarian
+			// on BOTH lines. BindingMode.cpp scopes false→raw then true→sym per pose.
+			Hungarian = false;
 			const double rmsd_raw = calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian);
 			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
 				rmsd_raw);
