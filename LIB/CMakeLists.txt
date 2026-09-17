@@ -84,6 +84,7 @@ set(FLEXAID_CORE_SOURCES
     FOPTICS.cpp
     fast_optics.cpp
     BindingMode.cpp
+    pose_remarks.cpp
     rna_structure.cpp
     shortest_path.cpp
     assign_shortflex.cpp

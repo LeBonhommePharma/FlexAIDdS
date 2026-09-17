@@ -490,6 +490,7 @@ else()
 endif()
 
 # ─── Core library (LIB/) ────────────────────────────────────────────────
+# Shared pose REMARK writer: LIB/pose_remarks.cpp (in FLEXAID_CORE_SOURCES).
 add_subdirectory(LIB)
 
 # Component targets (FlexAID::Core, ::VoronoiCF, ::StatMech, etc.)
