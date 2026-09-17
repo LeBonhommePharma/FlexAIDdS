@@ -10,6 +10,12 @@ One observation per target is the default. Repeated targets require a declared
 Never mix arms or endpoints. Directory layouts must identify a single source;
 use --csv to choose explicitly when both per-target and summary files exist.
 
+Claim path (not --diagnostic-only): labelled rmsd_symmcorr sidecar is mandatory
+for the selected arm, including classic control and FlexAIDdS (#509 item 3;
+METHODOLOGY.md §0.0 claim=symmcorr). Engine REMARK Hungarian/serial cannot
+populate a comparative claim table. Missing or partial sidecar is fail-closed
+(exit 2) with explicit UNSET targets.
+
 The frozen roster is mandatory. --legacy-observed-denominator is available only
 with --diagnostic-only and a diagnostic headline; it cannot produce STRICT rates.
 Exit codes: 0 = strict receipt success (or diagnostic observations), 1 = no strict
@@ -38,7 +44,18 @@ SUMMARY_CSV_NAMES = ("astex_diverse_results.csv", "astex_crossdock_85_results.cs
                      "results.csv", "summary.csv", "claim_summary.csv")
 SYMMCORR_COL = "rmsd_symmcorr"
 SYMMCORR_COLS = (SYMMCORR_COL, "rmsd_spyrmsd")
+SYMMCORR_UNSET = "UNSET"
 SHA256 = re.compile(r"[0-9a-fA-F]{64}\Z")
+# Engine REMARK Hungarian/serial cannot score a comparative claim table (#509).
+# Classic control still has the atoms[k+l] Hungarian walk; FlexAIDdS does not.
+CLAIM_SYMMCORR_CONTRACT = (
+    "METHODOLOGY.md §0.0: the claim metric is labelled rmsd_symmcorr from "
+    "scripts/rmsd_symmcorr.py, for every arm. Engine REMARK "
+    "'(symmetry corrected)' is Hungarian (method 4), not graph-automorphism "
+    "symmcorr. Classic control still has the atoms[k+l] Hungarian defect; "
+    "FlexAIDdS does not. Scoring arms on each engine's own REMARK understates "
+    "treatment vs control. serial / rmsd_top1 overlays are diagnostic-only."
+)
 
 
 def _f(row: dict[str, str], *keys: str) -> float:
@@ -157,22 +174,27 @@ def load_campaign_rows(out_dir: Path) -> list[dict[str, str]]:
     return rows
 
 
-def elected_rmsd_labelled(row: dict[str, str]) -> tuple[float, str]:
+def elected_rmsd_labelled(row: dict[str, str], *,
+                          allow_serial_fallback: bool = True) -> tuple[float, str]:
     value = _f(row, *SYMMCORR_COLS)
     if math.isfinite(value):
         return value, "symmcorr"
+    if not allow_serial_fallback:
+        return float("nan"), SYMMCORR_UNSET
     value = _f(row, "rmsd_to_crystal")
     if math.isfinite(value):
         return value, "serial"
     return _f(row, "rmsd_top1"), "serial_legacy_top1"
 
 
-def elected_rmsd(row: dict[str, str]) -> float:
-    return elected_rmsd_labelled(row)[0]
+def elected_rmsd(row: dict[str, str], *, allow_serial_fallback: bool = True) -> float:
+    return elected_rmsd_labelled(row, allow_serial_fallback=allow_serial_fallback)[0]
 
 
-def is_s1(row: dict[str, str]) -> bool:
-    value = elected_rmsd(row)
+def is_s1(row: dict[str, str], *, allow_serial_fallback: bool = True) -> bool:
+    value, metric = elected_rmsd_labelled(row, allow_serial_fallback=allow_serial_fallback)
+    if metric == SYMMCORR_UNSET:
+        return False
     return _flag0(row, "seed_echo") and math.isfinite(value) and 0.0 <= value <= RMSD_SUCCESS_A
 
 
@@ -208,9 +230,11 @@ def join_symmcorr(rows: list[dict[str, str]], sidecar: dict) -> dict[str, Any]:
         index[key] = rec
     joined = 0
     refused = []
+    unset = []
     for row in rows:
         pid, sha = _pdb_id(row), _hash(row, "pose_sha256")
         if pid not in targets:
+            unset.append(pid)
             continue
         rec = index.get((pid, sha))
         if not _valid_sha(sha) or rec is None or not _valid_sha(_hash(rec, "pose_sha256")):
@@ -221,7 +245,61 @@ def join_symmcorr(rows: list[dict[str, str]], sidecar: dict) -> dict[str, Any]:
             raise ValueError(f"invalid symmetry-corrected RMSD for {pid}")
         row[SYMMCORR_COL] = str(value)
         joined += 1
-    return {"joined": joined, "refused_sha_mismatch": sorted(set(refused)), "sidecar_rows": len(sidecar)}
+    return {"joined": joined, "refused_sha_mismatch": sorted(set(refused)),
+            "unset_targets": sorted(set(unset)), "sidecar_rows": len(sidecar)}
+
+
+def empty_symmcorr_provenance(*, required: bool) -> dict[str, Any]:
+    return {"sidecar": None, "status": SYMMCORR_UNSET, "joined": 0, "refused_sha_mismatch": [],
+            "unset_targets": [], "sidecar_rows": 0, "required": required,
+            "note": CLAIM_SYMMCORR_CONTRACT}
+
+
+def rows_missing_labelled_symmcorr(rows: list[dict[str, str]]) -> list[str]:
+    missing = []
+    for row in rows:
+        value = _f(row, *SYMMCORR_COLS)
+        if not math.isfinite(value) or value < 0:
+            missing.append(_pdb_id(row))
+    return missing
+
+
+def enforce_claim_symmcorr(selected_rows: list[dict[str, str]], provenance: dict[str, Any], *,
+                           diagnostic_only: bool, sidecar_path: Path | None) -> dict[str, Any]:
+    """Claim path: complete labelled sidecar for this arm, or UNSET / exit 2.
+
+    --arm is not an exemption. Control (atoms[k+l] Hungarian defect) and
+    FlexAIDdS must both be scored by scripts/rmsd_symmcorr.py. #509 item 3.
+    """
+    out = dict(provenance)
+    out["note"] = CLAIM_SYMMCORR_CONTRACT
+    out["required"] = not diagnostic_only
+    out["unset_targets"] = sorted(set(rows_missing_labelled_symmcorr(selected_rows)))
+    if diagnostic_only:
+        if sidecar_path is None:
+            out["status"] = "serial_fallback_diagnostic"
+        elif out["unset_targets"]:
+            out["status"] = SYMMCORR_UNSET
+        else:
+            out["status"] = "symmcorr"
+        return out
+    if sidecar_path is None:
+        out["status"] = SYMMCORR_UNSET
+        raise ValueError(
+            "claim path requires --symmcorr sidecar for this arm "
+            "(METHODOLOGY.md §0.0 claim=symmcorr; #509). "
+            + CLAIM_SYMMCORR_CONTRACT
+            + " Use --diagnostic-only for labelled serial fallback (not a claim table)."
+        )
+    if out["unset_targets"]:
+        out["status"] = SYMMCORR_UNSET
+        raise ValueError(
+            "symmcorr sidecar UNSET for selected arm rows: "
+            + ", ".join(out["unset_targets"])
+            + " (claim=symmcorr; both arms required; #509)"
+        )
+    out["status"] = "symmcorr"
+    return out
 
 
 def is_s2(row: dict[str, str], s1: bool) -> bool:
@@ -425,7 +503,7 @@ def _observation_groups(rows: list[dict[str, str]], expected_seeds: list[str] | 
 def aggregate_rows(rows: Iterable[dict[str, str]], matrix_pin: str, matrix_pin_source: str,
                    campaign_dir: str | None = None, fixed_denominator: bool = True,
                    *, manifest_path: Path | None = None, expected_seeds: list[str] | None = None,
-                   arm: str | None = None) -> dict[str, Any]:
+                   arm: str | None = None, require_symmcorr_sidecar: bool = False) -> dict[str, Any]:
     all_rows = list(rows)
     matrix_pin = _normalize_matrix_pin(matrix_pin)
     selected, groups, aggregation = _observation_groups(all_rows, expected_seeds, arm)
@@ -452,7 +530,7 @@ def aggregate_rows(rows: Iterable[dict[str, str]], matrix_pin: str, matrix_pin_s
             strict_rows.append(row)
         if eligible and pid in roster:
             eligible_rows.append(row)
-        s1 = eligible and is_s1(row)
+        s1 = eligible and is_s1(row, allow_serial_fallback=not require_symmcorr_sidecar)
         verdicts[pid].append({"S1": s1, "S2": eligible and is_s2(row, s1),
                               "S3": eligible and is_s3(row), "STRICT": not reasons and fixed_denominator})
     required = aggregation["required_passes"]
@@ -463,7 +541,10 @@ def aggregate_rows(rows: Iterable[dict[str, str]], matrix_pin: str, matrix_pin_s
                 if seed not in present:
                     aggregation["missing_expected_observations"].append({"pdb_id": pid, "seed": seed})
     definitions = {
-        "S1": "finite elected in-place graph-symmetry RMSD <=2 A, or labelled serial fallback; protocol-eligible rows",
+        "S1": ("finite elected in-place graph-symmetry RMSD <=2 A from labelled "
+               "rmsd_symmcorr sidecar; UNSET if sidecar missing (claim path, both arms)"
+               if require_symmcorr_sidecar else
+               "finite elected in-place graph-symmetry RMSD <=2 A, or labelled serial fallback; protocol-eligible rows"),
         "S2": "S1 AND pb_pass with matching elected-pose receipt hash (diagnostic)",
         "STRICT": "recomputed serial RMSD/PB/score/validator/protocol/matrix receipt checks; underlying artifacts not authenticated",
         "S3": "finite conditional scanned-pool ceiling <=2 A (diagnostic; not any-pose)",
@@ -476,9 +557,22 @@ def aggregate_rows(rows: Iterable[dict[str, str]], matrix_pin: str, matrix_pin_s
             rate = None
         metrics[key] = {"definition": definitions[key], "role": "primary_receipt_headline" if key == "STRICT" else "diagnostic_only",
                         "n": len(ids), "rate": rate, "ids": ids}
-    metric_used = "+".join(sorted({elected_rmsd_labelled(r)[1] for r in eligible_rows
-                                  if math.isfinite(elected_rmsd(r))})) or "none_finite"
+    allow_fb = not require_symmcorr_sidecar
+    labelled = [elected_rmsd_labelled(r, allow_serial_fallback=allow_fb) for r in eligible_rows]
+    metric_used = "+".join(sorted({lab for val, lab in labelled if math.isfinite(val)})) or (
+        SYMMCORR_UNSET if require_symmcorr_sidecar else "none_finite"
+    )
     metrics["S1"]["metric_used"] = metric_used
+    if require_symmcorr_sidecar:
+        unset_eligible = sorted({_pdb_id(r) for r in eligible_rows
+                                 if not math.isfinite(_f(r, *SYMMCORR_COLS)) or _f(r, *SYMMCORR_COLS) < 0})
+        if unset_eligible:
+            metrics["S1"]["rate"] = None
+            metrics["S1"]["n"] = 0
+            metrics["S1"]["ids"] = []
+            metrics["S1"]["unset_targets"] = unset_eligible
+            metrics["S1"]["metric_used"] = SYMMCORR_UNSET
+            metric_used = SYMMCORR_UNSET
     gap_ids = sorted(set(metrics["S3"]["ids"]) - set(metrics["S1"]["ids"]))
     symmcorr_gained = sorted({_pdb_id(r) for r in eligible_rows
                              if math.isfinite(_f(r, *SYMMCORR_COLS))
@@ -502,7 +596,8 @@ def aggregate_rows(rows: Iterable[dict[str, str]], matrix_pin: str, matrix_pin_s
               "symmcorr_delta": {"definition": "distinct targets with a measured serial-fail / symmcorr-pass observation (not a majority verdict)",
                                  "n": len(symmcorr_gained), "ids": symmcorr_gained},
               "strict_metric_inheritance": {"note": "STRICT recomputes the producer's serial gate; symmetry sidecars affect diagnostics only.",
-                                            "s1_metric": metric_used, "strict_metric": "serial (recomputed)"},
+                                            "s1_metric": metric_used, "strict_metric": "serial (recomputed)",
+                                            "claim_requires_symmcorr_sidecar": require_symmcorr_sidecar},
               "legacy_diagnostic_mode": not fixed_denominator}
     report["headline"] = {"metric": "STRICT", "n": metrics["STRICT"]["n"], "N": denominator,
                           "rate": metrics["STRICT"]["rate"], "label": definitions["STRICT"]}
@@ -515,6 +610,10 @@ def apply_headline(report: dict[str, Any], headline: str, diagnostic_only: bool)
         key = "STRICT"
     if key not in report["metrics"] or (key == "S3" and not diagnostic_only):
         print("CONTRACT VIOLATION: S3 headline requires --diagnostic-only", file=sys.stderr)
+        return report, 2
+    if key == "S1" and report["metrics"]["S1"].get("rate") is None:
+        print("CONTRACT VIOLATION: S1 is UNSET; labelled --symmcorr sidecar required "
+              "for this arm (METHODOLOGY.md §0.0 claim=symmcorr; #509)", file=sys.stderr)
         return report, 2
     if report.get("legacy_diagnostic_mode") and (key == "STRICT" or not diagnostic_only):
         print("CONTRACT VIOLATION: legacy denominator requires a diagnostic headline and --diagnostic-only", file=sys.stderr)
@@ -537,6 +636,12 @@ def format_text_report(report: dict[str, Any]) -> str:
         rate = "unavailable" if metric["rate"] is None else f"{100 * metric['rate']:.2f}%"
         lines.append(f"{key}: {metric['n']}/{report['N_denominator']} = {rate}; {metric['definition']}")
     lines.append(report["evidence_limit"])
+    if report.get("symmcorr"):
+        sc = report["symmcorr"]
+        lines.append(
+            f"symmcorr: status={sc.get('status')} sidecar={sc.get('sidecar')} "
+            f"joined={sc.get('joined')} unset={len(sc.get('unset_targets') or [])}"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -552,7 +657,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--headline", default="strict", choices=("strict", "STRICT", "claim_ready", "s1", "s2", "s3", "S1", "S2", "S3"))
     parser.add_argument("--diagnostic-only", action="store_true")
     parser.add_argument("--legacy-observed-denominator", action="store_true")
-    parser.add_argument("--symmcorr", type=Path)
+    parser.add_argument(
+        "--symmcorr", type=Path,
+        help="Labelled rmsd_symmcorr sidecar from scripts/rmsd_symmcorr.py. "
+             "Required on the claim path for every arm, including classic control "
+             "and FlexAIDdS (#509; METHODOLOGY.md §0.0). --diagnostic-only may omit "
+             "it (labelled serial fallback, not a claim table).",
+    )
     parser.add_argument("--json", type=Path)
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
@@ -569,7 +680,7 @@ def main(argv: list[str] | None = None) -> int:
             rows, campaign = load_campaign_rows(source), source
         else:
             raise ValueError(f"not a CSV or campaign directory: {source}")
-        provenance = {"sidecar": None, "joined": 0, "refused_sha_mismatch": [], "sidecar_rows": 0}
+        provenance = empty_symmcorr_provenance(required=not args.diagnostic_only)
         # Filter explicitly chosen arms before joining; an unrelated arm is not a pose mismatch.
         if args.arm is not None:
             side_rows = [r for r in rows if str(r.get("arm", "")).strip() == args.arm]
@@ -578,6 +689,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.symmcorr is not None:
             provenance = join_symmcorr(side_rows, load_symmcorr_sidecar(args.symmcorr))
             provenance["sidecar"] = str(args.symmcorr)
+            provenance["note"] = CLAIM_SYMMCORR_CONTRACT
+            provenance["required"] = not args.diagnostic_only
             if provenance["refused_sha_mismatch"]:
                 raise ValueError("symmcorr pose_sha256 missing, invalid, or mismatched for: " + ", ".join(provenance["refused_sha_mismatch"]))
         pin, pin_source = load_matrix_pin(campaign, args.matrix_md5)
@@ -585,8 +698,11 @@ def main(argv: list[str] | None = None) -> int:
                                 fixed_denominator=not args.legacy_observed_denominator,
                                 manifest_path=args.manifest,
                                 expected_seeds=args.expected_seeds.split(",") if args.expected_seeds is not None else None,
-                                arm=args.arm)
-        report["symmcorr"] = provenance
+                                arm=args.arm,
+                                require_symmcorr_sidecar=not args.diagnostic_only)
+        report["symmcorr"] = enforce_claim_symmcorr(
+            side_rows, provenance, diagnostic_only=args.diagnostic_only, sidecar_path=args.symmcorr,
+        )
         report, error = apply_headline(report, args.headline, args.diagnostic_only)
         if error:
             return error

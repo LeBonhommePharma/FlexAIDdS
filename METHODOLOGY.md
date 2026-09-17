@@ -114,9 +114,16 @@ hungarian  ≤  symmcorr  ≤  serial
 1. Correcting serial → symmcorr moves targets **fail → PASS only**. No banked number can
    shrink. Verified on the 84-target parent campaign: 76 elected poses scored, **0 direction
    violations**, 1 flip (1TZ8, 6.8360 → 1.0871 Å).
-2. Where symmcorr is unavailable, falling back to serial is **safe but conservative** — it
-   under-counts successes and never over-counts. Falling back to *hungarian* would not be safe,
-   which is why no code path does.
+2. Where symmcorr is unavailable, falling back to serial is **safe but conservative for a
+   single-arm diagnostic** — it under-counts successes and never over-counts. Falling back
+   to *hungarian* would not be safe, which is why no code path does. **Comparative claim
+   tables are different.** Engine REMARK Hungarian (`(symmetry corrected)`) is method 4,
+   not labelled `rmsd_symmcorr`. The classic control binary still has the historical
+   `atoms[k+l]` Hungarian walk; FlexAIDdS does not. Scoring each arm with its own REMARK
+   therefore understates FlexAIDdS versus control. `scripts/aggregate_claim_metrics.py`
+   requires the labelled sidecar from `scripts/rmsd_symmcorr.py` on the claim path for
+   **every** arm (fail-closed, or explicit `UNSET`). Serial fallback is
+   `--diagnostic-only` only and cannot populate a comparative claim table. See #509 item 3.
 
 **Still inheriting the serial definition:** the engine's `success_rmsd` gates on
 `rmsd_to_crystal`, and `success_pb := success_rmsd ∧ pb_pass`, and `claim_ready` requires

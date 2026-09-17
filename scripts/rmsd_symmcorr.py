@@ -51,8 +51,11 @@ USAGE
   python3 scripts/rmsd_symmcorr.py <campaign_dir> --out symmcorr.csv
   python3 scripts/rmsd_symmcorr.py <campaign_dir> --cache <astex_diverse_dir> --out s.csv
 
-  Then join it into the claim table:
+  Then join it into the claim table (required on the claim path for every arm,
+  including classic control and FlexAIDdS; METHODOLOGY.md §0.0 / #509):
   python3 scripts/aggregate_claim_metrics.py <campaign_dir> --symmcorr symmcorr.csv
+  python3 scripts/aggregate_claim_metrics.py --csv results.csv --arm A --symmcorr control.csv
+  python3 scripts/aggregate_claim_metrics.py --csv results.csv --arm C --symmcorr treatment.csv
 
 Copyright 2026 Le Bonhomme Pharma. Licensed under Apache-2.0.
 """

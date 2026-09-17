@@ -9,6 +9,7 @@ import csv
 import hashlib
 import importlib.util
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -59,11 +60,30 @@ def _write(path, rows):
     return path
 
 
-def _cli(path, *args, script=SCRIPT):
-    result = subprocess.run([sys.executable, "-B", str(script), "--csv", str(path), "--quiet", *args],
-                            text=True, capture_output=True, timeout=15)
+def _sidecar_rows(rows, rmsd="0.5"):
+    side = []
+    for row in rows:
+        sha = str(row.get("pose_sha256", POSE)).strip().lower()
+        if len(sha) != 64:
+            sha = POSE
+        side.append(dict(pdb_id=row.get("pdb_id") or row.get("pdb") or row.get("target"),
+                         rmsd_symmcorr=rmsd, pose_sha256=sha, status="ok"))
+    return side
+
+
+def _cli(path, *args, script=SCRIPT, sidecar=None):
+    cmd = [sys.executable, "-B", str(script), "--csv", str(path), "--quiet", *args]
+    if sidecar is not None:
+        cmd.extend(["--symmcorr", str(sidecar)])
+    result = subprocess.run(cmd, text=True, capture_output=True, timeout=15)
     report = json.loads(result.stdout) if result.stdout.strip() else None
     return result, report
+
+
+def _cli_claim(tmp_path, rows, *args, rmsd="0.5"):
+    source = _write(tmp_path / "result.csv", rows)
+    sidecar = _write(tmp_path / "symmcorr.csv", _sidecar_rows(rows, rmsd=rmsd))
+    return _cli(source, *args, sidecar=sidecar)
 
 
 def _aggregate(agg, rows, **kwargs):
@@ -71,13 +91,15 @@ def _aggregate(agg, rows, **kwargs):
 
 
 def test_valid_receipt_control_cli(tmp_path):
-    result, report = _cli(_write(tmp_path / "result.csv", [_row()]))
+    result, report = _cli_claim(tmp_path, [_row()])
     assert result.returncode == 0, result.stderr
     assert report["metrics"]["STRICT"]["n"] == 1
     assert report["headline"]["rate"] == 1 / 85
     assert report["evidence_level"] == "validated_receipt_fields"
     assert report["artifacts_verified"] is False
     assert report["aggregation"]["mode"] == "single_observation"
+    assert report["symmcorr"]["status"] == "symmcorr"
+    assert report["metrics"]["S1"]["metric_used"] == "symmcorr"
 
 
 @pytest.mark.parametrize("changes", [
@@ -107,7 +129,14 @@ def test_valid_receipt_control_cli(tmp_path):
     {"pb_ran": ""}, {"pb_n_checks": ""}, {"elected_H_vib": ""},
 ])
 def test_stale_strict_flag_cannot_override_bad_evidence(tmp_path, changes):
-    result, report = _cli(_write(tmp_path / "result.csv", [_row(**changes)]))
+    rows = [_row(**changes)]
+    if not str(rows[0].get("pose_sha256", "")).strip():
+        result, report = _cli(_write(tmp_path / "result.csv", rows))
+        assert result.returncode == 2, result.stderr
+        assert report is None
+        assert "claim path requires --symmcorr" in result.stderr
+        return
+    result, report = _cli_claim(tmp_path, rows)
     assert result.returncode == 1, result.stderr
     assert report["metrics"]["STRICT"]["n"] == 0
     assert report["dropped_rows"][0]["reasons"]
@@ -116,8 +145,12 @@ def test_stale_strict_flag_cannot_override_bad_evidence(tmp_path, changes):
 def test_four_field_self_attestation_is_not_strict(tmp_path):
     minimal = dict(pdb_id="1G9V", seed_echo="0", native_pose_seeded="0", claim_ready="1")
     result, report = _cli(_write(tmp_path / "result.csv", [minimal]))
-    assert result.returncode == 1
+    assert result.returncode == 2
+    assert report is None
+    assert "claim path requires --symmcorr" in result.stderr
+    result, report = _cli(_write(tmp_path / "result.csv", [minimal]), "--diagnostic-only")
     assert report["metrics"]["STRICT"]["n"] == 0
+    assert report["symmcorr"]["status"] == "serial_fallback_diagnostic"
 
 
 def test_matching_malformed_hashes_not_receipts(agg):
@@ -360,7 +393,7 @@ def test_explicit_completed_runtime_receipt_accepted(agg):
 
 
 def test_cli_exit_uses_target_majority_not_individual_seed_success(tmp_path):
-    result, report = _cli(_write(tmp_path / "result.csv", [_row(seed="1")]), "--expected-seeds", "1,2,3")
+    result, report = _cli_claim(tmp_path, [_row(seed="1")], "--expected-seeds", "1,2,3")
     assert report["N_claim"] == 1
     assert report["metrics"]["STRICT"]["n"] == 0
     assert result.returncode == 1
@@ -410,3 +443,99 @@ def test_s2_cannot_ignore_its_own_pb_contradictions(agg, changes):
     report = _aggregate(agg, [_row(**changes)])
     assert report["metrics"]["S1"]["n"] == 1
     assert report["metrics"]["S2"]["n"] == 0
+
+
+def test_claim_path_requires_symmcorr_flag(tmp_path):
+    result, report = _cli(_write(tmp_path / "result.csv", [_row()]))
+    assert result.returncode == 2
+    assert report is None
+    assert "claim path requires --symmcorr" in result.stderr
+    assert "atoms[k+l]" in result.stderr
+
+
+def test_remark_hungarian_and_serial_top1_cannot_fill_claim_s1(agg):
+    row = _row(rmsd_to_crystal="5.0", rmsd_hungarian="0.4", rmsd_top1="0.4")
+    val, metric = agg.elected_rmsd_labelled(row, allow_serial_fallback=False)
+    assert metric == agg.SYMMCORR_UNSET
+    assert not math.isfinite(val)
+    assert not agg.is_s1(row, allow_serial_fallback=False)
+    report = _aggregate(agg, [row], require_symmcorr_sidecar=True)
+    assert report["metrics"]["S1"]["rate"] is None
+    assert report["metrics"]["S1"]["metric_used"] == "UNSET"
+    assert report["metrics"]["S1"]["unset_targets"] == ["1G9V"]
+    assert report["strict_metric_inheritance"]["claim_requires_symmcorr_sidecar"] is True
+
+
+def test_partial_sidecar_leaves_control_arm_unset(tmp_path):
+    treatment_sha = hashlib.sha256(b"treatment elected pose").hexdigest()
+    control = _row(arm="A", rmsd_to_crystal="5.0", rmsd_hungarian="0.4", rmsd_top1="0.4")
+    treatment = _row("1GM8", arm="C", pose_sha256=treatment_sha, rmsd_pose_sha256=treatment_sha,
+                     posebusters_pose_sha256=treatment_sha, tencom_pose_sha256=treatment_sha)
+    source = _write(tmp_path / "result.csv", [control, treatment])
+    treatment_only = _write(tmp_path / "treatment.csv", [
+        dict(pdb_id="1GM8", rmsd_symmcorr="0.8", pose_sha256=treatment_sha, status="ok"),
+    ])
+    result, report = _cli(source, "--arm", "A", "--headline", "s1", sidecar=treatment_only)
+    assert result.returncode == 2
+    assert report is None
+    assert "UNSET" in result.stderr
+    assert "1G9V" in result.stderr
+    result, report = _cli(source, "--arm", "C", "--headline", "s1", sidecar=treatment_only)
+    assert result.returncode == 0, result.stderr
+    assert report["symmcorr"]["status"] == "symmcorr"
+    assert report["aggregation"]["arm"] == "C"
+    assert report["metrics"]["S1"]["metric_used"] == "symmcorr"
+    assert report["metrics"]["S1"]["n"] == 1
+
+
+def test_both_arms_accept_complete_sidecars(tmp_path):
+    treatment_sha = hashlib.sha256(b"treatment elected pose").hexdigest()
+    control = _row(arm="A")
+    treatment = _row("1GM8", arm="C", pose_sha256=treatment_sha, rmsd_pose_sha256=treatment_sha,
+                     posebusters_pose_sha256=treatment_sha, tencom_pose_sha256=treatment_sha)
+    source = _write(tmp_path / "result.csv", [control, treatment])
+    control_side = _write(tmp_path / "control.csv", _sidecar_rows([control], rmsd="1.1"))
+    treatment_side = _write(tmp_path / "treatment.csv", _sidecar_rows([treatment], rmsd="0.8"))
+    a_result, a_report = _cli(source, "--arm", "A", "--headline", "s1", sidecar=control_side)
+    c_result, c_report = _cli(source, "--arm", "C", "--headline", "s1", sidecar=treatment_side)
+    assert a_result.returncode == 0, a_result.stderr
+    assert c_result.returncode == 0, c_result.stderr
+    assert a_report["symmcorr"]["status"] == "symmcorr"
+    assert c_report["symmcorr"]["status"] == "symmcorr"
+    assert a_report["metrics"]["S1"]["ids"] == ["1G9V"]
+    assert c_report["metrics"]["S1"]["ids"] == ["1GM8"]
+
+
+def test_diagnostic_only_keeps_labelled_serial_fallback(tmp_path):
+    row = _row(rmsd_to_crystal="1.0")
+    result, report = _cli(_write(tmp_path / "result.csv", [row]),
+                          "--headline", "s1", "--diagnostic-only")
+    assert result.returncode == 0, result.stderr
+    assert report["symmcorr"]["status"] == "serial_fallback_diagnostic"
+    assert report["metrics"]["S1"]["metric_used"] == "serial"
+    assert report["metrics"]["S1"]["n"] == 1
+    assert report["headline"]["diagnostic_only"] is True
+
+
+def test_join_lists_targets_absent_from_sidecar(agg):
+    rows = [_row(), _row("1GM8", pose_sha256=hashlib.sha256(b"other").hexdigest())]
+    sidecar = {"1G9V": dict(pdb_id="1G9V", rmsd_symmcorr="0.5", pose_sha256=POSE)}
+    report = agg.join_symmcorr(rows, sidecar)
+    assert report["joined"] == 1
+    assert report["unset_targets"] == ["1GM8"]
+    assert "rmsd_symmcorr" not in rows[1]
+
+
+def test_enforce_claim_symmcorr_library_fail_closed(agg, tmp_path):
+    rows = [_row(arm="A")]
+    with pytest.raises(ValueError, match="claim path requires --symmcorr"):
+        agg.enforce_claim_symmcorr(rows, agg.empty_symmcorr_provenance(required=True),
+                                   diagnostic_only=False, sidecar_path=None)
+    joined = dict(rows[0])
+    joined["rmsd_symmcorr"] = "0.5"
+    out = agg.enforce_claim_symmcorr(
+        [joined], {"joined": 1, "refused_sha_mismatch": [], "sidecar_rows": 1},
+        diagnostic_only=False, sidecar_path=tmp_path / "side.csv",
+    )
+    assert out["status"] == "symmcorr"
+    assert out["unset_targets"] == []
