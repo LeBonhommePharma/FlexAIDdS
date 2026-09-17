@@ -375,3 +375,70 @@ def test_bindingmode_scopes_the_hungarian_flag_per_pose():
         f"emit_rmsd_pair(), which owns the flag. Found {hand_rolled} local "
         f"declaration(s), delegates={delegates}: the flag can leak across "
         "poses and mislabel ranks >=1.")
+
+# ─── BUILD-GRAPH GUARD ──────────────────────────────────────────────────────
+# Added 2026-09-17 after finding this defect class TWICE by rebuilding rather
+# than by checking. The shared writer introduced a new translation unit; any
+# target that compiles a caller of it must also compile it, or the link fails.
+# The first pass caught 5 targets from the build log -- but `make -j` stops at
+# an arbitrary point, so the log shows only what failed BEFORE it bailed, not
+# the full set. Enumerating from the build system found 13 callers and 8 still
+# broken. Never enumerate a defect class from an error log.
+
+CMAKE = Path(__file__).resolve().parents[1] / "CMakeLists.txt"
+COMPOSER = "LIB/pose_remarks.cpp"
+COMPOSER_CALLERS = (
+    "LIB/BindingMode.cpp",
+    "LIB/cluster.cpp",
+    "LIB/FOPTICS.cpp",
+    "LIB/DensityPeak_Cluster.cpp",
+)
+
+
+def _executable_blocks() -> dict[str, str]:
+    """{target_name: source_list_body} for every add_executable in CMakeLists."""
+    text = CMAKE.read_text(encoding="utf-8")
+    return {
+        m.group(1): m.group(2)
+        for m in re.finditer(
+            r"add_executable\(\s*([A-Za-z0-9_]+)\b(.*?)^\s*\)\s*$",
+            text, re.S | re.M,
+        )
+    }
+
+
+def test_every_target_compiling_a_caller_also_compiles_the_composer():
+    """A target that compiles a PoseRemarkBuilder caller must link the composer.
+
+    Otherwise it fails at link with:
+        Undefined symbols for architecture arm64:
+          flexaidds::remarks::PoseRemarkBuilder::append_dsvib(cf_str const*)
+    which is a build break, not a test failure, so it is invisible to a suite
+    that never gets built.
+    """
+    blocks = _executable_blocks()
+    assert blocks, "no add_executable blocks parsed -- the regex or the file moved"
+    broken = sorted(
+        name for name, body in blocks.items()
+        if any(c in body for c in COMPOSER_CALLERS) and COMPOSER not in body
+    )
+    assert not broken, (
+        f"{len(broken)} target(s) compile a PoseRemarkBuilder caller without "
+        f"{COMPOSER} and will fail to link: {broken}"
+    )
+
+
+def test_the_build_graph_guard_sees_actual_callers():
+    """Non-vacuity for the guard above: the caller set must be non-empty.
+
+    If COMPOSER_CALLERS drifts out of date (files renamed, calls moved), the
+    guard silently inspects nothing and passes. Assert it has subjects.
+    """
+    blocks = _executable_blocks()
+    with_caller = [n for n, b in blocks.items()
+                   if any(c in b for c in COMPOSER_CALLERS)]
+    assert len(with_caller) >= 5, (
+        f"only {len(with_caller)} target(s) compile a known composer caller; "
+        f"COMPOSER_CALLERS is probably stale, so the guard is inspecting "
+        f"almost nothing"
+    )

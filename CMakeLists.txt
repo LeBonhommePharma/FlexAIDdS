@@ -2469,6 +2469,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2525,6 +2526,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2583,6 +2585,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2642,6 +2645,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2699,6 +2703,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2860,6 +2865,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -3077,6 +3083,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -3756,6 +3763,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/encom.cpp
         LIB/geometry.cpp
         LIB/fast_optics.cpp
