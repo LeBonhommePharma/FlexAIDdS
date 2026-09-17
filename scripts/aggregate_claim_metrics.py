@@ -184,10 +184,10 @@ def elected_rmsd_labelled(row: dict[str, str], *,
     value = _f(row, "rmsd_to_crystal")
     if math.isfinite(value):
         return value, "serial"
-    # rmsd_top1 is untyped provenance. Arm A parse_flexaid_arm_results.pose_rmsd
-    # prefers REMARK "(symmetry corrected)" then "(no symmetry)"; that is not
-    # serial identity. Do not label this fallback serial. See issue #509 item 2.
-    return _f(row, "rmsd_top1"), "rmsd_top1_untyped"
+    # rmsd_top1 is the engine Hungarian REMARK (calc_Hungarian_RMSD / "symmetry
+    # corrected"), not serial identity. Prefer this over the weaker "untyped"
+    # label from #510 — same non-serial fact, named precisely (JOB B).
+    return _f(row, "rmsd_top1"), "engine_hungarian_top1_UNCALIBRATED"
 
 
 def elected_rmsd(row: dict[str, str], *, allow_serial_fallback: bool = True) -> float:

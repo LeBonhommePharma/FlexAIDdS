@@ -231,7 +231,7 @@ def test_serial_fallback_is_conservative_and_labelled():
     assert unset_val != unset_val  # NaN
 
 
-def test_rmsd_top1_fallback_is_untyped_not_serial_legacy():
+def test_rmsd_top1_fallback_is_engine_hungarian_not_serial_legacy():
     """#509 item 2: Arm A rmsd_top1 is not serial identity."""
     row = {
         "pdb_id": "1TZ8",
@@ -240,7 +240,7 @@ def test_rmsd_top1_fallback_is_untyped_not_serial_legacy():
         "seed_echo": "0",
     }
     val, metric = agg.elected_rmsd_labelled(row)
-    assert metric == "rmsd_top1_untyped"
+    assert metric == "engine_hungarian_top1_UNCALIBRATED"
     assert metric != "serial_legacy_top1"
     assert "serial" not in metric
     assert val == pytest.approx(1.0871)
@@ -289,3 +289,103 @@ def test_sidecar_loader_drops_non_ok_rows(tmp_path: Path):
     )
     loaded = agg.load_symmcorr_sidecar(p)
     assert {pid for pid, sha in loaded} == {"1AAA"}
+
+
+# ── JOB B flat-arm driver ────────────────────────────────────────────────────
+
+
+def _load_score_arm():
+    import importlib.util
+    script = ROOT / "scripts/score_arm_symmcorr.py"
+    spec = importlib.util.spec_from_file_location("score_arm_symmcorr_test", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_engine_hungarian_fallback_label_not_serial():
+    """JOB B label: rmsd_top1 fallback is engine Hungarian, not serial."""
+    row = {
+        "pdb_id": "1TZ8",
+        "rmsd_top1": "1.0871",
+        "success_rmsd": "0",
+        "seed_echo": "0",
+    }
+    val, metric = agg.elected_rmsd_labelled(row)
+    assert metric == "engine_hungarian_top1_UNCALIBRATED"
+    assert "serial" not in metric
+    assert val == pytest.approx(1.0871)
+    assert agg.is_s1(row) is True
+
+
+def test_score_arm_parse_pose_filename_restart_and_rank():
+    arm = _load_score_arm()
+    assert arm.parse_pose_filename(Path("1G9V_r1_0.pdb"), "1G9V") == (1, 0)
+    assert arm.parse_pose_filename(Path("1G9V_r2_3.pdb"), "1G9V") == (2, 3)
+    assert arm.parse_pose_filename(Path("1G9V_0.pdb"), "1G9V") == (None, 0)
+    assert arm.parse_pose_filename(Path("1G9V_INI.pdb"), "1G9V") is None
+
+
+def test_score_arm_elect_restart_uses_elected_filename_not_first_glob():
+    """S_top10 must follow the elected restart, not glob order (restart 0)."""
+    arm = _load_score_arm()
+    heads = [
+        (0, 0, Path("1L7F_r0_0.pdb")),
+        (0, 1, Path("1L7F_r0_1.pdb")),
+        (6, 0, Path("1L7F_r6_0.pdb")),
+        (6, 1, Path("1L7F_r6_1.pdb")),
+        (6, 2, Path("1L7F_r6_2.pdb")),
+    ]
+    assert arm.elect_restart(heads, "/abs/out/1L7F_r6_0.pdb") == 6
+    top10 = arm.select_top10_poses(heads, 6)
+    assert [p.name for p in top10] == [
+        "1L7F_r6_0.pdb",
+        "1L7F_r6_1.pdb",
+        "1L7F_r6_2.pdb",
+    ]
+
+
+def test_score_arm_propagates_symmcorr_unavailable(monkeypatch, tmp_path: Path):
+    arm = _load_score_arm()
+    target = tmp_path / "1AAA"
+    target.mkdir()
+    (target / "result.csv").write_text("pdb_id,rmsd_top1,elected_path\n1AAA,1.0,1AAA_r0_0.pdb\n")
+    (target / "1AAA_r0_0.pdb").write_text(
+        "HETATM 90001  C1  LIG A   1       0.000   0.000   0.000  1.00  0.00           C\n"
+    )
+    crystal_root = tmp_path / "refs"
+    (crystal_root / "1AAA").mkdir(parents=True)
+    (crystal_root / "1AAA" / "1AAA_ligand.sdf").write_text("minimal\n")
+
+    def boom():
+        raise arm.symm.SymmCorrUnavailable("simulated missing spyrmsd")
+
+    monkeypatch.setattr(arm.symm, "_spyrmsd", boom)
+    with pytest.raises(arm.symm.SymmCorrUnavailable):
+        arm.main([
+            "--arm-dir", str(tmp_path),
+            "--crystal-ref-dir", str(crystal_root),
+            "--out-dir", str(tmp_path / "out"),
+            "--targets", "1AAA",
+        ])
+
+
+def test_score_arm_skips_existing_sidecar(tmp_path: Path):
+    arm = _load_score_arm()
+    target = tmp_path / "1BBB"
+    target.mkdir()
+    (target / "result.csv").write_text("pdb_id,rmsd_top1\n1BBB,9.0\n")
+    refs = tmp_path / "refs"
+    refs.mkdir()
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    existing = out_dir / "1BBB.csv"
+    existing.write_text("pdb_id\n1BBB\n")
+    rc = arm.main([
+        "--arm-dir", str(tmp_path),
+        "--crystal-ref-dir", str(refs),
+        "--out-dir", str(out_dir),
+        "--targets", "1BBB",
+    ])
+    assert rc == 0
+    assert existing.read_text() == "pdb_id\n1BBB\n"

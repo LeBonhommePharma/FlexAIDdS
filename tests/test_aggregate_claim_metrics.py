@@ -186,7 +186,7 @@ def test_rmsd_top1_fallback_label_is_untyped_not_serial(agg):
     """Arm A rmsd_top1 is not serial; claim tables must not say serial_legacy_top1."""
     row = _row(rmsd_to_crystal="", rmsd_top1="1.20")
     val, metric = agg.elected_rmsd_labelled(row)
-    assert metric == "rmsd_top1_untyped"
+    assert metric == "engine_hungarian_top1_UNCALIBRATED"
     assert "serial" not in metric
     assert metric != "serial_legacy_top1"
     assert val == pytest.approx(1.20)
@@ -197,7 +197,7 @@ def test_rmsd_top1_fallback_label_is_untyped_not_serial(agg):
 def test_rmsd_top1_fail_still_fails_s1_and_does_not_claim_serial(agg):
     row = _row(rmsd_to_crystal="", rmsd_top1="6.8360")
     val, metric = agg.elected_rmsd_labelled(row)
-    assert metric == "rmsd_top1_untyped"
+    assert metric == "engine_hungarian_top1_UNCALIBRATED"
     assert val == pytest.approx(6.8360)
     assert agg.is_s1(row) is False
 
@@ -217,12 +217,12 @@ def test_rmsd_top1_does_not_override_serial_or_symmcorr_labels(agg):
 def test_claim_report_metric_used_does_not_say_serial_legacy_top1(agg):
     report = _aggregate(agg, [_row(rmsd_to_crystal="", rmsd_top1="1.2")])
     used = report["metrics"]["S1"]["metric_used"]
-    assert used == "rmsd_top1_untyped"
+    assert used == "engine_hungarian_top1_UNCALIBRATED"
     assert used != "serial_legacy_top1"
     assert "serial" not in used
     assert report["metrics"]["S1"]["n"] == 1
     assert report["metrics"]["STRICT"]["n"] == 0
-    assert report["strict_metric_inheritance"]["s1_metric"] == "rmsd_top1_untyped"
+    assert report["strict_metric_inheritance"]["s1_metric"] == "engine_hungarian_top1_UNCALIBRATED"
 
 
 def test_s2_recomputes_pb_and_requires_pose_identity(agg):
@@ -582,3 +582,46 @@ def test_enforce_claim_symmcorr_library_fail_closed(agg, tmp_path):
     )
     assert out["status"] == "symmcorr"
     assert out["unset_targets"] == []
+
+def test_rmsd_top1_fallback_label_is_engine_hungarian_uncalibrated(agg):
+    """JOB B: fallback must not claim serial; rmsd_top1 is engine Hungarian REMARK."""
+    row = _row(rmsd_to_crystal="", rmsd_symmcorr="", rmsd_top1="1.20")
+    # Ensure symmcorr / serial columns cannot win: empty / absent
+    row.pop("rmsd_symmcorr", None)
+    row["rmsd_to_crystal"] = ""
+    val, metric = agg.elected_rmsd_labelled(row)
+    assert metric == "engine_hungarian_top1_UNCALIBRATED"
+    assert "serial" not in metric
+    assert metric != "serial_legacy_top1"
+    assert val == pytest.approx(1.20)
+    assert agg.is_s1(row) is True
+    assert agg.is_strict_success(row) is False
+
+
+def test_rmsd_top1_fallback_fail_still_fails_s1(agg):
+    row = _row(rmsd_to_crystal="", rmsd_top1="6.8360")
+    row.pop("rmsd_symmcorr", None)
+    val, metric = agg.elected_rmsd_labelled(row)
+    assert metric == "engine_hungarian_top1_UNCALIBRATED"
+    assert val == pytest.approx(6.8360)
+    assert agg.is_s1(row) is False
+
+
+def test_claim_report_metric_used_is_engine_hungarian_uncalibrated(agg):
+    row = _row(rmsd_to_crystal="", rmsd_top1="1.2")
+    row.pop("rmsd_symmcorr", None)
+    report = _aggregate(agg, [row])
+    used = report["metrics"]["S1"]["metric_used"]
+    assert used == "engine_hungarian_top1_UNCALIBRATED"
+    assert used != "serial_legacy_top1"
+    assert "serial" not in used
+    assert report["metrics"]["S1"]["n"] == 1
+    assert report["metrics"]["STRICT"]["n"] == 0
+    assert report["strict_metric_inheritance"]["s1_metric"] == "engine_hungarian_top1_UNCALIBRATED"
+
+
+def test_repo_has_no_serial_legacy_top1_label_string():
+    src = (ROOT / "scripts/aggregate_claim_metrics.py").read_text()
+    # Comment may mention the old name; the returned label must not.
+    assert '"serial_legacy_top1"' not in src
+    assert "'serial_legacy_top1'" not in src
