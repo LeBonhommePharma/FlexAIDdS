@@ -490,6 +490,7 @@ else()
 endif()
 
 # ─── Core library (LIB/) ────────────────────────────────────────────────
+# Shared pose REMARK writer: LIB/pose_remarks.cpp (in FLEXAID_CORE_SOURCES).
 add_subdirectory(LIB)
 
 # Component targets (FlexAID::Core, ::VoronoiCF, ::StatMech, etc.)
@@ -1949,6 +1950,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/shannon_ga.cpp
@@ -2010,6 +2012,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2289,6 +2292,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2348,6 +2352,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2404,6 +2409,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2463,6 +2469,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2519,6 +2526,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2577,6 +2585,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2636,6 +2645,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2693,6 +2703,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2854,6 +2865,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -3071,6 +3083,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -3750,6 +3763,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/BindingMode.cpp
+        LIB/pose_remarks.cpp
         LIB/encom.cpp
         LIB/geometry.cpp
         LIB/fast_optics.cpp

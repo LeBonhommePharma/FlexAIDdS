@@ -119,6 +119,11 @@ void seed_runtime_gates() {
         // unit coefficient. Default OFF; when unset the CF is bit-identical to a
         // build without this gate.
         "FLEXAIDDS_DSVIB",
+        // Shared pose REMARK writer (LIB/pose_remarks.cpp). Default OFF: each
+        // backend keeps its hand-rolled block. Empty string is OFF
+        // (flexaids::env_bool). Flip once a CF arm is byte-identical on/off
+        // (single-pose) and DP+FO each show the DSVIB block.
+        "FLEXAIDDS_UNIFIED_REMARKS",
         // Atom-type-pair contact-surface vector (vcfunction.cpp accumulates,
         // cluster.cpp / native_score.cpp emit <pose>.cprof.csv). Pure
         // instrumentation: adds nothing to any CF channel and cannot change a

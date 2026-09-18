@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import hashlib
 import json
 from pathlib import Path
@@ -380,7 +381,31 @@ def test_runtime_proxy_outputs_declare_their_domain() -> None:
     gaboom = (root / "LIB" / "gaboom.cpp").read_text(encoding="utf-8")
     top = (root / "LIB" / "top.cpp").read_text(encoding="utf-8")
 
-    assert binding_mode.count("thermo_claim_validity = proxy_only") >= 2
+    # The declaration must reach BOTH of BindingMode.cpp's pose-emission sites.
+    # It was an inline literal at each site until the shared-writer refactor
+    # hoisted it into a named constant -- after which counting the RAW LITERAL
+    # finds one occurrence (the definition) even though both sites still emit
+    # it. Counting the literal therefore measured duplication, not coverage.
+    # Count EMISSIONS instead: inline literals plus uses of any constant whose
+    # definition carries the literal. This keeps the guard's intent (every
+    # pose-emission path declares its claim domain) and adds no slack -- delete
+    # either emission and it still fails.
+    DECL = "thermo_claim_validity = proxy_only"
+    decl_consts = re.findall(
+        r'const\s+char\s+(\w+)\s*\[\]\s*=\s*"REMARK\s+' + re.escape(DECL) + r'\\n"',
+        binding_mode,
+    )
+    inline_emissions = len(
+        re.findall(r'snprintf\s*\([^;]*"REMARK\s+' + re.escape(DECL), binding_mode)
+    )
+    const_emissions = sum(
+        len(re.findall(r'snprintf\s*\([^;]*\b' + re.escape(c) + r'\b', binding_mode))
+        for c in decl_consts
+    )
+    assert inline_emissions + const_emissions >= 2, (
+        f"BindingMode.cpp must emit {DECL!r} at both pose-emission sites; found "
+        f"{inline_emissions} inline + {const_emissions} via constant(s) {decl_consts}"
+    )
     assert "thermo_claim_validity = proxy_only" in classic_cluster
     assert "Physical StatMech ledger" not in classic_cluster
     assert "claim_validity=proxy_only energy_domain=cf_arbitrary_units" in gaboom
