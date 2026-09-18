@@ -7850,6 +7850,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // Parse stdout for n_chrom_snapshot, CF scores, and clash diagnostics
         std::ifstream stdout_file(stdout_path);  // stdout_path declared above
         long clashed_count = 0, total_evals = 0;
+        // -1 == the engine did not report a count. NOT zero, NOT derived.
+        long evals_actual_parsed = -1;
         float free_energy_F = 0.0f;
         bool have_free_energy = false;
         float mean_energy_E = 0.0f;
@@ -7875,6 +7877,17 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                             total_evals = std::max(total_evals, snap);
                         } catch (...) {}
                     }
+                }
+                // "[EVALS] evals_actual=N" — the true CF-evaluation count,
+                // emitted on the engine's normal exit path. Recorded verbatim
+                // and never derived: if this line is absent the field stays -1
+                // so a consumer can tell "not reported" from "zero".
+                if (line.find("evals_actual=") != std::string::npos) {
+                    auto pos = line.find("evals_actual=");
+                    try {
+                        evals_actual_parsed =
+                            std::stol(line.substr(pos + std::strlen("evals_actual=")));
+                    } catch (...) {}
                 }
                 // "individuals clashed=N"
                 if (line.find("individuals clashed=") != std::string::npos) {
@@ -8055,6 +8068,46 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         }
         result.individuals_clashed = clashed_count;
         result.individuals_total   = total_evals;
+        // evals_actual is a PER-TARGET total, so it must span every engine
+        // process the target ran, not just the one whose stdout we parsed above.
+        // MEASURED 2026-09-18 on 1G9V at pop 1000 / gen 2000 / restarts 5: the
+        // top-level process reported 3,524,539 while r1..r4 reported 3,515,610 /
+        // 3,502,372 / 3,522,625 / 3,522,621 — so reading one log understates the
+        // target's search effort by ~5x. Summed, the target consumed 17,587,767
+        // evaluations against a nominal pop x gen x restarts of 10,000,000, i.e.
+        // the derivation UNDERCOUNTS by 1.76x (initial population, reproduction
+        // and elitism all evaluate outside the nominal grid).
+        //
+        // FAIL-CLOSED IS PRESERVED: the sum starts from the parsed top-level
+        // value and only adds restart logs that actually carry a count. If NO
+        // process reported one, the field stays -1 rather than becoming 0.
+        if (evals_actual_parsed >= 0) {
+            try {
+                for (const auto& d : fs::directory_iterator(out_dir)) {
+                    if (!d.is_directory()) continue;
+                    const std::string rn = d.path().filename().string();
+                    if (rn.size() < 2 || rn[0] != 'r') continue;
+                    if (!std::all_of(rn.begin() + 1, rn.end(),
+                                     [](unsigned char c){ return std::isdigit(c); })) continue;
+                    std::ifstream rf(d.path().string() + "/stdout.log");
+                    if (!rf.is_open()) continue;
+                    std::string rl;
+                    while (std::getline(rf, rl)) {
+                        auto rp = rl.find("evals_actual=");
+                        if (rp == std::string::npos) continue;
+                        try {
+                            evals_actual_parsed +=
+                                std::stol(rl.substr(rp + std::strlen("evals_actual=")));
+                        } catch (...) {}
+                    }
+                }
+            } catch (...) {}   // restart logs are best-effort; the top-level count stands
+        }
+        // Deliberately assigned from the PARSED value only. The
+        // pop x generations fallback above rewrites total_evals; it must
+        // never reach this field, which exists precisely to be absent
+        // when the engine did not witness the search effort.
+        result.evals_actual        = evals_actual_parsed;
         if (total_evals > 0) {
             result.clash_rate = std::min(1.0f,
                 static_cast<float>(clashed_count) / static_cast<float>(total_evals));
@@ -9512,7 +9565,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                            "cf_best_cluster,"
                            "report_T,I_ES,CF_r2s,binding_regime,ensemble_log_Z,"
                            "rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5,"
-                           "has_free_energy,cf_fallback\n";
+                           // evals_actual LAST, per the position-stability rule
+                           // below. -1 means the engine reported no count; it is
+                           // NOT zero and NOT pop x generations. Added to header
+                           // and row together.
+                           "has_free_energy,cf_fallback,evals_actual\n";
                     ofs << std::fixed << std::setprecision(4)
                         << result.pdb_id << ","
                         << result.best_score << ","
@@ -9609,7 +9666,8 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                         << result.rmsd_fail_reason << "," << result.docking_exit_code
                         << "," << (result.docking_completed ? 1 : 0) << "," << result.matrix_md5
                         << "," << (result.has_free_energy ? 1 : 0)
-                        << "," << (result.cf_fallback ? 1 : 0) << "\n";
+                        << "," << (result.cf_fallback ? 1 : 0)
+                        << "," << result.evals_actual << "\n";
                 }
             } catch (...) {
                 // Per-complex CSV is best-effort; failures are non-fatal.
@@ -10002,7 +10060,7 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
         }
         // Appended at END (not mid-header): column names are position-stable
         // for live campaigns; new diagnostics go last.
-        ofs << ",rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5,pb_ran,pb_n_checks,pb_n_pass,pb_n_fail,has_free_energy,cf_fallback\n";
+        ofs << ",rmsd_fail_reason,docking_exit_code,docking_completed,matrix_md5,pb_ran,pb_n_checks,pb_n_pass,pb_n_fail,has_free_energy,cf_fallback,evals_actual\n";
 
         for (const auto& r : report.results) {
             ofs << std::fixed << std::setprecision(4)
@@ -10084,7 +10142,8 @@ void DatasetRunner::write_report(const BenchmarkReport& report,
                 << "," << (r.pb_ran ? 1 : 0) << "," << r.pb_n_checks
                 << "," << r.pb_n_pass << "," << r.pb_n_fail
                 << "," << (r.has_free_energy ? 1 : 0)
-                << "," << (r.cf_fallback ? 1 : 0) << "\n";
+                << "," << (r.cf_fallback ? 1 : 0)
+                << "," << r.evals_actual << "\n";
         }
 
         ofs.close();

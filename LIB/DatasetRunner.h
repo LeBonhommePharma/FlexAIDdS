@@ -273,6 +273,16 @@ struct DockingResult {
     // Clash diagnostics (populated from stdout parsing)
     long  individuals_clashed{0};     // total clashing evaluations
     long  individuals_total{0};       // total evaluations (across all generations)
+    // evals_actual — the SEARCH-EFFORT WITNESS, counted inside eval_chromosome()
+    // and read from the engine's "[EVALS] evals_actual=N" line. FAIL-CLOSED BY
+    // CONSTRUCTION: -1 means the engine did not report one, and that is NOT the
+    // same as zero and must never be replaced by a derivation. individuals_total
+    // above is the legacy field and is NOT this: it is populated from
+    // n_chrom_snapshot (the deduplicated snapshot pool, orders of magnitude
+    // below the true count) or, failing that, from population x generations —
+    // a derivation the engine can invalidate by exiting the generation loop
+    // early on an operator STOP file without marking the restart short.
+    long  evals_actual{-1};
     float clash_rate{0.0f};           // clashed / total — high (>0.95) = stuck GA
     bool  stuck{false};               // true when clash_rate > 0.95 and F > 0
     // Native-pose CF diagnostic (scored before the GA via FLEXAIDDS_SCORE_NATIVE)

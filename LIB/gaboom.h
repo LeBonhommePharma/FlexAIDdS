@@ -313,6 +313,14 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
                         char file[], long int at, int offset, int print,
                         std::function<int32_t()> &,
                         std::unordered_map<size_t, int> &);
+// evals_actual: true count of eval_chromosome() calls since process start (or
+// since the last reset). Incremented inside the definition, so it counts every
+// call site including the concurrent ones. See the block comment at the
+// definition in gaboom.cpp for why this is not derived from pop x generations.
+// CONSUMERS MUST FAIL CLOSED: an absent count is absent, never zero.
+unsigned long long flexaids_eval_count();
+void flexaids_eval_count_reset();
+
 cfstr 	eval_chromosome(FA_Global* FA,GB_Global* GB,VC_Global* VC,const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,gene* john, cfstr (*function)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*));
 void  	calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chrom, const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,char method[],int pop_size, int print, cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int, double*), GAContext& ctx);
 int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom,

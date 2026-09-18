@@ -11,6 +11,7 @@
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
 #include "RngSeed.h"
+#include <atomic>      // evals_actual counter (see eval_chromosome)
 #include "EnvFlags.h"   // env_bool: consistent 1/true/yes/on flag semantics
 #include "ensemble_pipeline.h"
 #include "ProtocolConfig.h"
@@ -3877,9 +3878,47 @@ FILE* get_update_file_ptr(FA_Global* FA)
 /*234567890123456789012345678901234567890123456789012345678901234567890*/
 /* 1         2         3         4         5         6         7*/
 /***********************************************************************/
+// ── evals_actual: a TRUE count of cost-function evaluations ─────────────────
+//
+// WHY THIS EXISTS. DatasetRunner previously reported `individuals_total` from
+// two unsound sources: `n_chrom_snapshot`, which is the DEDUPLICATED SNAPSHOT
+// POOL (save_num_chrom ~ 5% of the population per generation, then collapsed by
+// remove_dups) and is therefore ~4 orders of magnitude below the real count;
+// and, when that parse failed, a DERIVED fallback of population x generations.
+// The derivation is not sound: the generation loop can exit early on an operator
+// STOP file (gaboom.cpp, `state == 1` -> break) WITHOUT marking the restart
+// short, so `restarts_finished == 10` does not rule out a truncated search. A
+// derived search-effort figure is therefore unfalsifiable from the stored data.
+//
+// WHY THE COUNTER LIVES IN THE DEFINITION, NOT AT THE CALL SITES. There are
+// eight call sites, two of which (in the OpenMP regions opened near the
+// evaluation loops) run concurrently, so any call-site counter needs atomics
+// regardless. One increment here counts every evaluation whatever the caller,
+// and keeps counting when a call site is added later.
+//
+// ORDERING. relaxed is sufficient and is the cheapest form: nothing reads this
+// value to establish a happens-before relationship with other memory; only the
+// final total is consumed, after all evaluating threads have joined.
+//
+// FAIL-CLOSED CONTRACT. The consumer must treat an ABSENT count as absent, never
+// as zero and never as a derived product. That is the whole point of the field.
+namespace {
+std::atomic<unsigned long long> g_eval_count{0};
+}
+
+unsigned long long flexaids_eval_count() {
+	return g_eval_count.load(std::memory_order_relaxed);
+}
+
+void flexaids_eval_count_reset() {
+	g_eval_count.store(0, std::memory_order_relaxed);
+}
+
 cfstr eval_chromosome(FA_Global* FA,GB_Global* GB,VC_Global* VC,const genlim* gene_lim,
 		      atom* atoms,resid* residue,gridpoint* cleftgrid,gene* john,
 		      cfstr (*function)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*)){
+
+	g_eval_count.fetch_add(1, std::memory_order_relaxed);
 
 	double icv[MAX_NUM_GENES] = {0};
 

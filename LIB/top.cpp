@@ -3871,6 +3871,15 @@ int main(int argc, char **argv){
 	/////////////////  END   /////////////////
 	//////////////////////////////////////////
 
+	// evals_actual — the search-effort witness. This is a COUNT, taken inside
+	// eval_chromosome(), not a derivation from population x generations: the
+	// generation loop can exit early on an operator STOP file without marking
+	// the restart short, so the derived figure is unfalsifiable from stored
+	// data. Emitted unconditionally on the normal exit path so that a run which
+	// completes always carries one, and a run which does not carries none —
+	// consumers must treat an absent count as ABSENT, never as zero.
+	printf("[EVALS] evals_actual=%llu\n", flexaids_eval_count());
+
 	printf("Done.\n");
 
 	return (0);
