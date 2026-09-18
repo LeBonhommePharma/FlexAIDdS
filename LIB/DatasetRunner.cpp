@@ -4309,6 +4309,23 @@ bool DatasetRunner::extract_ligand(const std::string& structure_path,
         }
         if (elem.empty()) elem = "C";
 
+        // MDL V2000 atom symbols are CASE-SENSITIVE ("Cl", not "CL"); the PDB
+        // element column (cols 77-78) that `atom.element` is read from is
+        // UPPERCASE by PDB spec.  Copying the PDB casing verbatim emits "CL" /
+        // "BR" into the atom block, which ProcessLigand's OpenBabel perception
+        // cannot resolve: the atom is typed 39 (DUMMY) and named "*".  From
+        // there vcfunction.cpp:1823 classifies "Du" as non-heavy, so the
+        // halogen is dropped from contact scoring entirely -- silently: the
+        // run exits 0 and validate_ligand_integrity.py reports one fewer heavy
+        // atom while still returning ok.
+        //
+        // Measured on Astex-85 (2026-09-17): 14/85 targets carry CL or BR, and
+        // the same 14 carry a Du atom in their elected pose.  One byte decides
+        // it -- 1J3J 39->24, 2BSM 39->24, 1LPZ two atoms 39->24.
+        elem[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(elem[0])));
+        for (std::size_t ci = 1; ci < elem.size(); ++ci)
+            elem[ci] = static_cast<char>(std::tolower(static_cast<unsigned char>(elem[ci])));
+
         ofs << std::fixed << std::setprecision(4)
             << std::setw(10) << atom.x
             << std::setw(10) << atom.y
