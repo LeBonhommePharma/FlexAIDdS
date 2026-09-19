@@ -8073,10 +8073,27 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
         // MEASURED 2026-09-18 on 1G9V at pop 1000 / gen 2000 / restarts 5: the
         // top-level process reported 3,524,539 while r1..r4 reported 3,515,610 /
         // 3,502,372 / 3,522,625 / 3,522,621 — so reading one log understates the
-        // target's search effort by ~5x. Summed, the target consumed 17,587,767
-        // evaluations against a nominal pop x gen x restarts of 10,000,000, i.e.
-        // the derivation UNDERCOUNTS by 1.76x (initial population, reproduction
-        // and elitism all evaluate outside the nominal grid).
+        // target's search effort by ~5x. Summed, the target consumed 17,587,767.
+        //
+        // CORRECTION 2026-09-19 — an earlier version of this comment (and of the
+        // PR that landed it) said the derivation "UNDERCOUNTS by 1.76x", from
+        // 17,587,767 against a nominal 10,000,000 = ga_population x generations x
+        // restarts. That was the WRONG DENOMINATOR. The engine SCALES population
+        // by ligand flexibility before running: [EVAL-SCALE] reports
+        // pop_base=1000 pop_effective=1750 for 1G9V (n_flex_bonds=7), so 1000 was
+        // never the population that ran. Against pop_effective the derivation is
+        // accurate, measured on two independent campaign targets:
+        //     1GM8  n_flex=5  pop_eff 1250  measured 12,556,460  ratio 1.005
+        //     1G9V  n_flex=7  pop_eff 1750  measured 17,528,846  ratio 1.002
+        // and the "1.76x" was almost exactly 1750/1000.
+        //
+        // The counter is still the right instrument, for reasons that do NOT
+        // depend on that retracted claim: (a) the generation loop can exit early
+        // on an operator STOP file without marking the restart short, so any
+        // derivation is unfalsifiable from stored data; (b) individuals_total
+        // reached no CSV writer at all; and (c) pop_effective appears in no
+        // receipt field, so a reader cannot reconstruct the right denominator
+        // from the stored artifacts even knowing the rule.
         //
         // FAIL-CLOSED IS PRESERVED: the sum starts from the parsed top-level
         // value and only adds restart logs that actually carry a count. If NO
