@@ -63,11 +63,14 @@ def priority_from_prev_run(prev_result_dir, lo=1.8, hi=2.5):
 
     near_misses = []
     for csv_path in glob.glob(f"{prev_result_dir}/*/result.csv"):
-        pdb_id = os.path.basename(os.path.dirname(csv_path))
+        # Target id comes from the row, not the directory: a result can live in
+        # another target's dir (see failure_classify._load_per_target_csvs).
+        dir_id = os.path.basename(os.path.dirname(csv_path))
         try:
             with open(csv_path, newline="") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
+                    pdb_id = (row.get("pdb_id") or "").strip() or dir_id
                     try:
                         # rmsd_hungarian = top-1 selected pose (benchmark metric).
                         # best_cluster_rmsd = oracle minimum (not what we report).

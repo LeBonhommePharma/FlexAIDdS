@@ -267,11 +267,17 @@ def _load_per_target_csvs(result_dir):
     """
     rows = {}
     for csv_path in sorted(glob.glob(os.path.join(result_dir, "*/result.csv"))):
-        pdb_id = os.path.basename(os.path.dirname(csv_path))
+        # Resolve the target from the ROW's own pdb_id, not the directory name.
+        # A run can be written into another target's directory (observed:
+        # wall_paired_85/*/2HR7 holds a 2J62 row, per its CELL_PROVENANCE.json),
+        # and trusting the path then attributes one molecule's result to another.
+        # Path is a fallback only, for rows that carry no id.
+        dir_id = os.path.basename(os.path.dirname(csv_path))
         try:
             with open(csv_path, newline="") as fh:
                 reader = csv.DictReader(fh)
                 for row in reader:
+                    pdb_id = (row.get("pdb_id") or "").strip() or dir_id
                     rows[pdb_id] = row
                     break  # one data row per file
         except OSError:
