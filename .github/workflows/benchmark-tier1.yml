@@ -20,8 +20,10 @@ name: Benchmark Tier 1 (PR Sanity)
 
 on:
   pull_request:
-    branches:
-      - main
+    # No `branches:` filter, deliberately. Scoping this to `branches: [main]`
+    # means a PR whose base is another branch fires no run at all, so a check
+    # required by a ruleset can never be satisfied by a stacked PR -- the check
+    # never arrives and the repo blocks permanently. Do not restore it.
     # Site/docs/hygiene PRs cannot move CF ranking. Skip the 1h Astex
     # dock on those diffs — the gate still runs on engine/harness changes.
     # Do not list this workflow file in paths: a path-filter-only edit

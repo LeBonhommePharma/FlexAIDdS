@@ -4,7 +4,10 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+  # No `branches:` filter, deliberately. Scoping this to `branches: [main]`
+  # means a PR whose base is another branch fires no run at all, so a check
+  # required by a ruleset can never be satisfied by a stacked PR -- the check
+  # never arrives and the repo blocks permanently. Do not restore it.
   schedule:
     - cron: '0 3 * * 1'
 
