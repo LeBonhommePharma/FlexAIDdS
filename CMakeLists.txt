@@ -1670,6 +1670,20 @@ flexaids_add_unit_test(test_protocol_config
             LIB/PoseBust/ChecksProtein.cpp
             LIB/PoseBust/Engine.cpp
             LIB/PoseBust/BustCli.cpp
+            # REQUIRED, and it must stay inside SOURCES. ChecksChemistry.cpp and
+            # Engine.cpp call flexaids::temp_dir(), so without the definition TU
+            # this fixture fails to LINK:
+            #   Undefined symbols: "flexaids::temp_dir()", referenced from
+            #   flexaids::posebust::check_chemistry_sanity / validate_elected_pose
+            # That broke macOS CPU tests (blocking), tsan-linux and Coverage, all
+            # at the Build step. The Release job passed throughout because it
+            # builds NAMED targets only and never reaches this fixture.
+            #
+            # Placement is load-bearing: TEST_NAME is a cmake_parse_arguments
+            # oneValueArgs, so a source listed AFTER it becomes an UNPARSED
+            # argument and is silently dropped -- the fixture then still fails to
+            # link while the file appears in the block.
+            LIB/temp_dir.cpp
         INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PoseBust
         TEST_NAME PoseBustTests
     )
