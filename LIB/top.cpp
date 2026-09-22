@@ -66,8 +66,14 @@
 #ifndef _WIN32
 #include <unistd.h>
 #include <sys/wait.h>
-#include "temp_dir.h"
 #endif
+// temp_dir.h must be OUTSIDE the POSIX block: flexaids::temp_dir() is called
+// unconditionally below (lines ~1452, ~1535), so a Windows build saw no
+// declaration and clang-cl failed with "no member named 'temp_dir' in
+// namespace 'flexaids'" while every POSIX build compiled cleanly. The
+// migration inserted it after the LAST local #include, which happened to be
+// inside that block.
+#include "temp_dir.h"
 
 // ── Tier 2 typing: SYBYL name → canonical VCT matrix index ──────────────────
 // ProcessLigand (BonMol) perceives full hybridisation/aromaticity but stores

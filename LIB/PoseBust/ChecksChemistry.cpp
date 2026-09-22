@@ -31,9 +31,13 @@
 #define flexaids_getpid() _getpid()
 #else
 #include <unistd.h>
-#include "../temp_dir.h"
 #define flexaids_getpid() getpid()
 #endif
+// Outside the POSIX branch: flexaids::temp_dir() is called unconditionally
+// below, so guarding the declaration breaks the Windows build while every
+// POSIX build compiles. Same defect as LIB/top.cpp, same cause -- an include
+// inserted after the last local #include, which sat inside a #else arm.
+#include "../temp_dir.h"
 
 namespace flexaids::posebust {
 namespace {
