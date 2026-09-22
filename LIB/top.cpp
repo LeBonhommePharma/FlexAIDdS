@@ -66,6 +66,7 @@
 #ifndef _WIN32
 #include <unistd.h>
 #include <sys/wait.h>
+#include "temp_dir.h"
 #endif
 
 // ── Tier 2 typing: SYBYL name → canonical VCT matrix index ──────────────────
@@ -1448,7 +1449,7 @@ int main(int argc, char **argv){
 			// Create temporary cleaned PDB
 			char tmpprotname[MAX_PATH__];
 			int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
-			const std::string tmpdir = std::filesystem::temp_directory_path().string();
+			const std::string tmpdir = flexaids::temp_dir();
 			snprintf(tmpprotname, MAX_PATH__, "%s/flexaid_receptor_%d.pdb",
 			         tmpdir.c_str(), random_num);
 
@@ -1531,7 +1532,7 @@ int main(int argc, char **argv){
 
 				// Write temporary MOL2 from BonMol and read back through standard path
 				char tmp_mol2[MAX_PATH__];
-				const std::string tmpdir = std::filesystem::temp_directory_path().string();
+				const std::string tmpdir = flexaids::temp_dir();
 				snprintf(tmp_mol2, MAX_PATH__, "%s/flexaid_smiles_%d.mol2",
 				         tmpdir.c_str(), static_cast<int>(std::random_device{}() % 900000 + 100000));
 

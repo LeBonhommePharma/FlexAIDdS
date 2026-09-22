@@ -31,6 +31,7 @@
 #define flexaids_getpid() _getpid()
 #else
 #include <unistd.h>
+#include "../temp_dir.h"
 #define flexaids_getpid() getpid()
 #endif
 
@@ -477,7 +478,7 @@ void check_chemistry_sanity(const Molecule& pred, std::vector<CheckItem>& out) {
                 // Write temp SDF and invoke inchi-1
                 namespace fs = std::filesystem;
                 const fs::path tmp =
-                    fs::temp_directory_path() /
+                    fs::path(flexaids::temp_dir()) /
                     ("flexaidds_inchi_" + std::to_string(flexaids_getpid()) +
                      ".sdf");
                 const fs::path outp = fs::path(tmp.string() + ".inchi_out");

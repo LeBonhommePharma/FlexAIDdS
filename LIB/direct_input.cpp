@@ -14,6 +14,7 @@
 #include <ctime>
 #include <filesystem>
 #include <random>
+#include "temp_dir.h"
 
 // ── external prototypes (declared in flexaid.h) ──
 // read_pdb, modify_pdb, calc_center, residue_conect, assign_types,
@@ -75,7 +76,7 @@ int setup_direct_input(FA_Global* FA, GB_Global* GB, VC_Global* VC,
     // ─── 4. Read receptor PDB ─────────────────────────────────────────
     // modify_pdb cleans and reorders the PDB; write to a temp file.
     int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
-    const std::string tmpdir = std::filesystem::temp_directory_path().string();
+    const std::string tmpdir = flexaids::temp_dir();
     snprintf(tmpprotname, MAX_PATH__, "%s/flexaid_tmp_%d.pdb", tmpdir.c_str(), random_num);
 
     printf("read PDB file <%s>\n", receptor_pdb);

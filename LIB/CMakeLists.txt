@@ -84,6 +84,11 @@ set(FLEXAID_CORE_SOURCES
     FOPTICS.cpp
     fast_optics.cpp
     BindingMode.cpp
+    # Never-throwing temp-directory resolution. MUST be in the core library:
+    # every TU that used to call std::filesystem::temp_directory_path()
+    # directly now goes through flexaids::temp_dir(), and a missing symbol
+    # here fails the link rather than silently reintroducing the throw.
+    temp_dir.cpp
     pose_remarks.cpp
     rna_structure.cpp
     shortest_path.cpp
