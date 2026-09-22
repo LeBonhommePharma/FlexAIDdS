@@ -19,6 +19,8 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include "temp_dir.h"
+#include "fs_safe.h"
 
 namespace library {
 
@@ -146,9 +148,30 @@ LibraryInfo split_library(const std::string& path) {
         }
 
         // Multi-molecule — split at $$$$
-        lib.temp_dir = fs::temp_directory_path().string() + "/flexaid_lib_" +
+        lib.temp_dir = flexaids::temp_dir() + "/flexaid_lib_" +
                        std::to_string(std::random_device{}() % 900000 + 100000);
-        fs::create_directories(lib.temp_dir);
+        // Sits directly downstream of the resolver that aborted nine cells on
+        // 2026-09-20. If temp_dir() degraded to "." in a read-only cwd this
+        // used to abort; if it merely failed and we carried on, every
+        // LigandEntry below would name a file that was never written and the
+        // campaign would dock a silently short library. Refuse loudly and
+        // return an empty LibraryInfo -- callers size their result vector
+        // from lib.total, so zero surfaces as "no ligands", not as success.
+        {
+            std::string why;
+            if (!flexaids::fs_safe::ensure_dir(lib.temp_dir, &why)) {
+                std::fprintf(stderr,
+                    "[SPLIT] ERROR: cannot create SDF split directory '%s' (%s). "
+                    "Set FLEXAIDDS_TMPDIR to a writable, durable path. "
+                    "Returning an empty library rather than ligand entries "
+                    "pointing at files that were never written.\n",
+                    lib.temp_dir.c_str(), why.c_str());
+                lib.temp_dir.clear();   // nothing to clean up
+                lib.ligands.clear();
+                lib.total = 0;
+                return lib;
+            }
+        }
 
         std::ifstream in(path);
         int mol_idx = 0;
@@ -247,9 +270,24 @@ LibraryInfo split_library(const std::string& path) {
         }
 
         // Multi-model — split at MODEL/ENDMDL boundaries
-        lib.temp_dir = fs::temp_directory_path().string() + "/flexaid_models_" +
+        lib.temp_dir = flexaids::temp_dir() + "/flexaid_models_" +
                        std::to_string(std::random_device{}() % 900000 + 100000);
-        fs::create_directories(lib.temp_dir);
+        // Same reasoning as the SDF branch above: a multi-model receptor that
+        // silently splits into zero files would dock against nothing.
+        {
+            std::string why;
+            if (!flexaids::fs_safe::ensure_dir(lib.temp_dir, &why)) {
+                std::fprintf(stderr,
+                    "[SPLIT] ERROR: cannot create model split directory '%s' (%s). "
+                    "Set FLEXAIDDS_TMPDIR to a writable, durable path. "
+                    "Returning an empty library.\n",
+                    lib.temp_dir.c_str(), why.c_str());
+                lib.temp_dir.clear();
+                lib.ligands.clear();
+                lib.total = 0;
+                return lib;
+            }
+        }
 
         std::ifstream in(path);
         std::string line;

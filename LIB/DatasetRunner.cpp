@@ -29,6 +29,7 @@
 #include "ProtocolConfig.h"
 #include "SoftBetaFreeEnergy.h"
 #include "EnvFlags.h"       // flexaids::env_bool — one parser for FLEXAIDDS_* switches
+#include "fs_safe.h"        // flexaids::fs_safe — non-throwing std::filesystem queries
 #include "predicted_dg_contract.h"
 // Receptor-frame provenance for the validator. Gates
 // FLEXAIDDS_WRITE_FLEXED_RECEPTOR (engine writes the as-scored receptor) and
@@ -2197,8 +2198,13 @@ static std::string prune_receptor_to_site_chains(
         return receptor_path;   // all chains within cutoff — nothing to prune
 
     // ── Check cache ───────────────────────────────────────────────────────────
-    if (fs::exists(out_pruned) &&
-        fs::last_write_time(out_pruned) >= fs::last_write_time(receptor_path))
+    // The old form called last_write_time(receptor_path) with NO existence
+    // guard: a receptor pruned from the cache aborted the whole run here
+    // instead of regenerating. out_of_date() rebuilds when either side
+    // cannot be stat'ed; if the receptor is genuinely gone the write below
+    // fails its ifstream check and returns receptor_path unpruned, which is
+    // this function's documented fallback.
+    if (!flexaids::fs_safe::out_of_date(out_pruned, {receptor_path}))
         return out_pruned;
 
     // ── Write pruned receptor ─────────────────────────────────────────────────
@@ -2738,8 +2744,11 @@ bool DatasetRunner::http_download(const std::string& url, const std::string& out
         return false;
     }
 
-    // Verify file exists and is non-empty
-    if (!fs::exists(out_path) || fs::file_size(out_path) == 0) {
+    // Verify file exists and is non-empty. file_size_or() folds "cannot
+    // stat" into "size 0", which is the branch this already took for a
+    // missing file -- and removes an abort if the cache dir is pruned
+    // between the exists() and the file_size() that used to be here.
+    if (flexaids::fs_safe::file_size_or(out_path) == 0) {
         std::cerr << "  [ERROR] Downloaded file is empty or missing: " << out_path << "\n";
         if (fs::exists(out_path)) fs::remove(out_path);
         return false;
@@ -2749,7 +2758,8 @@ bool DatasetRunner::http_download(const std::string& url, const std::string& out
 }
 
 static bool file_looks_like_html_error_page(const std::string& path) {
-    if (!fs::exists(path) || fs::file_size(path) == 0) return false;
+    // Unreadable => not an HTML error page, same answer as "not there".
+    if (flexaids::fs_safe::file_size_or(path) == 0) return false;
 
     std::ifstream check(path);
     std::string first_line;
@@ -2763,14 +2773,15 @@ static bool file_looks_like_html_error_page(const std::string& path) {
 }
 
 static bool valid_cached_pdb_file(const std::string& path) {
-    return fs::exists(path) &&
-           fs::file_size(path) > 100 &&
+    // An unstattable cache entry is treated as INVALID, so the caller
+    // re-downloads rather than aborting. Conservative direction.
+    return flexaids::fs_safe::file_size_or(path) > 100 &&
            !file_looks_like_html_error_page(path);
 }
 
 static bool valid_cached_cif_file(const std::string& path) {
-    return fs::exists(path) &&
-           fs::file_size(path) > 100 &&
+    // As valid_cached_pdb_file: unstattable => invalid => re-download.
+    return flexaids::fs_safe::file_size_or(path) > 100 &&
            !file_looks_like_html_error_page(path);
 }
 
@@ -4626,7 +4637,7 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
                        [](unsigned char c) { return std::tolower(c); });
         if (lrp.size() >= 4 && lrp.rfind(".pdb") == lrp.size() - 4) {
             std::string companion_cif = receptor_path.substr(0, receptor_path.size() - 4) + ".cif";
-            if (!fs::exists(companion_cif) || fs::file_size(companion_cif) <= 100) {
+            if (flexaids::fs_safe::file_size_or(companion_cif) <= 100) {
                 download_cif(upper_id, companion_cif);  // best-effort, ignore failure
             }
             if (valid_cached_cif_file(companion_cif)) {
@@ -4702,9 +4713,10 @@ DatasetEntry DatasetRunner::prepare_pdb_entry(const std::string& pdb_id,
     // site is rejected as a clash (see write_receptor_without_ligand).
     if (!entry.ligand_path.empty()) {
         std::string apo_receptor = entry_dir + "/" + upper_id + "_apo.pdb";
-        bool need_refresh = !fs::exists(apo_receptor) ||
-            fs::last_write_time(apo_receptor) < fs::last_write_time(receptor_path) ||
-            fs::last_write_time(apo_receptor) < fs::last_write_time(entry.ligand_path);
+        // Unstattable apo file OR unstattable source => refresh. Stays a
+        // mutable bool: the clash check below re-arms it.
+        bool need_refresh = flexaids::fs_safe::out_of_date(
+            apo_receptor, {receptor_path, entry.ligand_path});
 
         if (!need_refresh) {
             std::vector<std::array<double,3>> lig_xyz;
@@ -4959,7 +4971,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
 
         bool ligand_ready = false;
         if (!native_structure.empty()) {
-            ligand_ready = (fs::exists(native_lig) && fs::file_size(native_lig) > 0) ||
+            ligand_ready = (flexaids::fs_safe::file_size_or(native_lig) > 0) ||
                            extract_ligand(native_structure, native_lig);
         }
 
@@ -4980,7 +4992,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_astex_nonnative() {
                 if (!download_structure(donor_upper, donor_dir, donor_structure)) continue;
 
                 std::string donor_lig = donor_dir + "/" + donor_upper + "_ligand.sdf";
-                if ((fs::exists(donor_lig) && fs::file_size(donor_lig) > 0) ||
+                if ((flexaids::fs_safe::file_size_or(donor_lig) > 0) ||
                     extract_ligand(donor_structure, donor_lig)) {
                     native_lig = donor_lig;
                     ligand_source = donor_upper;
@@ -5219,7 +5231,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_dud_e() {
             std::string mol2_path = entry_dir + "/crystal_ligand.mol2";
             http_download(url, mol2_path);
             // For consistency, if we got the mol2, we keep it; SDF conversion is optional
-            if (fs::exists(mol2_path) && fs::file_size(mol2_path) > 0) {
+            if (flexaids::fs_safe::file_size_or(mol2_path) > 0) {
                 ligand_path = mol2_path;
             }
         }
@@ -5227,10 +5239,10 @@ std::vector<DatasetEntry> DatasetRunner::fetch_dud_e() {
         DatasetEntry entry;
         entry.pdb_id = target;
         entry.source = "DUD-E";
-        if (fs::exists(receptor_path) && fs::file_size(receptor_path) > 100) {
+        if (flexaids::fs_safe::file_size_or(receptor_path) > 100) {
             entry.receptor_path = receptor_path;
         }
-        if (fs::exists(ligand_path) && fs::file_size(ligand_path) > 10) {
+        if (flexaids::fs_safe::file_size_or(ligand_path) > 10) {
             entry.ligand_path = ligand_path;
         }
         entries.push_back(std::move(entry));
@@ -5489,7 +5501,7 @@ std::vector<DatasetEntry> DatasetRunner::fetch_bindingdb_itc() {
 
             if (download_pdb(pdb_id, receptor_file)) {
                 entry.receptor_path = receptor_file;
-                if (!fs::exists(ligand_file) || fs::file_size(ligand_file) == 0) {
+                if (flexaids::fs_safe::file_size_or(ligand_file) == 0) {
                     if (extract_ligand(receptor_file, ligand_file)) {
                         entry.ligand_path = ligand_file;
                     }
@@ -6406,7 +6418,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
 
             const std::string result_csv_path = out_dir + "/result.csv";
             try {
-                if (fs::exists(result_csv_path) && fs::file_size(result_csv_path) > 0) {
+                // Inside a try, so this was never an abort risk -- converted
+                // anyway so the invariant for this file is the simple one
+                // ("no throwing file_size here") rather than one that depends
+                // on a surrounding try block staying where it is.
+                if (flexaids::fs_safe::file_size_or(result_csv_path) > 0) {
                     std::ifstream csv(result_csv_path);
                     std::string header;
                     std::string row;
@@ -6495,7 +6511,7 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 cached_csv_success = false;
             }
 
-            const bool cached_stdout = fs::exists(stdout_path) && fs::file_size(stdout_path) > 0;
+            const bool cached_stdout = flexaids::fs_safe::file_size_or(stdout_path) > 0;
             const bool cached_csv_complete = (cached_csv_num_poses > 0) || cached_csv_success;
             if (cached_csv_complete || (cached_poses > 0 && cached_stdout)) {
                 skip = true;
@@ -7452,7 +7468,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 const std::string& dd_override = protocol_cfg_.data_dir;
                 if (!dd_override.empty() &&
                     fs::exists(dd_override + "/MC_st0r5.2_6.dat")) {
-                    const std::string canon = fs::canonical(dd_override).string();
+                    // canonical() throws when any component is missing; this
+                    // runs once per docking target, so that abort lands mid
+                    // campaign. Fall back to the path as given -- the
+                    // is_safe_exec_path() check below still gates it.
+                    const std::string canon = flexaids::fs_safe::canonical_or(dd_override);
                     if (!is_safe_exec_path(canon)) {
                         throw std::runtime_error(
                             "FLEXAIDDS_DATA_DIR/path is unsafe for shell (NUL/newline/control)");
@@ -7467,11 +7487,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                     const std::string wrk_candidate = bin_dir + "/../WRK";
                     if (fs::exists(staged_candidate + "/MC_st0r5.2_6.dat")) {
                         data_dir_arg = " --data-dir " +
-                                       shell_quote(fs::canonical(staged_candidate).string()) + " ";
+                                       shell_quote(flexaids::fs_safe::canonical_or(staged_candidate)) + " ";
                         selected_matrix_path = staged_candidate + "/MC_st0r5.2_6.dat";
                     } else if (fs::exists(wrk_candidate + "/MC_st0r5.2_6.dat")) {
                         data_dir_arg = " --data-dir " +
-                                       shell_quote(fs::canonical(wrk_candidate).string()) + " ";
+                                       shell_quote(flexaids::fs_safe::canonical_or(wrk_candidate)) + " ";
                         selected_matrix_path = wrk_candidate + "/MC_st0r5.2_6.dat";
                     }
                 }
@@ -7613,12 +7633,11 @@ BenchmarkReport DatasetRunner::run(const std::vector<DatasetEntry>& entries,
                 config.mode != BenchmarkMode::ORACLE_CEILING)
             {
                 std::string prepped = out_dir + "/" + entry.pdb_id + "_prepped.pdb";
-                bool need_prep =
-                    !fs::exists(prepped) ||
-                    fs::last_write_time(prepped) <
-                        fs::last_write_time(entry.receptor_path) ||
-                    fs::last_write_time(prepped) <
-                        fs::last_write_time(entry.binding_site_path);
+                // Re-prep whenever freshness cannot be PROVEN. Reusing an
+                // unverifiable rotamer-prepped receptor would change docked
+                // geometry with no trace in the receipt.
+                const bool need_prep = flexaids::fs_safe::out_of_date(
+                    prepped, {entry.receptor_path, entry.binding_site_path});
 
                 if (need_prep) {
                     int n_mod = receptor_prep::prep_receptor_rotamers(
