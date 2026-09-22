@@ -5,6 +5,7 @@
 
 #include "BustCli.h"
 #include "shell_exec.h"
+#include "../fs_safe.h"
 
 #include <cctype>
 #include <cstdio>
@@ -179,7 +180,11 @@ std::string resolve_bust_binary() {
     // Common relative to cwd / repo
     for (const char* rel : {".venv-posebusters/bin/bust",
                             "../.venv-posebusters/bin/bust"}) {
-        if (file_executable(rel)) return fs::absolute(rel).string();
+        // absolute() is not string concatenation: it calls current_path(),
+        // which THROWS when the process working directory has been deleted --
+        // the exact object an agent-harness sweep removes. Degrade to the
+        // relative path, which file_executable() just resolved successfully.
+        if (file_executable(rel)) return flexaids::fs_safe::absolute_or(rel);
     }
 #ifdef FLEXAIDDS_POSEBUSTERS_BIN_DEFAULT
     // Baked in by CMake's find_program(POSEBUSTERS_BIN ...) at configure time.

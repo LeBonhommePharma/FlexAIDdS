@@ -1670,8 +1670,38 @@ flexaids_add_unit_test(test_protocol_config
             LIB/PoseBust/ChecksProtein.cpp
             LIB/PoseBust/Engine.cpp
             LIB/PoseBust/BustCli.cpp
+            # REQUIRED, and it must stay inside SOURCES. ChecksChemistry.cpp and
+            # Engine.cpp call flexaids::temp_dir(), so without the definition TU
+            # this fixture fails to LINK:
+            #   Undefined symbols: "flexaids::temp_dir()", referenced from
+            #   flexaids::posebust::check_chemistry_sanity / validate_elected_pose
+            # That broke macOS CPU tests (blocking), tsan-linux and Coverage, all
+            # at the Build step. The Release job passed throughout because it
+            # builds NAMED targets only and never reaches this fixture.
+            #
+            # Placement is load-bearing: TEST_NAME is a cmake_parse_arguments
+            # oneValueArgs, so a source listed AFTER it becomes an UNPARSED
+            # argument and is silently dropped -- the fixture then still fails to
+            # link while the file appears in the block.
+            LIB/temp_dir.cpp
         INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PoseBust
         TEST_NAME PoseBustTests
+    )
+
+    # test_startup_diagnosis — a startup abort must be distinguishable from a
+    # docking failure. Needs LIB/benchmark_datasets.cpp's classifier, so it is
+    # NOT header-only. Left unwired this file is an ORPHAN and breaks every
+    # -DFLEXAIDS_STRICT_SOURCE_VALIDATION=ON configure in the project.
+    flexaids_add_unit_test(test_startup_diagnosis
+        SOURCES tests/test_startup_diagnosis.cpp
+    )
+
+    # test_temp_dir — never-throwing temp-directory resolver. Needs the real
+    # LIB/temp_dir.cpp (not header-only): the write probe and the fallback
+    # chain are the behaviour under test, and a stub would make the suite
+    # pass while the engine still aborts on a deleted TMPDIR.
+    flexaids_add_unit_test(test_temp_dir
+        SOURCES tests/test_temp_dir.cpp LIB/temp_dir.cpp
     )
 
     # test_soft_wall — overlap-based soft-core clash potential (header-only)
@@ -1951,6 +1981,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/shannon_ga.cpp
@@ -2013,6 +2044,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2293,6 +2325,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2353,6 +2386,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2410,6 +2444,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2470,6 +2505,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2527,6 +2563,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2586,6 +2623,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2646,6 +2684,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2704,6 +2743,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -2866,6 +2906,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -3084,6 +3125,7 @@ flexaids_add_unit_test(test_protocol_config
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
@@ -3764,6 +3806,7 @@ if(BUILD_SWIFT_BRIDGE)
         LIB/Vcontacts.cpp
         LIB/BindingMode.cpp
         LIB/pose_remarks.cpp
+        LIB/temp_dir.cpp
         LIB/encom.cpp
         LIB/geometry.cpp
         LIB/fast_optics.cpp

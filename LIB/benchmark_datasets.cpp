@@ -15,11 +15,42 @@
 // Copyright 2026 Le Bonhomme Pharma. Licensed under Apache-2.0.
 // =============================================================================
 
-#include "DatasetRunner.h"
-#include "BenchmarkRunner.h"
-#include "FleetRunner.h"
+// PROCESS EXIT CODES — a shell driver must be able to branch WITHOUT parsing
+// prose. Until 2026-09-20 every runtime failure left here as exit 2 with the
+// single line "ERROR: Incomplete docking", so an environment fault that killed
+// the engine at startup was indistinguishable from nine genuinely hard targets.
+// It took six hours and a manual stderr.log read to tell them apart.
+//
+//     0   every target completed at runtime level (poses written, clean exit)
+//     1   CLI / usage error                         [pre-existing, unchanged]
+//     2   generic incomplete docking, or Fleet chunk with no target results
+//                                                   [pre-existing, unchanged —
+//         still the value for any class this file has not learned to name, so
+//         a driver testing `rc -eq 2` keeps working]
+//     3   Fleet result publication failure          [pre-existing, unchanged]
+//
+//    20   engine_startup_abort    engine terminated through its own top-level
+//                                 handler with zero poses written
+//    21   engine_crash_midrun     same handler fired, but poses already existed
+//    22   timeout                 child killed after per_job_timeout_s
+//    23   engine_killed_signal    child did not exit normally, well under timeout
+//    24   engine_nonzero_exit     clean exit, nonzero status, no handler line
+//    25   ga_stuck_clashes        GA drowned in clashes (DockingResult::stuck)
+//    26   zero_poses_written      exit 0, ran to completion, wrote no poses
+//    27   engine_not_launched     no child was ever started for this target
+//    28   cached_row_incomplete   skip-cache replayed a row marked incomplete
+//    29   no_target_results       report carries no systems at all
+//    30   result_count_mismatch   results.size() != total_systems
+//
+// `rc != 0` remains the universal failure test; the granular codes are additive.
+// The dominant class is the most diagnostic-urgent one present, not the most
+// frequent: one engine_startup_abort in a chunk of eighty-five is an
+// environment fault that invalidates every target launched after it, whereas
+// eighty-four zero_poses_written rows are a docking result.
+// =============================================================================
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -33,7 +64,482 @@
 #include <thread>
 #include <vector>
 
+// The diagnosis classifier below is deliberately free of DatasetRunner /
+// BenchmarkRunner / FleetRunner so that tests/test_startup_diagnosis.cpp can
+// #include this translation unit and link against libc++ alone. Defining
+// FLEXAIDS_BENCHMARK_DATASETS_CLASSIFIER_ONLY compiles the classifier and
+// nothing else. Two guarded regions, both closed at the end of the file.
+#ifndef FLEXAIDS_BENCHMARK_DATASETS_CLASSIFIER_ONLY
+#include "DatasetRunner.h"
+#include "BenchmarkRunner.h"
+#include "FleetRunner.h"
+#include "fs_safe.h"
+#endif
+
 namespace fs = std::filesystem;
+
+// =============================================================================
+// startup_diag — name the failure class instead of the symptom
+//
+// WHY THIS EXISTS
+// ---------------
+// benchmark_runtime_exit_code() (LIB/DatasetRunner.h) collapses six distinct
+// conditions into one nonzero return, and this file printed one sentence for
+// all of them. On 2026-09-20 nine cells of an 85-target Astex campaign died
+// because $TMPDIR named a directory an agent harness had swept; the engine
+// threw out of read_input/direct_input, LIB/top.cpp's catch(std::exception)
+// printed "Fatal error: filesystem error: in temp_directory_path: ..." to the
+// child's stderr.log and returned 1, and the parent reported "Incomplete
+// docking". Nothing was wrong with those nine targets.
+//
+// The repair is not a better sentence. It is a classification the parent can
+// make from evidence it already holds, written to a machine-readable sidecar
+// and mapped onto a distinct process exit code, so a driver branches on rc and
+// a human reads the class name — neither has to grep a child log to find out
+// that the failure was environmental.
+//
+// WHAT THE CLASSIFIER IS ALLOWED TO USE
+// -------------------------------------
+// Only two kinds of evidence, both already on hand:
+//   (1) the per-target runtime fields of DockingResult — docking_exit_code,
+//       num_poses, docking_completed, stuck, wall_time_s;
+//   (2) two filesystem facts about <output_dir>/<pdb_id>/ (the layout fixed at
+//       DatasetRunner.cpp:6330) — whether the directory and its stderr.log
+//       exist, and whether that log's tail carries the engine's own top-level
+//       handler prefix.
+//
+// The vocabulary is closed and every term is decidable from the above. Two
+// terms that suggest themselves are deliberately ABSENT because this site
+// cannot produce them:
+//
+//   * poses_written_but_all_filtered — a target with poses > 0, exit 0 and
+//     !stuck has docking_completed == true and never trips
+//     benchmark_runtime_exit_code at all. Pose-level rejection is recorded in
+//     DockingResult::rmsd_fail_reason, which is a different axis. A class here
+//     would be unreachable.
+//   * input_missing — BenchmarkReport carries no input paths and main() has no
+//     entries vector, so the cause cannot be read. The observable is that no
+//     child process was ever started, which is named engine_not_launched.
+//     Calling that input_missing would assert a cause from an absence.
+// =============================================================================
+namespace startup_diag {
+
+enum class Class : int {
+    None = 0,
+    NoTargetResults,
+    ResultCountMismatch,
+    EngineNotLaunched,
+    EngineStartupAbort,
+    EngineCrashMidrun,
+    Timeout,
+    EngineKilledSignal,
+    EngineNonzeroExit,
+    GaStuckClashes,
+    ZeroPosesWritten,
+    CachedRowIncomplete,
+};
+
+// Stable strings. These land in a CSV column and a JSON field; downstream
+// readers match on them, so they are renamed only with the readers.
+inline const char* to_string(Class c) {
+    switch (c) {
+        case Class::None:                return "none";
+        case Class::NoTargetResults:     return "no_target_results";
+        case Class::ResultCountMismatch: return "result_count_mismatch";
+        case Class::EngineNotLaunched:   return "engine_not_launched";
+        case Class::EngineStartupAbort:  return "engine_startup_abort";
+        case Class::EngineCrashMidrun:   return "engine_crash_midrun";
+        case Class::Timeout:             return "timeout";
+        case Class::EngineKilledSignal:  return "engine_killed_signal";
+        case Class::EngineNonzeroExit:   return "engine_nonzero_exit";
+        case Class::GaStuckClashes:      return "ga_stuck_clashes";
+        case Class::ZeroPosesWritten:    return "zero_poses_written";
+        case Class::CachedRowIncomplete: return "cached_row_incomplete";
+    }
+    return "unclassified";
+}
+
+// Exit-code map. The table lives in the banner at the top of this file; this
+// function is the single implementation of it. 0/1/2/3 are pre-existing and
+// are not reassigned.
+inline int exit_code_for(Class c) {
+    switch (c) {
+        case Class::None:                return 0;
+        case Class::EngineStartupAbort:  return 20;
+        case Class::EngineCrashMidrun:   return 21;
+        case Class::Timeout:             return 22;
+        case Class::EngineKilledSignal:  return 23;
+        case Class::EngineNonzeroExit:   return 24;
+        case Class::GaStuckClashes:      return 25;
+        case Class::ZeroPosesWritten:    return 26;
+        case Class::EngineNotLaunched:   return 27;
+        case Class::CachedRowIncomplete: return 28;
+        case Class::NoTargetResults:     return 29;
+        case Class::ResultCountMismatch: return 30;
+    }
+    return 2;  // unnamed class keeps the legacy generic code
+}
+
+// Diagnostic urgency, not frequency. An environment fault ranks above any
+// docking outcome because it invalidates everything launched after it.
+inline int severity_rank(Class c) {
+    switch (c) {
+        case Class::None:                return 0;
+        case Class::CachedRowIncomplete: return 1;
+        case Class::ZeroPosesWritten:    return 2;
+        case Class::GaStuckClashes:      return 3;
+        case Class::EngineNonzeroExit:   return 4;
+        case Class::Timeout:             return 5;
+        case Class::EngineKilledSignal:  return 6;
+        case Class::EngineCrashMidrun:   return 7;
+        case Class::ResultCountMismatch: return 8;
+        case Class::NoTargetResults:     return 9;
+        case Class::EngineNotLaunched:   return 10;
+        case Class::EngineStartupAbort:  return 11;
+    }
+    return 0;
+}
+
+// The runtime facts the classifier reads, lifted out of DockingResult so the
+// classifier stays independent of DatasetRunner.h and remains unit-testable.
+struct TargetFacts {
+    std::string pdb_id;
+    int    docking_exit_code{-1};
+    int    num_poses{0};
+    bool   docking_completed{false};
+    bool   stuck{false};
+    double wall_time_s{0.0};
+};
+
+struct ChildEvidence {
+    bool out_dir_exists{false};
+    bool stderr_log_exists{false};
+    bool engine_terminal_handler{false};   // engine died through its own catch
+    std::string stderr_log_path;
+    std::vector<std::string> stderr_tail;  // last few lines, sanitized
+};
+
+// Literals emitted by the engine's own top-level handlers in LIB/top.cpp:
+//   3890  fprintf(stderr, "%sFlexAID Error:%s %s\n", ...)   FlexAIDException
+//   3892  fprintf(stderr, "Fatal error: %s\n", e.what());   std::exception
+// Both run immediately before main() returns, so their presence means the
+// engine terminated through an exception rather than finishing. Matching an
+// exact substring the engine itself prints is not prose-parsing: these are
+// format strings in this repository, and a test pins them.
+inline bool line_has_engine_terminal_handler(const std::string& line) {
+    return line.find("Fatal error: ") != std::string::npos ||
+           line.find("FlexAID Error:") != std::string::npos;
+}
+
+// Read the tail of the child's stderr.log. Never throws: every filesystem call
+// uses the error_code overload, and an unreadable log degrades to "no
+// evidence" rather than taking the parent down — which is the whole lesson of
+// the incident this file is hardening against.
+//
+// The window is bounded at kTailBytes because a healthy run's stderr.log is
+// megabytes. That bound is safe for the marker search: both handlers fire
+// immediately before process exit, so a terminal marker is always within the
+// last few lines. A "Fatal error: " further back would not be the terminal one.
+inline ChildEvidence read_child_evidence(const std::string& out_dir,
+                                         std::size_t tail_lines = 6) {
+    constexpr std::streamoff kTailBytes = 8192;
+    ChildEvidence ev;
+
+    std::error_code ec;
+    ev.out_dir_exists = fs::is_directory(fs::path(out_dir), ec) && !ec;
+
+    const std::string log_path = out_dir + "/stderr.log";
+    ev.stderr_log_path = log_path;
+
+    ec.clear();
+    const bool is_file = fs::is_regular_file(fs::path(log_path), ec) && !ec;
+    if (!is_file) return ev;
+    ev.stderr_log_exists = true;
+
+    std::ifstream in(log_path, std::ios::binary | std::ios::ate);
+    if (!in) return ev;
+    const std::streamoff size = static_cast<std::streamoff>(in.tellg());
+    const std::streamoff start = (size > kTailBytes) ? (size - kTailBytes) : 0;
+    in.seekg(start, std::ios::beg);
+
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty()) continue;
+        lines.push_back(line);
+    }
+    // A truncated first line is an artifact of the byte window, not content.
+    if (start > 0 && !lines.empty()) lines.erase(lines.begin());
+
+    for (const auto& l : lines) {
+        if (line_has_engine_terminal_handler(l)) { ev.engine_terminal_handler = true; break; }
+    }
+
+    const std::size_t keep = (lines.size() > tail_lines) ? tail_lines : lines.size();
+    for (std::size_t i = lines.size() - keep; i < lines.size(); ++i) {
+        std::string s = lines[i];
+        if (s.size() > 300) s = s.substr(0, 300) + " …";
+        // Strip control bytes (the engine colourises some handlers) so the tail
+        // is safe to paste into a CSV cell or a JSON string.
+        std::string clean;
+        clean.reserve(s.size());
+        for (unsigned char ch : s) {
+            if (ch == '\t') { clean.push_back(' '); continue; }
+            if (ch >= 0x20 || ch >= 0x80) clean.push_back(static_cast<char>(ch));
+        }
+        ev.stderr_tail.push_back(clean);
+    }
+    return ev;
+}
+
+// Order is the contract. Each test is reached only when every test above it
+// has been ruled out, so later branches may assume the earlier conditions are
+// false — that is what keeps the classes disjoint.
+inline Class classify_target(const TargetFacts& f,
+                             const ChildEvidence& ev,
+                             int per_job_timeout_s) {
+    // 1. Healthy: exactly the conjunction benchmark_runtime_exit_code requires.
+    if (f.docking_completed && f.docking_exit_code == 0 &&
+        f.num_poses > 0 && !f.stuck) {
+        return Class::None;
+    }
+    // 2. No child ran. DatasetRunner launches via `sh -c "... 2>DIR/stderr.log"`,
+    //    so the shell creates stderr.log before the engine gets control: its
+    //    absence means the fork/exec never happened for this target.
+    if (!ev.out_dir_exists || !ev.stderr_log_exists) {
+        return Class::EngineNotLaunched;
+    }
+    // 3. The engine terminated through its own top-level handler. Whether that
+    //    counts as "startup" is decided by output, not by timing: zero poses
+    //    means it died before producing any, which is the incident signature.
+    if (ev.engine_terminal_handler) {
+        return (f.num_poses > 0) ? Class::EngineCrashMidrun
+                                 : Class::EngineStartupAbort;
+    }
+    // 4. SubprocessGuard::wait_with_timeout (DatasetRunner.cpp:451) returns
+    //    WIFEXITED(status) ? WEXITSTATUS(status) : -1, and -1 again on timeout
+    //    and on an unwaitable child. A negative code therefore means "did not
+    //    exit normally" and NOTHING finer. Wall time against the configured
+    //    budget is the only evidence that separates the timeout case.
+    if (f.docking_exit_code < 0) {
+        const bool hit_budget =
+            per_job_timeout_s > 0 &&
+            f.wall_time_s >= 0.95 * static_cast<double>(per_job_timeout_s);
+        return hit_budget ? Class::Timeout : Class::EngineKilledSignal;
+    }
+    // 5. Clean exit, nonzero status, no handler line: the engine chose to fail
+    //    and said so somewhere other than its terminal handler.
+    if (f.docking_exit_code > 0) {
+        return Class::EngineNonzeroExit;
+    }
+    // 6-8. Exit 0 from here down.
+    if (f.stuck)           return Class::GaStuckClashes;
+    if (f.num_poses <= 0)  return Class::ZeroPosesWritten;
+    // Poses, clean exit, not stuck, yet not completed: the only remaining
+    // producer is the skip-cache branch replaying a cached row whose
+    // docking_completed cell was false (DatasetRunner.cpp:8245).
+    return Class::CachedRowIncomplete;
+}
+
+struct TargetDiagnosis {
+    TargetFacts   facts;
+    Class         cls{Class::None};
+    std::string   child_stderr_log;
+    std::vector<std::string> stderr_tail;
+};
+
+struct RunDiagnosis {
+    std::string dataset_name;
+    Class       dominant{Class::None};
+    int         process_exit_code{0};
+    int         n_targets{0};
+    std::vector<TargetDiagnosis> targets;
+    std::vector<std::string>     startup_abort_targets;
+    // Populated from the first startup abort seen, which is the one worth
+    // quoting: in the 2026-09-20 pattern every later casualty carries the same
+    // environmental message.
+    std::string first_abort_pdb_id;
+    std::string first_abort_log_path;
+    std::vector<std::string> first_abort_stderr_tail;
+};
+
+inline std::string safe_dataset_name(std::string name) {
+    // Mirrors DatasetRunner::write_report so the sidecar lands beside
+    // <safe_name>_results.csv rather than in a name of its own invention.
+    std::replace(name.begin(), name.end(), ' ', '_');
+    std::replace(name.begin(), name.end(), '-', '_');
+    std::transform(name.begin(), name.end(), name.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return name;
+}
+
+inline std::string csv_escape(const std::string& v) {
+    bool needs = v.find_first_of(",\"\n") != std::string::npos;
+    if (!needs) return v;
+    std::string out = "\"";
+    for (char c : v) { if (c == '"') out += "\"\""; else out += c; }
+    out += "\"";
+    return out;
+}
+
+inline std::string json_escape(const std::string& v) {
+    std::string out;
+    out.reserve(v.size() + 8);
+    for (unsigned char c : v) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (c < 0x20) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); out += b; }
+                else out += static_cast<char>(c);
+        }
+    }
+    return out;
+}
+
+// ── Sidecar schema ───────────────────────────────────────────────────────
+// APPEND-ONLY. New columns go at the END, header and row changed in the same
+// edit, and schema_version increments. Never reorder, never rename, never
+// insert: a column added in the middle silently shifts every later named field
+// in every downstream reader, which this project has already been bitten by.
+// tests/test_startup_diagnosis_contract.py pins this prefix.
+inline constexpr int kDiagnosisSchemaVersion = 1;
+
+inline const char* diagnosis_csv_header() {
+    return "pdb_id,failure_reason,failure_exit_code,docking_exit_code,num_poses,"
+           "docking_completed,stuck,wall_time_s,child_stderr_log,schema_version";
+}
+
+inline std::string diagnosis_csv_row(const TargetDiagnosis& t) {
+    std::ostringstream os;
+    os << csv_escape(t.facts.pdb_id) << ','
+       << to_string(t.cls) << ','
+       << exit_code_for(t.cls) << ','
+       << t.facts.docking_exit_code << ','
+       << t.facts.num_poses << ','
+       << (t.facts.docking_completed ? 1 : 0) << ','
+       << (t.facts.stuck ? 1 : 0) << ','
+       << t.facts.wall_time_s << ','
+       << csv_escape(t.child_stderr_log) << ','
+       << kDiagnosisSchemaVersion;
+    return os.str();
+}
+
+// Atomic publish: write beside the destination, then rename. A reader that
+// opens the path mid-write sees either the previous file or the new one, never
+// a half-written header. Returns false rather than throwing.
+inline bool write_text_atomic(const std::string& path, const std::string& body) {
+    const std::string tmp = path + ".tmp";
+    {
+        std::ofstream ofs(tmp, std::ios::binary | std::ios::trunc);
+        if (!ofs) return false;
+        ofs << body;
+        ofs.flush();
+        if (!ofs) return false;
+    }
+    std::error_code ec;
+    fs::rename(fs::path(tmp), fs::path(path), ec);
+    if (ec) { std::error_code rm; fs::remove(fs::path(tmp), rm); return false; }
+    return true;
+}
+
+inline std::string render_diagnosis_csv(const RunDiagnosis& run) {
+    std::ostringstream os;
+    os << diagnosis_csv_header() << '\n';
+    for (const auto& t : run.targets) os << diagnosis_csv_row(t) << '\n';
+    return os.str();
+}
+
+inline std::string render_diagnosis_json(const RunDiagnosis& run) {
+    // Counts over the closed vocabulary, emitted only for classes present.
+    std::vector<std::pair<std::string, int>> counts;
+    for (const auto& t : run.targets) {
+        const std::string key = to_string(t.cls);
+        bool found = false;
+        for (auto& kv : counts) if (kv.first == key) { kv.second++; found = true; break; }
+        if (!found) counts.emplace_back(key, 1);
+    }
+
+    std::ostringstream os;
+    os << "{\n";
+    os << "  \"schema_version\": " << kDiagnosisSchemaVersion << ",\n";
+    os << "  \"generated_by\": \"LIB/benchmark_datasets.cpp\",\n";
+    os << "  \"dataset\": \"" << json_escape(run.dataset_name) << "\",\n";
+    os << "  \"run_failure_reason\": \"" << to_string(run.dominant) << "\",\n";
+    os << "  \"process_exit_code\": " << run.process_exit_code << ",\n";
+    os << "  \"n_targets\": " << run.n_targets << ",\n";
+    os << "  \"counts\": {";
+    for (std::size_t i = 0; i < counts.size(); ++i) {
+        os << (i ? ", " : " ") << "\"" << json_escape(counts[i].first) << "\": " << counts[i].second;
+    }
+    os << (counts.empty() ? "}" : " }") << ",\n";
+    os << "  \"startup_abort_targets\": [";
+    for (std::size_t i = 0; i < run.startup_abort_targets.size(); ++i) {
+        os << (i ? ", " : "") << "\"" << json_escape(run.startup_abort_targets[i]) << "\"";
+    }
+    os << "],\n";
+    os << "  \"first_startup_abort\": ";
+    if (run.first_abort_pdb_id.empty()) {
+        os << "null\n";
+    } else {
+        os << "{\n";
+        os << "    \"pdb_id\": \"" << json_escape(run.first_abort_pdb_id) << "\",\n";
+        os << "    \"child_stderr_log\": \"" << json_escape(run.first_abort_log_path) << "\",\n";
+        os << "    \"stderr_tail\": [";
+        for (std::size_t i = 0; i < run.first_abort_stderr_tail.size(); ++i) {
+            os << (i ? ", " : "") << "\"" << json_escape(run.first_abort_stderr_tail[i]) << "\"";
+        }
+        os << "]\n  }\n";
+    }
+    os << "}\n";
+    return os.str();
+}
+
+// The human message. It keeps the historical "Incomplete docking" wording so a
+// log grep for it still hits, but the class name and the child log path are on
+// the same line, and a startup abort quotes the child's own last words. The
+// nine-cell incident would have been over in one minute with this output.
+inline void print_human_summary(const RunDiagnosis& run, std::ostream& os) {
+    if (run.dominant == Class::None) return;
+
+    os << "ERROR: Incomplete docking [failure_reason=" << to_string(run.dominant)
+       << " exit_code=" << run.process_exit_code << "]\n";
+
+    if (run.dominant == Class::EngineStartupAbort ||
+        run.dominant == Class::EngineCrashMidrun) {
+        os << "  The ENGINE terminated through its own top-level handler. This is "
+              "not a docking\n"
+              "  result — the targets below were never given a chance to dock. "
+              "Check the\n"
+              "  environment (TMPDIR, data dir, input paths) before re-queuing "
+              "anything.\n";
+    }
+    if (!run.startup_abort_targets.empty()) {
+        os << "  startup-aborted targets (" << run.startup_abort_targets.size()
+           << "):";
+        std::size_t shown = 0;
+        for (const auto& id : run.startup_abort_targets) {
+            if (shown++ == 12) { os << " …"; break; }
+            os << ' ' << id;
+        }
+        os << "\n";
+    }
+    if (!run.first_abort_stderr_tail.empty()) {
+        os << "  child stderr — " << run.first_abort_log_path << "\n";
+        for (const auto& l : run.first_abort_stderr_tail) os << "    | " << l << "\n";
+    }
+    os << "  per-target classes: see <output_dir>/"
+       << safe_dataset_name(run.dataset_name)
+       << "_failure_diagnosis.csv (column failure_reason)\n";
+}
+
+}  // namespace startup_diag
+
+#ifndef FLEXAIDS_BENCHMARK_DATASETS_CLASSIFIER_ONLY
 
 static void print_usage(const char* progname) {
     printf("FlexAIDdS Benchmark Dataset Runner\n\n");
@@ -362,7 +868,8 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
         }
         std::string content((std::istreambuf_iterator<char>(ifs)),
                              std::istreambuf_iterator<char>());
-        const fs::path json_base = fs::absolute(fs::path(json_file)).parent_path();
+        const fs::path json_base =
+            fs::path(flexaids::fs_safe::absolute_or(json_file)).parent_path();
 
         // Minimal JSON string-field extractor (no external JSON lib needed).
         auto extract_str = [&](const std::string& obj, const std::string& key) -> std::string {
@@ -455,6 +962,90 @@ static dataset::BenchmarkReport run_single_benchmark(const std::string& name,
     return {};
 }
 
+// Bridge from BenchmarkReport to the classifier, and publisher of the sidecar.
+// Deliberately NOT inside namespace startup_diag: keeping the classifier free
+// of DatasetRunner.h is what lets the unit test compile it against libc++
+// alone, and that property is easy to lose by accident.
+//
+// It publishes two files next to the report write_report() just wrote:
+//   <output_dir>/<safe_dataset>_failure_diagnosis.csv   one row per target
+//   <output_dir>/<safe_dataset>_failure_diagnosis.json  run-level + stderr tail
+// Both are NEW files. No existing CSV is opened, re-read or rewritten: adding
+// failure_reason to <dataset>_results.csv would mean a read-modify-write of a
+// file a live campaign is appending to, and the column belongs in the writer
+// (DatasetRunner::write_report) rather than in a post-pass here.
+static startup_diag::RunDiagnosis diagnose_and_publish(
+        const dataset::BenchmarkReport& report,
+        const dataset::DockingConfig& config,
+        const std::string& fallback_dataset_name,
+        bool no_docking) {
+    using namespace startup_diag;
+
+    RunDiagnosis run;
+    run.dataset_name = report.dataset_name.empty() ? fallback_dataset_name
+                                                   : report.dataset_name;
+    run.n_targets = static_cast<int>(report.results.size());
+    if (no_docking) return run;   // --prepare-only / --list-codes: nothing ran
+
+    // Report-level conditions first, in the order benchmark_runtime_exit_code
+    // tests them (LIB/DatasetRunner.h:427). Both short-circuit: with no results
+    // at all, or a count that disagrees with total_systems, no per-target class
+    // would be trustworthy.
+    if (report.total_systems <= 0) {
+        run.dominant = Class::NoTargetResults;
+        run.process_exit_code = exit_code_for(run.dominant);
+        return run;
+    }
+    if (report.results.size() != static_cast<std::size_t>(report.total_systems)) {
+        run.dominant = Class::ResultCountMismatch;
+        run.process_exit_code = exit_code_for(run.dominant);
+        return run;
+    }
+
+    for (const auto& r : report.results) {
+        TargetFacts f;
+        f.pdb_id            = r.pdb_id;
+        f.docking_exit_code = r.docking_exit_code;
+        f.num_poses         = r.num_poses;
+        f.docking_completed = r.docking_completed;
+        f.stuck             = r.stuck;
+        f.wall_time_s       = r.wall_time_s;
+
+        // Per-target directory layout is fixed at DatasetRunner.cpp:6330.
+        const ChildEvidence ev =
+            read_child_evidence(config.output_dir + "/" + r.pdb_id);
+
+        TargetDiagnosis td;
+        td.facts            = f;
+        td.cls              = classify_target(f, ev, config.per_job_timeout_s);
+        td.child_stderr_log = ev.stderr_log_path;
+        td.stderr_tail      = ev.stderr_tail;
+
+        if (td.cls == Class::EngineStartupAbort) {
+            run.startup_abort_targets.push_back(f.pdb_id);
+            if (run.first_abort_pdb_id.empty()) {
+                run.first_abort_pdb_id      = f.pdb_id;
+                run.first_abort_log_path    = ev.stderr_log_path;
+                run.first_abort_stderr_tail = ev.stderr_tail;
+            }
+        }
+        if (severity_rank(td.cls) > severity_rank(run.dominant)) run.dominant = td.cls;
+        run.targets.push_back(std::move(td));
+    }
+    run.process_exit_code = exit_code_for(run.dominant);
+
+    std::error_code ec;
+    fs::create_directories(fs::path(config.output_dir), ec);
+    const std::string base = config.output_dir + "/" +
+                             safe_dataset_name(run.dataset_name) + "_failure_diagnosis";
+    // A sidecar that cannot be written must not change the run's outcome.
+    if (!write_text_atomic(base + ".csv", render_diagnosis_csv(run)))
+        std::cerr << "  [WARN] could not publish " << base << ".csv\n";
+    if (!write_text_atomic(base + ".json", render_diagnosis_json(run)))
+        std::cerr << "  [WARN] could not publish " << base << ".json\n";
+    return run;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         print_usage(argv[0]);
@@ -467,7 +1058,7 @@ int main(int argc, char** argv) {
     // build_lto/benchmark_datasets invocation from silently using build/FlexAIDdS.
     if (std::getenv("FLEXAIDDS_BINARY") == nullptr) {
         std::error_code exe_ec;
-        fs::path runner_path = fs::weakly_canonical(fs::absolute(argv[0]), exe_ec);
+        fs::path runner_path = fs::weakly_canonical(flexaids::fs_safe::absolute_or(argv[0]), exe_ec);
         if (!exe_ec) {
             const fs::path sibling = runner_path.parent_path() / "FlexAIDdS";
             if (fs::is_regular_file(sibling, exe_ec) && !exe_ec) {
@@ -755,6 +1346,10 @@ int main(int argc, char** argv) {
     std::cout << "\n";
 
     int runtime_exit_code = 0;
+    // benchmark_runtime_exit_code() stays the sole authority on WHETHER the run
+    // failed — this change renames failures, it does not reclassify any run as
+    // passing. `worst` only supplies the name and the granular code.
+    startup_diag::RunDiagnosis worst;
     // Handle "all" benchmark
     if (benchmark_name == "all") {
         std::vector<std::string> all_benchmarks = {
@@ -769,8 +1364,24 @@ int main(int argc, char** argv) {
             std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
             auto report = run_single_benchmark(name, runner, config, prepare_only, list_codes_only, only_codes);
-            runtime_exit_code = std::max(runtime_exit_code,
-                dataset::benchmark_runtime_exit_code(report, prepare_only || list_codes_only));
+            const bool no_docking = prepare_only || list_codes_only;
+            const int legacy_rc =
+                dataset::benchmark_runtime_exit_code(report, no_docking);
+            const auto diag = diagnose_and_publish(report, config, name, no_docking);
+            if (legacy_rc != 0) {
+                // Worst ACROSS benchmarks is chosen by diagnostic urgency, not
+                // by numeric code: 30 (result_count_mismatch) is a larger
+                // integer than 20 (engine_startup_abort) and a far less
+                // actionable finding, so std::max over the codes would bury the
+                // one class that means "stop and fix the environment".
+                if (startup_diag::severity_rank(diag.dominant) >
+                    startup_diag::severity_rank(worst.dominant)) {
+                    worst = diag;
+                }
+                runtime_exit_code = (worst.dominant != startup_diag::Class::None)
+                    ? worst.process_exit_code
+                    : std::max(runtime_exit_code, legacy_rc);
+            }
         }
 
         // Print combined summary
@@ -781,8 +1392,16 @@ int main(int argc, char** argv) {
         const auto fleet_started = std::chrono::steady_clock::now();
         auto report = run_single_benchmark(benchmark_name, runner, config, prepare_only, list_codes_only, only_codes);
 
-        runtime_exit_code = dataset::benchmark_runtime_exit_code(
-            report, prepare_only || list_codes_only);
+        const bool no_docking = prepare_only || list_codes_only;
+        runtime_exit_code = dataset::benchmark_runtime_exit_code(report, no_docking);
+        worst = diagnose_and_publish(report, config, benchmark_name, no_docking);
+        // FAIL-CLOSED COMPOSITION. The legacy predicate decides pass/fail; the
+        // classifier only supplies a name and a finer code. If the predicate
+        // says "failed" and the classifier found no class, the generic 2 is
+        // kept — an unnamed failure must never be promoted to success, and a
+        // disagreement between the two is itself worth seeing in the message.
+        if (runtime_exit_code != 0 && worst.dominant != startup_diag::Class::None)
+            runtime_exit_code = worst.process_exit_code;
         if (fleet_mode) {
             const double duration_s = std::chrono::duration<double>(
                 std::chrono::steady_clock::now() - fleet_started).count();
@@ -792,8 +1411,8 @@ int main(int argc, char** argv) {
                 command << argv[i];
             }
             std::error_code path_error;
-            fs::path runner_path = fs::weakly_canonical(fs::absolute(argv[0]), path_error);
-            if (path_error) runner_path = fs::absolute(argv[0]);
+            fs::path runner_path = fs::weakly_canonical(flexaids::fs_safe::absolute_or(argv[0]), path_error);
+            if (path_error) runner_path = flexaids::fs_safe::absolute_or(argv[0]);
             const char* engine_env = std::getenv("FLEXAIDDS_BINARY");
             fleet::ChunkMetadata metadata{
                 campaign_id,
@@ -824,7 +1443,23 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (runtime_exit_code != 0)
-        std::cerr << "ERROR: Incomplete docking; inspect per-target runtime fields and child logs\n";
+    // The literal "ERROR: Incomplete docking" is retained in both arms so an
+    // existing log grep still matches; what changed is that the class name, the
+    // granular exit code and the child log path now travel with it.
+    if (runtime_exit_code != 0) {
+        if (worst.dominant != startup_diag::Class::None) {
+            startup_diag::print_human_summary(worst, std::cerr);
+        } else {
+            // benchmark_runtime_exit_code() failed the run while the classifier
+            // named nothing. That is a gap in the vocabulary, not a clean run,
+            // so it keeps the legacy code and says which state it was in.
+            std::cerr << "ERROR: Incomplete docking [failure_reason=unclassified"
+                         " exit_code=" << runtime_exit_code << "]; the runtime"
+                         " predicate failed but no failure class matched."
+                         " Inspect per-target runtime fields and child logs\n";
+        }
+    }
     return runtime_exit_code;
 }
+
+#endif  // FLEXAIDS_BENCHMARK_DATASETS_CLASSIFIER_ONLY

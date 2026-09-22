@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <random>
 #include <filesystem>
+#include "temp_dir.h"
 
 /*****************************************************************************
  * compute_mif_and_reflig — MIF computation, grid prioritization, RefLig seeding
@@ -391,7 +392,7 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	}
 
 	// Create the new filename with _tmp_random
-	const std::string tmpdir = std::filesystem::temp_directory_path().string();
+	const std::string tmpdir = flexaids::temp_dir();
 	snprintf(tmpprotname, MAX_PATH__, "%s/flexaid_receptor_%d.pdb",
 	         tmpdir.c_str(), random_num);
 

@@ -141,9 +141,16 @@ static thread_local PBClashGridCache pb_cache;
 // ~1.9-2.3 A, well inside pb_clash_ratio*(vdw_i+vdw_j), so without this they
 // are scored as hard clashes and fight the cf.metal_coord Morse reward.
 // Default OFF → the pair set is unchanged and CF is bit-identical.
-static const bool pb_metal_carveout =
-    (std::getenv("FLEXAIDDS_PB_METAL_CARVEOUT") != nullptr &&
-     std::getenv("FLEXAIDDS_PB_METAL_CARVEOUT")[0] != '0');
+// EMPTY-STRING HAZARD, fixed 2026-09-21: the previous form was
+//     getenv(X) != nullptr && getenv(X)[0] != '0'
+// An empty value is a NON-NULL pointer whose first byte is '\0', and
+// '\0' != '0' is true, so X="" -- the natural shell idiom for "off" --
+// turned this gate ON. flexaids::env_bool returns the fallback on an empty
+// or whitespace-only value and accepts 0/false/no/off. Same fix as
+// FLEXAIDDS_WAL_C1. Peers that were already safe test [0] != '\0' first
+// (BindingMode.cpp:831, ProtocolConfig.cpp:327, Vcontacts.cpp:2678);
+// these three did not.
+static const bool pb_metal_carveout = flexaids::env_bool("FLEXAIDDS_PB_METAL_CARVEOUT", false);
 
 // FLEXAIDDS_PB_VDW_CACHED (truthy, default OFF): read the precomputed
 // atoms[].pb_vdw_radius (populated once in update_optres() from the structure
@@ -168,9 +175,16 @@ static const bool pb_metal_carveout =
 // Enabling this widens the clash cutoff for I/Na/K toward the chemically correct
 // radius, but it is a scoring change and must be benchmarked before it becomes a
 // default. Default OFF → bit-identical.
-static const bool pb_vdw_cached =
-    (std::getenv("FLEXAIDDS_PB_VDW_CACHED") != nullptr &&
-     std::getenv("FLEXAIDDS_PB_VDW_CACHED")[0] != '0');
+// EMPTY-STRING HAZARD, fixed 2026-09-21: the previous form was
+//     getenv(X) != nullptr && getenv(X)[0] != '0'
+// An empty value is a NON-NULL pointer whose first byte is '\0', and
+// '\0' != '0' is true, so X="" -- the natural shell idiom for "off" --
+// turned this gate ON. flexaids::env_bool returns the fallback on an empty
+// or whitespace-only value and accepts 0/false/no/off. Same fix as
+// FLEXAIDDS_WAL_C1. Peers that were already safe test [0] != '\0' first
+// (BindingMode.cpp:831, ProtocolConfig.cpp:327, Vcontacts.cpp:2678);
+// these three did not.
+static const bool pb_vdw_cached = flexaids::env_bool("FLEXAIDDS_PB_VDW_CACHED", false);
 
 // FLEXAIDDS_PB_POCKET_DEBUG: emit the per-eval [PB_POCKET] trace line.
 static const bool pb_pocket_debug =
@@ -179,9 +193,16 @@ static const bool pb_pocket_debug =
 // FLEXAIDDS_WAL_COERCIVE: remove WAL_CONTACT_CAP ceiling on the soft-core
 // fitness wall so deep clashes can overcome unbounded CF.com overpacking.
 // Default OFF → bit-identical to current behaviour.
-static const bool wal_coercive =
-    (std::getenv("FLEXAIDDS_WAL_COERCIVE") != nullptr &&
-     std::getenv("FLEXAIDDS_WAL_COERCIVE")[0] != '0');
+// EMPTY-STRING HAZARD, fixed 2026-09-21: the previous form was
+//     getenv(X) != nullptr && getenv(X)[0] != '0'
+// An empty value is a NON-NULL pointer whose first byte is '\0', and
+// '\0' != '0' is true, so X="" -- the natural shell idiom for "off" --
+// turned this gate ON. flexaids::env_bool returns the fallback on an empty
+// or whitespace-only value and accepts 0/false/no/off. Same fix as
+// FLEXAIDDS_WAL_C1. Peers that were already safe test [0] != '\0' first
+// (BindingMode.cpp:831, ProtocolConfig.cpp:327, Vcontacts.cpp:2678);
+// these three did not.
+static const bool wal_coercive = flexaids::env_bool("FLEXAIDDS_WAL_COERCIVE", false);
 // FLEXAIDDS_WAL_STIFF: override k_wal (default WAL_CONTACT_CAP=50) for
 // stiffness sweeps at benchmark time.  0 or unset → existing default.
 static const double wal_stiff = [](){
@@ -193,8 +214,13 @@ static const double wal_stiff = [](){
 
 // FLEXAIDDS_WAL_C1: match the soft branch's ARRIVAL SLOPE to the continuation,
 // and continue the quadratic above the join instead of freezing it at its join
-// value. Default OFF -> bit-identical to current behaviour, so every stored arm
-// stays reproducible and an A/B is possible at all.
+// value. DEFAULT ON since 2026-09-13 (flip record below). FLEXAIDDS_WAL_C1=0
+// reaches the legacy wall and reproduces any arm stored before that commit.
+//
+// This paragraph read "Default OFF -> bit-identical to current behaviour" until
+// 2026-09-21, contradicting both the flip record 30 lines down and the
+// env_bool(..., true) at the declaration. A reader who stopped at the first
+// paragraph got the wrong default.
 //
 // WHAT IT FIXES, both measured 2026-09-12 at cr=3.50, o_soft=0.40, k_wal=50:
 //   join kink   dE/do 0.029994 -> 4.916560 (164x) becomes 44.91 -> 44.91
@@ -204,7 +230,34 @@ static const double wal_stiff = [](){
 //               continuation that becomes 1 of 2500 at -2.4e-07, which is the
 //               float o_soft, not structure.
 //
-// DEFAULT-FLIP CONDITION -- RATIFIED BY THE PROJECT OWNER 2026-09-12.
+// DEFAULT-FLIP CONDITION -- RATIFIED BY THE PROJECT OWNER 2026-09-12,
+// AND ITS GATE METRIC RETIRED BY THE SAME OWNER 2026-09-21. The flip stands and
+// the default stays ON; what is retired is oracle-in-pool as the metric that
+// decides it. Read the retirement before using the condition below for anything.
+//
+// WHY RETIRED: oracle-in-pool is dominated by POOL DEPTH, not by the wall form.
+// Measured over 252 arm-target cells: at the 150-pose write cap oracle-in-pool
+// is 0.589, below the cap 0.986 -- a difference of 0.396, Fisher exact
+// p < 0.0001, with 46 of the 48 oracle failures occurring in capped cells
+// against 2 below. That nuisance effect is ~8x the +0.05 A wall effect the gate
+// was asked to resolve, so the gate decides on pool depth rather than on the
+// thing being gated.
+//
+// INDEPENDENTLY REPRODUCED 2026-09-21 on the paired wall campaign
+// (campaigns/wall_paired_85, both arms docked separately, seed 20260919):
+// removing the 9 truncated-pool cells from the 82 scored moved the reach
+// (oracle-in-pool) endpoint from median +0.0564 A, bootstrap CI95
+// [+0.0080, +0.1033], to +0.0459 A, CI95 [+0.0000, +0.0743] -- its sign becomes
+// unresolved -- while the ELECTION endpoint did not move at all: +0.0521 A,
+// CI95 [+0.0334, +0.0753], to +0.0530 A, CI95 [+0.0341, +0.0753]. The reach
+// signal was substantially an artefact of unequal pool depth between arms.
+//
+// CONSEQUENCE FOR ANY FUTURE GATE ON THIS FLAG: a pool-based endpoint must be
+// pool-matched BY CONSTRUCTION -- same restart count, same write cap, equality
+// verified per cell before scoring -- never corrected after the fact. The
+// election endpoint is the one that survived scrutiny here; prefer it.
+//
+// The condition as originally ratified, kept verbatim for provenance:
 // The default flips to c1_match once the validation arm completes and shows NO
 // REGRESSION in oracle-in-pool. The bar is explicitly NOT "demonstrated
 // improvement": this is a correctness fix to a wall that rewards

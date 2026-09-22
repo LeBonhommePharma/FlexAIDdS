@@ -21,6 +21,7 @@
 
 #include "ParallelCampaign.h"
 #include "LibrarySplitter.h"
+#include "fs_safe.h"
 #include "ReferenceEntropy.h"
 #include "hardware_detect.h"
 #include "ProcessLigand/ProcessLigand.h"
@@ -571,7 +572,23 @@ void write_results_csv(const std::string& path,
 void write_top_hits(const std::string& output_dir,
                     const std::vector<LigandResult>& results,
                     int top_n) {
-    fs::create_directories(output_dir);
+    // Runs AFTER the campaign has finished computing. An abort here threw
+    // away a completed campaign at its last step; carrying on regardless
+    // would be worse still, because every ofstream below fails silently and
+    // the user gets an empty directory with no error. So: diagnose, name the
+    // path, say what is lost, and return -- the aggregate CSV is written by a
+    // separate function and survives.
+    {
+        std::string why;
+        if (!flexaids::fs_safe::ensure_dir(output_dir, &why)) {
+            std::fprintf(stderr,
+                "[CAMPAIGN] ERROR: cannot create top-hits directory '%s' (%s). "
+                "Top-hit PDBs will NOT be written; campaign results in the "
+                "summary CSV are unaffected.\n",
+                output_dir.c_str(), why.c_str());
+            return;
+        }
+    }
 
     int n = std::min(top_n, static_cast<int>(results.size()));
     for (int i = 0; i < n; i++) {

@@ -432,6 +432,13 @@ jobs:
         run: python3 scripts/check_repo_hygiene.py
       - name: Root run-artifact guard and diff classifier
         run: python3 -m pytest tests/test_check_root_artifacts.py tests/test_classify_diff.py tests/test_tier1_pr_needs_dock.py tests/test_github_workflows.py tests/test_coverage_gate.py tests/test_site_publish_scripts.py -q --tb=line
+      # Static read of the CMake build graph: every flexaids_add_unit_test
+      # fixture that compiles a caller of flexaids::temp_dir() must also list
+      # LIB/temp_dir.cpp INSIDE its SOURCES. The Release job builds named
+      # targets only and cannot catch a fixture that fails to link; the three
+      # full-build jobs catch it ~12 minutes in. This catches it in a second.
+      - name: Unit-test fixtures are link-closed (LIB/temp_dir.cpp wiring)
+        run: python3 -m pytest tests/test_link_closure_contract.py -q --tb=line
       - name: Citation identifier integrity (offline; refresh with --refresh)
         run: |
           python3 scripts/check_dois.py --report

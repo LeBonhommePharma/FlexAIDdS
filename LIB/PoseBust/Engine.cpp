@@ -28,6 +28,7 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include "../temp_dir.h"
 
 namespace flexaids::posebust {
 namespace {
@@ -587,7 +588,7 @@ ElectedPoseBustOutcome validate_elected_pose(
 
     const std::string pb_dir =
         opt.sidecar_dir.empty()
-            ? (fs::temp_directory_path() / "flexaidds_elected_pb").string()
+            ? (fs::path(flexaids::temp_dir()) / "flexaidds_elected_pb").string()
             : opt.sidecar_dir;
     std::error_code ec;
     fs::create_directories(pb_dir, ec);
