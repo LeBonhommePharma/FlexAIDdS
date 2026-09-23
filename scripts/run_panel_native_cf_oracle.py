@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import csv
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -96,7 +97,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     rows: List[Dict[str, Any]] = []
     n_pass = n_fail = n_missing = 0
     for rc in csvs:
-        pdb = rc.parent.name
+        # Row id wins over the directory name: a result can be written into
+        # another target's directory, and the path then mis-attributes it.
+        try:
+            _first = next(iter(csv.DictReader(rc.open(newline=""))), {}) or {}
+        except OSError:
+            _first = {}
+        pdb = (_first.get("pdb_id") or "").strip() or rc.parent.name
         work = None
         if args.work_root is not None:
             cand = args.work_root.expanduser().resolve() / pdb

@@ -49,15 +49,29 @@ def main() -> int:
     camp = args.campaign_dir
     n_patch = 0
     for rcsv in sorted(camp.glob("*/result.csv")):
-        pid = rcsv.parent.name
-        crystal = ASTEX / pid / f"{pid}_ligand.sdf"
-        if not crystal.is_file():
-            print(f"SKIP {pid}: no crystal sdf")
-            continue
         rows = list(csv.DictReader(rcsv.open()))
         if not rows:
             continue
         row = rows[0]
+        # This script WRITES best_cluster_rmsd, so a wrong id is a data error,
+        # not a reporting error: the BCR would be computed against the wrong
+        # crystal ligand. Take the id from the row, and refuse outright when it
+        # disagrees with the directory rather than guessing which is right.
+        dir_id = rcsv.parent.name
+        pid = (row.get("pdb_id") or "").strip() or dir_id
+        if pid != dir_id:
+            print(
+                f"REFUSE {dir_id}: row pdb_id={pid} disagrees with directory; "
+                f"a run was written into another target's dir. Not patching "
+                f"(BCR would use the wrong crystal ligand). Check "
+                f"{rcsv.parent}/CELL_PROVENANCE.json.",
+                file=sys.stderr,
+            )
+            continue
+        crystal = ASTEX / pid / f"{pid}_ligand.sdf"
+        if not crystal.is_file():
+            print(f"SKIP {pid}: no crystal sdf")
+            continue
         try:
             bc = float(row.get("best_cluster_rmsd", -1))
         except ValueError:
