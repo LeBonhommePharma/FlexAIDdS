@@ -169,7 +169,9 @@ bool rebind_scorable_slots(FA_Global* FA, atom* atoms, resid* residue,
 		const int latm = residue[s.resi].latm[rot];
 		if(latm - fatm + 1 != s.natoms) return false;
 		const int atmi = fatm + s.offset;
-		if(atmi < 0 || atmi >= atmcnt || atmi > latm) return false;
+		// Same bound as index_protein: atoms[] is 1-based up to FA->atm_cnt;
+		// atmcnt is the Calc slot count and does not bound an atoms[] index.
+		if(atmi < 0 || atmi > FA->atm_cnt || atmi > latm) return false;
 		atomsas& C = Calc[s.calc_idx];
 		C.atom = &atoms[atmi];
 		C.residue = &residue[s.resi];
@@ -2306,16 +2308,23 @@ atomindex* index_protein(FA_Global* FA,atom* atoms,resid* residue,atomsas* Calc,
 	for (resi=1; resi<=FA->res_cnt; ++resi) {
 		rot = residue[resi].rot;
 
-		int latm_clamped = residue[resi].latm[rot];
-		if (latm_clamped >= atmcnt) latm_clamped = atmcnt - 1;
-
-		for(atmi=residue[resi].fatm[rot];atmi<=latm_clamped;++atmi){
+		// Two index spaces meet in this loop and need separate bounds.
+		//   atmi indexes atoms[], which is 1-based: live atoms occupy
+		//     [1, FA->atm_cnt] and atoms[0] is unused. The ligand is the last
+		//     residue, so its final atom sits at index atm_cnt_real, and
+		//     build_rotamers() appends rotamer copies above atm_cnt_real.
+		//   i indexes Calc[], which is 0-based with atmcnt (= atm_cnt_real)
+		//     slots: one per atom of the currently selected rotamers.
+		// Bounding atmi by atmcnt (the Calc slot count) silently dropped the
+		// ligand's last atom, and every atom of a residue sitting in a
+		// non-zero rotamer, from every Vcontacts call.
+		for(atmi=residue[resi].fatm[rot];atmi<=residue[resi].latm[rot];++atmi){
 			// Copy atoms structure to the new Vcont structure
 			// only the atoms that correspond to the correct rotamer are copied
 			// the total number of atoms thus is equal to atm_cnt_real
 
-			// Safety: skip if indices are invalid
-			if (atmi < 0 || atmi >= atmcnt || i >= atmcnt) continue;
+			// Safety: skip indices outside atoms[] or outside Calc[]
+			if (atmi < 0 || atmi > FA->atm_cnt || i >= atmcnt) continue;
 
 			// Rebind the per-atom view on every call. Vcontacts/GA reuse the same
 			// Calc[] workspace across many chromosomes, so stale box/done/score

@@ -2158,6 +2158,19 @@ flexaids_add_unit_test(test_protocol_config
     flexaids_configure_msvc_test(test_rigid_fastpath)
     add_test(NAME RigidFastpathBitIdentity COMMAND test_rigid_fastpath)
 
+    # test_vcontacts_last_atom — index_protein must index atoms[atm_cnt_real]
+    # (the ligand's last 1-based atom) and rotamer copies above atm_cnt_real
+    # (same isolated link as test_vcontacts / test_rigid_fastpath)
+    flexaids_add_unit_test(test_vcontacts_last_atom
+        SOURCES
+            tests/test_vcontacts_last_atom.cpp
+            tests/stubs.cpp
+            LIB/Vcontacts.cpp
+            LIB/geometry.cpp
+        LINK_OPENMP
+        TEST_NAME VcontactsLastAtomTests
+    )
+
     # test_vcontacts_geometry — convex-hull geometry functions (test_point, add_vedge, etc.)
     add_executable(test_vcontacts_geometry
         tests/test_vcontacts_geometry.cpp
