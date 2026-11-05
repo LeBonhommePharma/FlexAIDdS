@@ -107,8 +107,14 @@ ThermoResult ThermodynamicEngine::compute(
         r.TdS_vib = std::max(-5.0f, std::min(5.0f, raw_vib));
     }
     // ── G_bind: v100-regression fix (restores v88 effective signal weighting) ──
-    //   v88 (working, 91.7% BCD):   G = T_eff * H_vct_raw  − TdS_shannon  + TdS_vib
-    //   v100 (broken,  9.4% BCD):   G = H_vct_raw/n_heavy  + TdS_shannon  − TdS_vib
+    //   v88:   G = T_eff * H_vct_raw  − TdS_shannon  + TdS_vib
+    //   v100:  G = H_vct_raw/n_heavy  + TdS_shannon  − TdS_vib
+    // NOTE (2026-10-27): this expression was chosen by benchmark score, not
+    // derived (docs/audit/AUDIT_2026-07-23.md). The Astex "blind cross-docking"
+    // rates once quoted here (v88 91.7%, v100 9.4%) are unverified: do not cite
+    // them. The one recorded reproduction of v88 (2026-06-25) gave 43/85
+    // (50.6%) with crystal-pose seeding still on, and REPRODUCIBILITY.md
+    // withdraws v88's seeded 80/85 as an oracle ceiling.
     // Three v100 changes annihilated the native-vs-decoy gap: (1) /n_heavy
     // attenuated the VCT signal ~12×, (2) the TdS_shannon sign flipped (− → +),
     // (3) the TdS_vib sign flipped (+ → −). We restore T_eff weighting on the
