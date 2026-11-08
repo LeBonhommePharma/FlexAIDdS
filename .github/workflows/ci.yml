@@ -96,7 +96,9 @@ jobs:
             cc: gcc-14
             cxx: g++-14
           - name: linux-clang
-            os: ubuntu-latest
+            # Pinned: ubuntu-latest moved to 26.04 (2026-11), where clang-18 fails
+            # the Eigen macro probe at configure; 24.04 is the last image it passed on.
+            os: ubuntu-24.04
             cc: clang-18
             cxx: clang++-18
           - name: linux-gcc-avx512
