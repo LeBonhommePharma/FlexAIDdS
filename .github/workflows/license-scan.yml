@@ -23,7 +23,18 @@ jobs:
         # license_detections) is what scripts/check_licenses.py parses. An
         # unpinned install can jump to a schema the checker does not understand,
         # silently yielding zero findings.
-        run: pip install 'scancode-toolkit>=32,<33'
+        #
+        # pluggy is pinned too: pluggy 1.7.0 rejects plugincode 32.0.0's
+        # hookspec markers, so `scancode` dies on import with
+        # "ValueError: did not find any 'pre_scan' hooks". The last green run
+        # (38316274479) resolved pluggy 1.6.0 with the same scancode 32.5.0 /
+        # plugincode 32.0.0; the first red ones resolved 1.7.0.
+        run: pip install 'scancode-toolkit>=32,<33' 'pluggy<1.7'
+
+      - name: Verify scancode imports
+        # Fail HERE, naming the tool, if scancode cannot even start — instead of
+        # two steps later as a confusing missing license-report.json.
+        run: scancode --version
 
       - name: Run license scan
         run: |
@@ -31,8 +42,7 @@ jobs:
             --json-pp license-report.json \
             --timeout 120 \
             --processes 2 \
-            LIB/ python/ tests/ \
-            || true
+            LIB/ python/ tests/
 
       - name: Check for forbidden licenses
         run: python scripts/check_licenses.py license-report.json

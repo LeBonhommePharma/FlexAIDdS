@@ -7,7 +7,7 @@ on:
 
 jobs:
   tsan-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: clang-18 fails the Eigen probe on ubuntu-26.04
     timeout-minutes: 60
     steps:
       - name: Checkout
