@@ -29,7 +29,10 @@ on:
 jobs:
   coverage:
     name: Coverage Analysis (Linux/Clang)
-    runs-on: ubuntu-latest
+    # Pinned with the other clang-18 jobs: ubuntu-latest is 26.04, where
+    # clang-18 fails the Eigen macro probe at configure. 24.04 is the last
+    # image that probe passed on. This job runs the same clang-18 configure.
+    runs-on: ubuntu-24.04
 
     # Least-privilege grant. `pull-requests: write` is what the final
     # "Comment PR with coverage" step needs to call issues.createComment; without
@@ -93,7 +96,7 @@ jobs:
           fi
 
           # Ignore only categories the installed lcov actually knows. lcov 2.x
-          # (ubuntu-latest) hard-errors on an unknown --ignore-errors token —
+          # (Ubuntu 24.04) hard-errors on an unknown --ignore-errors token —
           # "lcov: ERROR: unknown argument for --ignore-errors: 'category'",
           # exit 255 — which is what aborted the `lcov --extract` below, left
           # core.info uncreated, and made the whole percentage undefined. The
