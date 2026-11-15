@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Update hardcoded repository stats across all site pages simultaneously.
 
-Patches the apex homepage (site/index.html) and the React full site
-(site/FlexAIDdS/index.html), and writes a shared JSON snapshot at
+Patches the React full site (site/FlexAIDdS/index.html; the apex homepage
+is served from lebonhommepharma.github.io), and writes a shared JSON snapshot at
 site/assets/repo-stats.json consumed by both pages at runtime.
 
 Usage:
@@ -44,7 +44,6 @@ OTHER_COLOR = "#555555"
 
 # All HTML files that receive the same semantic stat markers.
 HTML_TARGETS = [
-    "site/index.html",
     "site/FlexAIDdS/index.html",
 ]
 
