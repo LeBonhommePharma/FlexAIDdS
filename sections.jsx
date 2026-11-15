@@ -145,7 +145,7 @@ function ArchSection() {
           <ArchStep num="1" title="Input"   color="teal"  desc="PDB receptor + MOL2 ligand. Automatic cavity detection via SURFNET." />
           <ArchStep num="2" title="Sample"  color="terra" desc="GA + DEE torsion pruning. Ring conformer + chirality sampling." />
           <ArchStep num="3" title="Score"   color="gold"  desc="Voronoi CF + ΔS_config via partition function. Free energy F = −kT ln Z." />
-          <ArchStep num="4" title="Output"  color="teal"  desc="Ranked poses · ΔG · Van't Hoff decomposition · ITC-validated." />
+          <ArchStep num="4" title="Output"  color="teal"  desc="Ranked poses · ΔG · Van't Hoff decomposition." />
         </div>
         <div className="arch-sub-grid">
           <div className="arch-sub-card">
