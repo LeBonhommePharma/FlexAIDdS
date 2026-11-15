@@ -11,8 +11,8 @@
 // S_vib is a model-scale heuristic suitable for relative comparisons only.
 //
 // Reference:
-//   Frappier et al. (2015). *Proteins* 83(11):2073-82.
-//   DOI: 10.1002/prot.24922
+//   Frappier V & Najmanovich RJ (2014). *PLoS Comput Biol* 10(4):e1003569.
+//   DOI: 10.1371/journal.pcbi.1003569
 //
 // Mathematical framework:
 //   S_vib = (3N - 6) × k_B × [1 + ln(kBT/ħω_eff)]

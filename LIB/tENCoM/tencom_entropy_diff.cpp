@@ -20,7 +20,7 @@
 //
 // Reference: Delarue & Sanejouand, J. Mol. Biol. (2002)
 //            Yang, Song & Cui, Biophys. J. (2009)
-//            Frappier et al., Proteins 83(11):2073-82 (2015)
+//            Frappier & Najmanovich, PLoS Comput Biol 10(4):e1003569 (2014)
 
 #include "tencm.h"
 #include "pdb_calpha.h"

@@ -5,8 +5,8 @@ quasi-harmonic fallback for environments where the compiled extension is not
 available.
 
 Reference:
-    Frappier et al. (2015). Proteins 83(11):2073-82.
-    DOI: 10.1002/prot.24922
+    Frappier V & Najmanovich RJ (2014). PLoS Comput Biol 10(4):e1003569.
+    DOI: 10.1371/journal.pcbi.1003569
 """
 
 from __future__ import annotations

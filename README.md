@@ -451,7 +451,7 @@ If you use FlexAID or FlexAID∆S, please cite:
 Related work:
 
 - Gaudreault F, Morency LP & Najmanovich RJ (2015). NRGsuite. *Bioinformatics* **31**(23):3856–3858. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)
-- Frappier V et al. (2015). ENCoM. *Proteins* **83**(11):2073–2082. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)
+- Frappier V & Najmanovich RJ (2014). ENCoM. *PLoS Comput. Biol.* **10**(4):e1003569. [DOI:10.1371/journal.pcbi.1003569](https://doi.org/10.1371/journal.pcbi.1003569)
 - Buttenschoen M, Morris GM & Deane CM (2024). PoseBusters: AI-based docking methods fail to generate physically valid poses or generalise to novel sequences. *Chem. Sci.* **15**, 3130–3139. [DOI:10.1039/D3SC04185A](https://doi.org/10.1039/D3SC04185A) — official physical-validity gate (`bust`); FlexAID∆S NativePoseQC is a separate Apache-2.0 diagnostic ([PoseBust README](LIB/PoseBust/README.md))
 - Morency LP & Najmanovich RJ (2026). FlexAID∆S — *methods manuscript in preparation*
 
