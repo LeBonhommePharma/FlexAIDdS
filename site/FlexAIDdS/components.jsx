@@ -253,30 +253,27 @@ function CountStat({ to, suffix = "", decimals = 0, color, label }) {
 }
 
 function DrugOfDayBadge() {
-  // Compute synchronously so the badge is present on first paint (no flash/empty slot)
+  // Compute synchronously so the badge is present on first paint (no flash/empty slot).
+  // Today's drug comes from https://thebonhomme.com/assets/dotd.js — the site's one
+  // picker — via app.js (window.__TODAYS_DRUG) or directly. No list, no day arithmetic.
   function getTodaysDrug() {
-    if (window && window.__TODAYS_DRUG) return window.__TODAYS_DRUG;
-
-    const list = [
-      { pdb: '4xp4', drug: 'Cocaine HCl', target: 'dopamine transporter (DAT)', series: '001', href: '/drug-of-the-day/cocaine/' },
-      { pdb: '6dzv', drug: 'MDMA',        target: 'serotonin transporter (SERT)', series: '002', href: '/drug-of-the-day/mdma/' },
-      { pdb: '6wha', drug: 'DMT',         target: '5-HT\u2082A receptor', series: '003', href: '/drug-of-the-day/dmt/' },
-      { pdb: '7wc7', drug: 'Psilocin',    target: '5-HT\u2082A receptor', series: '004', href: '/drug-of-the-day/psilocin/' },
-      { pdb: '6wgt', drug: 'LSD',         target: '5-HT\u2082B receptor', series: '005', href: '/drug-of-the-day/lsd/' },
-      { pdb: '7xna', drug: 'Amphetamine', target: 'dopamine transporter (DAT)', series: '006', href: '/drug-of-the-day/amphetamine/' },
-      { pdb: '8ef5', drug: 'Fentanyl',    target: '\u03bc-opioid receptor', series: '007', href: '/drug-of-the-day/fentanyl/' },
-      { pdb: '4djh', drug: 'Salvinorin A', target: '\u03ba-opioid receptor', series: '008', href: '/drug-of-the-day/salvinorin-a/' },
-    ];
-    const idx = Math.floor(Date.now() / 86400000) % list.length;
-    return list[idx];
+    if (window.__TODAYS_DRUG) return window.__TODAYS_DRUG;
+    const d = window.LBP_DOTD && window.LBP_DOTD.today();
+    return d ? { pdb: d.pdb, drug: d.name, target: d.target, series: d.series, href: d.href } : null;
   }
 
   const drug = getTodaysDrug();
 
+  // dotd.js failed to load: a generic badge that names no compound, so it can never
+  // disagree with the home page.
+  if (!drug) {
+    return <a href="/drug-of-the-day/" className="badge drug">Drug of the Day</a>;
+  }
+
   // Render as a compact badge tag like "C++26", "CUDA", etc. in the hero-badges row
   return (
     <a
-      href={drug.href || '/drug-of-the-day/'}
+      href={drug.href}
       className="badge drug"
       title={`Drug of the Day #${drug.series} — ${drug.target} (PDB ${drug.pdb.toUpperCase()})`}
       aria-label={`Drug of the Day: ${drug.drug}`}
