@@ -108,25 +108,25 @@
     document.querySelectorAll('[data-count]').forEach(animateCount);
   }
 
-  // ── Drug of the Day (published #001–#003; queue #004–#008 in drug-of-the-day/queue.json) ──
-  var drugComplexes = [
-    { pdb: '4xp4', drug: 'Cocaine HCl', target: 'dopamine transporter (DAT)', series: '001', href: '/drug-of-the-day/cocaine/' },
-    { pdb: '6dzv', drug: 'MDMA',        target: 'serotonin transporter (SERT)', series: '002', href: '/drug-of-the-day/mdma/' },
-    { pdb: '6wha', drug: 'DMT',         target: '5-HT\u2082A receptor', series: '003', href: '/drug-of-the-day/dmt/' },
-    { pdb: '7wc7', drug: 'Psilocin',    target: '5-HT\u2082A receptor', series: '004', href: '/drug-of-the-day/psilocin/' },
-    { pdb: '6wgt', drug: 'LSD',         target: '5-HT\u2082B receptor', series: '005', href: '/drug-of-the-day/lsd/' },
-    { pdb: '7xna', drug: 'Amphetamine', target: 'dopamine transporter (DAT)', series: '006', href: '/drug-of-the-day/amphetamine/' },
-    { pdb: '8ef5', drug: 'Fentanyl',    target: '\u03bc-opioid receptor', series: '007', href: '/drug-of-the-day/fentanyl/' },
-    { pdb: '4djh', drug: 'Salvinorin A', target: '\u03ba-opioid receptor', series: '008', href: '/drug-of-the-day/salvinorin-a/' },
-  ];
-  var dayIdx = Math.floor(Date.now() / 86400000) % drugComplexes.length;
-  var todaysComplex = drugComplexes[dayIdx];
+  // ── Drug of the Day — read, never computed here ──────────────────────────
+  // The rotation and the date rule (Montréal calendar date) live in
+  // https://thebonhomme.com/assets/dotd.js (LeBonhommePharma/lebonhommepharma.github.io),
+  // loaded before this file. Home, /drug-of-the-day/, /flexaid-ds/ and this page all read
+  // it, so they name the same compound for every visitor on the same day. Do not put a
+  // list or day arithmetic back here.
+  var dotd = window.LBP_DOTD && window.LBP_DOTD.today();
+  var todaysComplex = dotd
+    ? { pdb: dotd.pdb, drug: dotd.name, target: dotd.target, series: dotd.series, href: dotd.href }
+    : null;
+  // Mol* hero structure. If dotd.js failed to load, fall back to the flagship complex
+  // (series 001, PDB 4XP4) for the picture only — no label claims it is today's drug.
+  var heroPdb = todaysComplex ? todaysComplex.pdb : '4xp4';
 
-  // Expose for React-rendered UI (FlexAIDdS homepage uses React)
+  // Expose for React-rendered UI (the hero badge in components.jsx)
   window.__TODAYS_DRUG = todaysComplex;
 
   var label = document.getElementById('drug-of-day-label');
-  if (label) {
+  if (label && todaysComplex) {
     label.innerHTML =
       '<span class="drug-series">#' + todaysComplex.series + '</span> ' +
       '<strong>' + todaysComplex.drug + '</strong> · ' +
@@ -134,7 +134,7 @@
       '<span class="drug-pdb">PDB ' + todaysComplex.pdb.toUpperCase() + '</span>';
   }
   var drugLink = document.querySelector('.drug-of-day');
-  if (drugLink && todaysComplex.href) drugLink.setAttribute('href', todaysComplex.href);
+  if (drugLink && todaysComplex) drugLink.setAttribute('href', todaysComplex.href);
 
   // ── Mobile menu toggle ─────────────────────────────────────
   var mobileToggle = document.querySelector('.mobile-menu-toggle');
@@ -592,10 +592,10 @@
         bindViewerResize(viewer, container);
         bindRenderErrorRecovery(viewer);
         bindWebGLContextGuards(viewer);
-        return loadStructure(viewer, todaysComplex.pdb);
+        return loadStructure(viewer, heroPdb);
       }).then(function (loaded) {
         if (!loaded || !molstarViewer) {
-          markViewerUnavailable('structure failed to load for PDB ' + todaysComplex.pdb);
+          markViewerUnavailable('structure failed to load for PDB ' + heroPdb);
           return;
         }
         setPublicationView(molstarViewer);

@@ -45,10 +45,10 @@
   <!-- Semantic markers patched by scripts/update_site_stats.py on every cron run.
        DO NOT remove or rename these spans. sections.jsx reads them at mount time
        to initialise the live commit count and language count in RepoStatsSection. -->
-  <span id="stat-commits" hidden>2711</span>
+  <span id="stat-commits" hidden>2712</span>
   <span id="stat-langs" hidden>18</span>
   <span id="stat-stars" hidden>11</span>
-  <span id="last-updated" hidden>2026-11-17</span>
+  <span id="last-updated" hidden>2026-11-18</span>
   <span id="latest-release" hidden>v2.2.0</span>
 
   <template id="__bundler_thumbnail" data-bg-color="#08091A">
@@ -66,6 +66,9 @@
 
   <script src="assets/flexaid-logo.js"></script>
   <script src="assets/molstar-drug-viewer.js"></script>
+  <!-- Drug of the Day: the site's one picker (served by the apex user site, LeBonhommePharma/
+       lebonhommepharma.github.io). Must precede app.js, which reads it. -->
+  <script src="/assets/dotd.js"></script>
   <script src="app.js"></script>
   <script type="text/babel" src="components.jsx"></script>
   <script type="text/babel" src="sections.jsx"></script>
