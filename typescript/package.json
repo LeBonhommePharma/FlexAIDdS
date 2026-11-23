@@ -12,6 +12,9 @@
     "test": "npm test --workspaces --if-present"
   },
   "overrides": {
-    "qs": "^6.16.0"
+    "qs": "^6.16.0",
+    "workbox-build": {
+      "glob": "^14.0.3"
+    }
   }
 }
