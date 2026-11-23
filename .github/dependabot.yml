@@ -8,6 +8,12 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    groups:
+      # The CodeQL action's init, autobuild and analyze sub-actions must run at
+      # one version; separate PRs leave them mismatched and every one fails.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # Python pip (pyproject.toml)
   - package-ecosystem: "pip"
