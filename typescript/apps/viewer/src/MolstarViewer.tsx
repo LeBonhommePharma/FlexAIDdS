@@ -12,7 +12,11 @@ import { createPluginUI } from 'molstar/lib/mol-plugin-ui';
 import { renderReact18 } from 'molstar/lib/mol-plugin-ui/react18';
 import { DefaultPluginUISpec } from 'molstar/lib/mol-plugin-ui/spec';
 import type { PluginUIContext } from 'molstar/lib/mol-plugin-ui/context';
-import 'molstar/lib/mol-plugin-ui/skin/light.scss';
+// Precompiled light skin shipped in the molstar package (build/viewer/molstar.css
+// is Mol*'s own viewer app compiled from lib/mol-plugin-ui/skin/light.scss).
+// Importing the .scss source would make `vite build` require a Sass compiler,
+// which this workspace does not install.
+import 'molstar/build/viewer/molstar.css';
 import { populationAllowsPhysicalAffinity } from './claimPresentation.js';
 
 /**
