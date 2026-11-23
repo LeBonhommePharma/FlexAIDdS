@@ -38,6 +38,15 @@ What it fails on
 5. DEFECT_LEDGER_DRIFT - a quarantined known defect that no longer reproduces,
                        or a quarantine entry for a file that no longer exists.
                        Stops the ledger from silently outliving the defect.
+10. DEFINITION_CODE_NOT_EXECUTED
+                     - a PDB code a dataset definition YAML names under
+                       ``targets:`` that is NOT in the generated code list the
+                       engine actually executes for that slug. Nothing compared
+                       the two before, so a definition could name targets the
+                       runner would never run and read as a description of the
+                       roster. ``casf2016`` is the slug this was written for: its
+                       definition names 29 codes, 17 of which are absent from the
+                       283 the engine executes (issue #482).
 
 Known defects that are NOT yet fixed are quarantined in
 ``tests/fixtures/dataset_identity/known_defects.json`` with a reason, so the
@@ -141,6 +150,14 @@ _DOI_SYNTAX = re.compile(r"^10\.\d{4,9}/\S+$")
 
 CANONICAL_DATASET_DIR = "benchmarks/datasets"
 MIRROR_DATASET_DIR = "python/flexaidds/dataset_runner/datasets"
+
+# The generated lists the ENGINE executes, one function per slug. This is the
+# committed artefact the compiler sees; scripts/gen_dataset_codes.py --check is
+# what proves it still matches its declared source. Rule 10 reads it to answer a
+# different question: does the definition YAML name the same targets?
+GENERATED_CODES_INC = "LIB/generated/dataset_codes.inc"
+_GENERATED_LIST = re.compile(
+    r"inline\s+const\s+std::vector<std::string>&\s+(\w+)_codes\s*\(\s*\)\s*\{(.*?)\n\}", re.S)
 
 # Keys the canonical copy is allowed to carry alone. These are annotation blocks
 # the benchmark harness reads and the Python package has no use for. The asymmetry
@@ -677,6 +694,101 @@ def compare_mirror(root: Path) -> Tuple[List[Finding], Dict[str, int]]:
     return findings, stats
 
 
+def generated_code_lists(root: Path) -> Dict[str, List[str]]:
+    """Per-slug code lists parsed out of the generated .inc.
+
+    ``collect()`` already scans this file, but it pools every code in it into one
+    declaration, so it cannot answer "which codes does slug X execute". Rule 10
+    needs the per-slug split, hence a second, narrower read of the same file.
+    """
+    p = root / GENERATED_CODES_INC
+    if not p.is_file():
+        return {}
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    out: Dict[str, List[str]] = {}
+    for m in _GENERATED_LIST.finditer(text):
+        slug, body = m.group(1), m.group(2)
+        codes = [c.upper() for c in re.findall(r'"([^"]*)"', body) if _PDB_CODE.match(c)]
+        if codes:
+            out[slug] = codes
+    return out
+
+
+def compare_generated_to_definition(root: Path) -> Tuple[List[Finding], Dict[str, int]]:
+    """Rule 10 - every target a definition YAML names must be one the engine runs.
+
+    Before this rule nothing compared the generated list against the definition
+    that is supposed to describe it, so a definition could enumerate targets the
+    runner would never execute under that slug and still read as a description of
+    the roster. That is exactly what ``casf2016`` does.
+
+    Direction. This is a SUBSET rule (definition codes must be executed), not an
+    equality rule, because a definition is allowed to enumerate only part of a
+    roster: ``casf2016.yaml`` says in its own comments that it lists a tier-1
+    subset and not the full set, while ``astex_diverse`` and ``hap2`` enumerate
+    every code. Distinguishing "complete" from "subset" would need a new key in
+    the definition schema, and the definitions that would have to carry it are
+    FROZEN while a docking lane reads them (dataset identity audit C2), so the
+    reverse direction is COUNTED and reported rather than enforced. An executed
+    code the definition does not name is therefore visible in the denominators
+    but is not a finding -- an accepted limit, recorded so it is not mistaken
+    for a check.
+
+    Findings are keyed on the DEFINITION path, because that is the file making
+    the claim that does not hold.
+    """
+    findings: List[Finding] = []
+    stats = {"generated_slugs": 0, "definitions_vs_generated": 0,
+             "definition_code_checks": 0, "executed_codes_not_declared": 0}
+    gen = generated_code_lists(root)
+    if not gen:
+        return findings, stats
+    try:
+        import yaml
+    except ImportError:
+        # Same accepted gap as compare_mirror: without PyYAML this rule inspects
+        # nothing. The denominator floor in tests/test_dataset_identity.py is what
+        # stops that from passing as a green run.
+        return findings, stats
+
+    stats["generated_slugs"] = len(gen)
+    for slug in sorted(gen):
+        executed = {c.upper() for c in gen[slug]}
+        for ddir in (CANONICAL_DATASET_DIR, MIRROR_DATASET_DIR):
+            p = root / ddir / ("%s.yaml" % slug)
+            if not p.is_file():
+                continue
+            try:
+                doc = yaml.safe_load(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 - malformed YAML is another gate's problem
+                continue
+            if not isinstance(doc, dict):
+                continue
+            declared = {str(t).upper() for t in (doc.get("targets") or [])
+                        if _PDB_CODE.match(str(t))}
+            if not declared:
+                continue
+            rel = "%s/%s.yaml" % (ddir, slug)
+            stats["definitions_vs_generated"] += 1
+            stats["executed_codes_not_declared"] += len(executed - declared)
+            missing = sorted(declared - executed)
+            for code in sorted(declared):
+                stats["definition_code_checks"] += 1
+                if code in executed:
+                    continue
+                findings.append(Finding(
+                    "DEFINITION_CODE_NOT_EXECUTED", rel,
+                    "%s is declared under targets: but is NOT one of the %d codes the engine "
+                    "executes for slug %r (%s). This definition names %d targets, %d of which "
+                    "the runner never runs, so the definition is not describing the executed "
+                    "roster." % (code, len(executed), slug, GENERATED_CODES_INC,
+                                 len(declared), len(missing))))
+    return findings, stats
+
+
 def _is_measurement_column(col: str) -> bool:
     c = col.strip().lower()
     if not c:
@@ -756,6 +868,15 @@ def check(root: Path, cache: Dict[str, dict], defects: Dict[str, dict],
         if not quarantined(f.path, f.kind, detail_key):
             findings.append(f)
     stats.update(mirror_stats)
+
+    # Rule 10 - a definition must not name targets the engine does not execute.
+    # Quarantined per CODE, so adding another unexecuted code to a definition
+    # fires even while the known ones stay enumerated.
+    gen_findings, gen_stats = compare_generated_to_definition(root)
+    for f in gen_findings:
+        if not quarantined(f.path, f.kind, f.detail.split()[0]):
+            findings.append(f)
+    stats.update(gen_stats)
 
     # Rule 5 - the quarantine ledger must not outlive the defect
     for key, meta in defects.items():
@@ -892,6 +1013,64 @@ def selftest(root: Path) -> int:
         f, s = check(t2, cache, {}, files=[])
         mirror_results["mirror_unpaired"] = (f, s, "MIRROR_UNPAIRED")
 
+    # Rule 10 arms. Driven by the generated .inc plus the two dataset DIRECTORIES,
+    # so each arm gets its own tree. The third arm is the direction this rule
+    # deliberately does NOT enforce: it must stay silent while still counting.
+    def _genexec_tree(td: Path, executed: List[str], declared: List[str]) -> None:
+        import yaml as _y
+        inc = td / GENERATED_CODES_INC
+        inc.parent.mkdir(parents=True, exist_ok=True)
+        inc.write_text(
+            "inline const std::vector<std::string>& probe_codes() {\n"
+            "    static const std::vector<std::string> v = {\n"
+            + "".join('        "%s",\n' % c for c in executed)
+            + "    };\n    return v;\n}\n", encoding="utf-8")
+        for ddir in (CANONICAL_DATASET_DIR, MIRROR_DATASET_DIR):
+            (td / ddir).mkdir(parents=True, exist_ok=True)
+            (td / ddir / "probe.yaml").write_text(
+                _y.safe_dump({"name": "probe", "slug": "probe", "targets": list(declared)}),
+                encoding="utf-8")
+
+    if not other:
+        print("VOID: the cache yielded only one resolvable code, so the rule 10 arms "
+              "cannot be built with a declared/executed difference.")
+        return 2
+    second = other[0]
+    genexec_arms = {
+        "definition_matches_executed": ([good_code, second], [good_code, second], None),
+        "definition_names_an_unexecuted_code": (
+            [good_code], [good_code, second], "DEFINITION_CODE_NOT_EXECUTED"),
+        # A definition enumerating only PART of the executed roster is allowed --
+        # casf2016.yaml says so in its own comments. Counted, not enforced.
+        "definition_is_a_subset_of_executed": ([good_code, second], [good_code], None),
+    }
+    genexec_ok = True
+    genexec_denoms = 0
+    genexec_uncounted = 0
+    for name, (executed, declared, want) in genexec_arms.items():
+        with tempfile.TemporaryDirectory() as td4:
+            t4 = Path(td4)
+            _genexec_tree(t4, executed, declared)
+            f, s = compare_generated_to_definition(t4)
+            kinds = {x.kind for x in f}
+            hit = (not f) if want is None else (want in kinds)
+            genexec_ok = genexec_ok and hit
+            genexec_denoms += s["definition_code_checks"]
+            genexec_uncounted += s["executed_codes_not_declared"]
+            print("[selftest] gen-vs-def %-36s -> %d findings, slugs=%s defs=%s checked=%s "
+                  "uncounted=%s, %s: %s%s"
+                  % (name, len(f), s.get("generated_slugs"),
+                     s.get("definitions_vs_generated"), s.get("definition_code_checks"),
+                     s.get("executed_codes_not_declared"), want or "no findings", hit,
+                     "" if hit else "   *** INTENDED RULE DID NOT FIRE ***"))
+    if genexec_denoms == 0:
+        print("VOID: the generated-vs-definition arms compared ZERO declared codes.")
+        genexec_ok = False
+    if genexec_uncounted == 0:
+        print("VOID: the subset arm counted ZERO executed-but-undeclared codes, so the "
+              "direction this rule does not enforce is not even being measured.")
+        genexec_ok = False
+
     print("[selftest] known-good fixture         -> %d findings (expected 0)"
           % len(results["known_good"]))
     # Each arm must fire its INTENDED rule. Counting findings is not enough: an
@@ -991,6 +1170,9 @@ def selftest(root: Path) -> int:
                  want or "no findings", hit,
                  "" if hit else "   *** INTENDED RULE DID NOT FIRE ***"))
 
+    # Rule 10's arms were run above, before arms_ok exists; fold them in here.
+    arms_ok = arms_ok and genexec_ok
+
     ok = (not results["known_good"]
           and all(len(v) > 0 for v in arms.values())
           and arms_ok
@@ -1015,13 +1197,20 @@ def selftest(root: Path) -> int:
              live_stats.get("primary_sources_inspected", 0),
              live_stats.get("declared_dois_checked", 0),
              live_stats.get("row_provenance_checks", 0)))
+    print("[selftest] live gen-vs-def: %d slugs with a generated list, %d definitions compared, "
+          "%d declared codes checked for execution, %d executed codes not named (counted only)"
+          % (live_stats.get("generated_slugs", 0),
+             live_stats.get("definitions_vs_generated", 0),
+             live_stats.get("definition_code_checks", 0),
+             live_stats.get("executed_codes_not_declared", 0)))
     for name, key in (("PDB_CODE_ABSENT/UNCACHED", "code_checks"),
                       ("CONSTANT_COLUMN", "column_checks"),
                       ("LIGAND_CODE_ABSENT", "ligand_checks"),
                       ("MIRROR_VALUE_DIVERGENCE/MIRROR_ONLY_KEY/CANONICAL_ONLY_KEY",
                        "mirror_keys_compared"),
                       ("PRIMARY_SOURCE_UNDECLARED/UNRESOLVED", "primary_sources_inspected"),
-                      ("ROW_PROVENANCE_UNDECLARED", "row_provenance_checks")):
+                      ("ROW_PROVENANCE_UNDECLARED", "row_provenance_checks"),
+                      ("DEFINITION_CODE_NOT_EXECUTED", "definition_code_checks")):
         if live_stats[key] == 0:
             print("VOID: rule %s inspected ZERO fields on the real tree. It is vacuous." % name)
             ok = False
@@ -1031,10 +1220,12 @@ def selftest(root: Path) -> int:
               "known-bad arm with non-zero live denominators. It proves nothing in this state.")
         return 2
     print("[selftest] NON-VACUOUS: passes known-good, fails all %d known-bad arms, all %d "
-          "mirror arms and all %d provenance arms, passes both provenance arms that should, "
-          "quarantine suppresses, and every rule inspects a non-zero number of live fields."
+          "mirror arms, all %d provenance arms and all %d generated-vs-definition arms, passes "
+          "the arms that should pass, quarantine suppresses, and every rule inspects a non-zero "
+          "number of live fields."
           % (len(arms), sum(1 for _, (_, _, w) in mirror_results.items() if w),
-             sum(1 for _, _, w in prov_arms.values() if w)))
+             sum(1 for _, _, w in prov_arms.values() if w),
+             sum(1 for _, _, w in genexec_arms.values() if w)))
     return 0
 
 
@@ -1081,6 +1272,13 @@ def main(argv: Optional[List[str]] = None) -> int:
              stats.get("primary_sources_inspected", 0),
              stats.get("declared_dois_checked", 0),
              stats.get("row_provenance_checks", 0)))
+    print("generated-vs-definition: %d slugs with a generated code list, %d definitions compared "
+          "against one, %d declared target codes checked for execution, %d executed codes not "
+          "named by their definition (counted, not enforced -- see "
+          "compare_generated_to_definition)"
+          % (stats.get("generated_slugs", 0), stats.get("definitions_vs_generated", 0),
+             stats.get("definition_code_checks", 0),
+             stats.get("executed_codes_not_declared", 0)))
     print("cache checked_utc=%s oracle=%s" % (cache_doc.get("checked_utc"), cache_doc.get("oracle")))
 
     if args.report:
