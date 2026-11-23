@@ -85,9 +85,9 @@ function EntropyMeter() {
       <span className="em-vert" style={{ color: "#FF9300" }}>LOW ENTROPY</span>
       <div>
         <div className="em-v" style={{ color: state.color }}>{state.entropy}</div>
-        <div className="em-u">ΔS bits</div>
+        <div className="em-u">S · illustrative</div>
         <div className="em-v" style={{ color: "var(--tangerine)", marginTop: "4px" }}>{state.dg}</div>
-        <div className="em-u">kcal/mol</div>
+        <div className="em-u">ΔG · illustrative</div>
       </div>
       <div className="em-state" style={{ color: state.color, background: "color-mix(in srgb, " + state.color + " 12%, transparent)", border: "1px solid color-mix(in srgb, " + state.color + " 40%, transparent)" }}>{state.lbl}</div>
     </div>
