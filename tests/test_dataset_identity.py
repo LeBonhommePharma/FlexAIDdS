@@ -71,6 +71,11 @@ def test_sweep_reaches_the_dataset_declarations(sweep):
     ("PDB_CODE_ABSENT", "code_checks", 400),
     ("CONSTANT_COLUMN", "column_checks", 20),
     ("LIGAND_CODE_ABSENT", "ligand_checks", 50),
+    # 85 astex_diverse + 59 hap2 + 29 casf2016 declared codes, across the two live
+    # dataset trees = 346. A floor of 300 survives one slug losing its definition
+    # but not the rule going quiet, and not PyYAML going missing (which makes
+    # compare_generated_to_definition return empty, exactly like compare_mirror).
+    ("DEFINITION_CODE_NOT_EXECUTED", "definition_code_checks", 300),
 ])
 def test_rule_is_not_vacuous(sweep, rule, key, floor):
     """A rule that inspects nothing passes for free. This is the trap the DOI
@@ -471,3 +476,108 @@ def test_every_live_provenance_finding_is_quarantined_with_a_reason():
         if not ledger.get("%s::%s::%s" % (f.path, f.kind, f.kind), {}).get("reason")]
     assert not unexplained, (
         "live provenance findings with no quarantine reason: %s" % unexplained)
+
+
+# ---------------------------------------------------------------------------
+# DEFINITION_CODE_NOT_EXECUTED - the definition YAML against the list the
+# engine actually executes (issue #482)
+# ---------------------------------------------------------------------------
+
+def _genexec_tree(root: Path, executed, declared) -> None:
+    """A tree with a generated .inc for slug 'probe' and both definition copies."""
+    import yaml
+    inc = root / CDI.GENERATED_CODES_INC
+    inc.parent.mkdir(parents=True, exist_ok=True)
+    inc.write_text(
+        "inline const std::vector<std::string>& probe_codes() {\n"
+        "    static const std::vector<std::string> v = {\n"
+        + "".join('        "%s",\n' % c for c in executed)
+        + "    };\n    return v;\n}\n")
+    for ddir in (CDI.CANONICAL_DATASET_DIR, CDI.MIRROR_DATASET_DIR):
+        (root / ddir).mkdir(parents=True, exist_ok=True)
+        (root / ddir / "probe.yaml").write_text(
+            yaml.safe_dump({"name": "probe", "slug": "probe", "targets": list(declared)}))
+
+
+def test_the_inc_parser_finds_every_slug_with_its_real_count():
+    """The parser is a regex over generated C++. If it ever matches nothing the
+    whole rule goes quiet while still reporting PASS, so the counts are pinned."""
+    gen = CDI.generated_code_lists(ROOT)
+    assert set(gen) == {"astex_diverse", "hap2", "casf2016"}, sorted(gen)
+    assert len(gen["astex_diverse"]) == 85, len(gen["astex_diverse"])
+    assert len(gen["hap2"]) == 59, len(gen["hap2"])
+    assert len(gen["casf2016"]) == 283, len(gen["casf2016"])
+
+
+def test_generated_vs_definition_inspects_a_nonzero_number_of_live_codes():
+    _, stats = CDI.compare_generated_to_definition(ROOT)
+    assert stats["generated_slugs"] == 3, stats
+    assert stats["definitions_vs_generated"] >= 6, stats
+    assert stats["definition_code_checks"] >= 300, (
+        "rule compared only %s declared codes on the real tree"
+        % stats.get("definition_code_checks"))
+
+
+def test_a_definition_matching_the_executed_list_passes(tmp_path):
+    _genexec_tree(tmp_path, ["1T46", "2BSM"], ["1T46", "2BSM"])
+    findings, stats = CDI.compare_generated_to_definition(tmp_path)
+    assert not findings, findings
+    assert stats["definition_code_checks"] == 4, stats     # 2 codes x 2 copies
+
+
+def test_a_definition_naming_an_unexecuted_code_fails(tmp_path):
+    _genexec_tree(tmp_path, ["1T46"], ["1T46", "2BSM"])
+    findings, _ = CDI.compare_generated_to_definition(tmp_path)
+    bad = [f for f in findings if f.kind == "DEFINITION_CODE_NOT_EXECUTED"]
+    assert len(bad) == 2, findings                          # one per definition copy
+    assert all("2BSM" in f.detail for f in bad), bad
+
+
+def test_a_definition_that_is_a_strict_subset_passes_but_is_counted(tmp_path):
+    """The direction this rule deliberately does not enforce. casf2016.yaml says in
+    its own comments that it lists a tier-1 subset, so a definition smaller than the
+    executed roster is legal -- but the gap must still be measured, not ignored."""
+    _genexec_tree(tmp_path, ["1T46", "2BSM"], ["1T46"])
+    findings, stats = CDI.compare_generated_to_definition(tmp_path)
+    assert not findings, findings
+    assert stats["executed_codes_not_declared"] == 2, stats  # 1 undeclared x 2 copies
+
+
+def test_case_is_normalised_before_comparing(tmp_path):
+    """casf2016.yaml writes targets lowercase and the .inc writes them uppercase. A
+    case-sensitive compare would report all 29 as unexecuted -- a wrong number that
+    still looks like a finding."""
+    _genexec_tree(tmp_path, ["1T46"], ["1t46"])
+    findings, stats = CDI.compare_generated_to_definition(tmp_path)
+    assert not findings, findings
+    assert stats["definition_code_checks"] == 2, stats
+
+
+def test_the_live_casf2016_divergence_is_still_17_of_29():
+    """Pins the measured gap so that changing either side is noticed. Re-measured
+    2026-11-23: casf2016.yaml names 29 codes, 12 are in the executed 283, 17 are
+    not. astex_diverse and hap2 agree exactly and must contribute nothing."""
+    findings, _ = CDI.compare_generated_to_definition(ROOT)
+    by_slug = {}
+    for f in findings:
+        by_slug.setdefault(f.path, []).append(f.detail.split()[0])
+    assert sorted(by_slug) == [
+        "benchmarks/datasets/casf2016.yaml",
+        "python/flexaidds/dataset_runner/datasets/casf2016.yaml",
+    ], sorted(by_slug)
+    expected = ["1HVR", "1OWI", "1YDT", "2CBJ", "2OBJ", "2QMJ", "2WEG", "2ZYC", "3ACW",
+                "3ARP", "3COY", "3GE7", "3MSS", "4AGP", "4HJR", "4ROE", "5CPP"]
+    for path, codes in by_slug.items():
+        assert sorted(codes) == expected, (path, sorted(codes))
+
+
+def test_every_live_generated_vs_definition_finding_is_quarantined_with_a_reason():
+    import json
+    raw, _ = CDI.compare_generated_to_definition(ROOT)
+    ledger = json.loads(CDI.DEFECTS_PATH.read_text())["quarantined"]
+    unexplained = [
+        "%s::%s::%s" % (f.path, f.kind, f.detail.split()[0]) for f in raw
+        if not ledger.get(
+            "%s::%s::%s" % (f.path, f.kind, f.detail.split()[0]), {}).get("reason")]
+    assert not unexplained, (
+        "live generated-vs-definition findings with no quarantine reason: %s" % unexplained)
