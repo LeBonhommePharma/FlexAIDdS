@@ -24,10 +24,10 @@ function HeroSection() {
         </h1>
 
         <p className="hero-subtitle">
-          <span className="kw">Entropy-Driven</span> <span className="kw">Molecular Docking</span> Engine
+          <span className="kw">Open-Source</span> <span className="kw">Molecular Docking</span> Engine
         </p>
         <p className="hero-tagline">
-          <span className="kw">Genetic algorithms</span> meet <span className="kw">statistical mechanics</span> for real-world drug discovery
+          <span className="kw">Genetic-algorithm</span> search, poses ranked by a <span className="kw">contact function</span>, optional <span className="kw">entropy</span> terms
         </p>
 
         <div className="equation">
@@ -43,11 +43,11 @@ function HeroSection() {
         <div className="hero-stats">
           <div className="hero-stat">
             <div className="hero-stat-value" style={{ color: "#45E0A8" }}>—</div>
-            <div className="hero-stat-label">PEARSON r (ITC-187) · unverified</div>
+            <div className="hero-stat-label">ITC-187 AFFINITY · no run on record</div>
           </div>
           <div className="hero-stat">
             <div className="hero-stat-value" style={{ color: "#8B5CF6" }}>—</div>
-            <div className="hero-stat-label">RMSE kcal/mol · pending receipt</div>
+            <div className="hero-stat-label">kcal/mol · score not calibrated</div>
           </div>
           <div className="hero-stat">
             <div className="hero-stat-value" style={{ color: "#FF9300" }}>—</div>
@@ -60,7 +60,7 @@ function HeroSection() {
           <span className="badge">Apache 2.0</span>
           <span className="badge ga">C++26</span>
           <span className="badge terra">Python ≥ 3.9</span>
-          <span className="badge gold">Linux · macOS · Windows</span>
+          <span className="badge gold">Linux · macOS · Windows (WSL2)</span>
           <span className="badge cuda">CUDA</span>
           <span className="badge metal">Metal</span>
           <span className="badge rocm">ROCm</span>
@@ -93,7 +93,7 @@ function WhySection() {
           Why <span className="gradient-tg">FlexAIDΔS</span>
         </SectionHeader>
         <div className="note-callout">
-          Most <span className="kw">docking engines</span> optimize <span className="kw">enthalpy</span> alone. <strong>FlexAIDΔS</strong> adds <span className="kw">conformational entropy</span> via a full <span className="kw">statistical mechanics framework</span>. Pose-recovery and affinity rates are <strong>unverified / pending receipt</strong> until benchmarking is closed.
+          <strong>FlexAIDΔS</strong> ranks poses with a <span className="kw">Voronoi contact function</span> (CF). Its <span className="kw">conformational</span> and <span className="kw">vibrational entropy</span> terms are computed in CF units, switchable, and reported as diagnostics, not as a binding free energy. No controlled test so far has shown that adding them improves pose choice or affinity ranking. Pose-recovery and affinity rates are <strong>unverified / pending receipt</strong> until benchmarking is closed.
         </div>
       </div>
     </section>
@@ -144,7 +144,7 @@ function ArchSection() {
         <div className="arch-pipeline">
           <ArchStep num="1" title="Input"   color="teal"  desc="PDB receptor + MOL2 ligand. Automatic cavity detection via SURFNET." />
           <ArchStep num="2" title="Sample"  color="terra" desc="GA + DEE torsion pruning. Ring conformer + chirality sampling." />
-          <ArchStep num="3" title="Score"   color="gold"  desc="Voronoi CF + ΔS_config via partition function. Free energy F = −kT ln Z." />
+          <ArchStep num="3" title="Score"   color="gold"  desc="Voronoi contact function (CF) ranks poses. ΔS_config and F = −kT ln Z over the pose ensemble, in CF units." />
           <ArchStep num="4" title="Output"  color="teal"  desc="Ranked poses · ΔG · Van't Hoff decomposition." />
         </div>
         <div className="arch-sub-grid">
@@ -172,7 +172,7 @@ function BindingSection() {
       bg: "rgba(236,72,153,0.05)",
       border: "rgba(236,72,153,0.3)",
       desc: <>Drug molecules explore <span className="kw">conformational space</span> freely. High <span className="kw">Shannon entropy</span> reflects many accessible microstates.</>,
-      ds: "+8.5", dh: "0.0", dg: "+8.5",
+      ds: "0.0", dh: "0.0", dg: "0.0",
     },
     {
       lbl: "Encounter",
@@ -180,7 +180,7 @@ function BindingSection() {
       bg: "rgba(69,224,168,0.05)",
       border: "rgba(69,224,168,0.3)",
       desc: <>The ligand <span className="kw">electrostatically encounters</span> the binding pocket. Translational entropy begins to drop as orientation locks.</>,
-      ds: "+4.2", dh: "−3.1", dg: "+1.1",
+      ds: "−4.2", dh: "−3.1", dg: "+1.1",
     },
     {
       lbl: "Binding",
@@ -200,7 +200,7 @@ function BindingSection() {
           Drug-Receptor <span className="gradient-rg">Binding</span>
         </SectionHeader>
         <p className="binding-blurb">
-          Watch <span className="kw">entropy collapse</span> in real-time as a drug molecule navigates from <span className="kw">chaotic diffusion</span> through <span className="kw">electrostatic encounter</span> to the <span className="kw">bound state</span>.
+          An illustration, not <span className="kw">FlexAIDΔS</span> output: a ligand going from <span className="kw">free diffusion</span> through <span className="kw">encounter</span> to the <span className="kw">bound state</span>. Values are relative to the free ligand and satisfy ΔG = ΔH − TΔS at every step.
         </p>
 
         <div className="binding-canvas-wrap">
@@ -222,7 +222,7 @@ function BindingSection() {
         <div className="binding-desc" style={{ background: p.bg, border: "1px solid " + p.border }}>
           <p style={{ fontSize: "13px", color: "var(--fg-muted)", lineHeight: 1.6 }}>{p.desc}</p>
           <div className="thermo-row">
-            <div><span style={{ color: "var(--fg-muted)" }}>ΔS = </span><span style={{ color: "#EC4899" }}>{p.ds}</span></div>
+            <div><span style={{ color: "var(--fg-muted)" }}>TΔS = </span><span style={{ color: "#EC4899" }}>{p.ds}</span></div>
             <div><span style={{ color: "var(--fg-muted)" }}>ΔH = </span><span style={{ color: "#45E0A8" }}>{p.dh}</span></div>
             <div><span style={{ color: "var(--fg-muted)" }}>ΔG = </span><span style={{ color: "#FF9300", fontWeight: 700 }}>{p.dg}</span></div>
           </div>
@@ -536,7 +536,7 @@ function BenchmarksSection() {
           Benchmark <span className="t-gold">status</span>
         </SectionHeader>
         <p className="binding-blurb">
-          This site publishes <span className="kw">no validated FlexAIDΔS success rate</span>. Benchmarks are still rolling — do not cite a former rate at or above 90%. Astex-85, ITC-187, CASF, and CNS figures are <span className="kw">unverified / pending receipt</span> until a METHODOLOGY.md §0 receipted blind campaign exists. Literature comparators quoted elsewhere in this project are someone else’s published numbers, not ours.
+          This site publishes <span className="kw">no validated FlexAIDΔS success rate</span>. Benchmarks are still rolling — do not cite a former rate at or above 90%. One audited measurement exists: on <span className="kw">Astex Diverse</span>, redocking each ligand into its own crystal structure (cofactors removed, binding site given, input ligand blinded), FlexAIDΔS and the published FlexAID 2015 run each put the top-ranked pose within 2 Å on <span className="kw">38 of 84</span> targets, scored with the same plain RMSD (95% interval on the difference −10.7 to +10.7 points: no difference detected, which is not equivalence; the 2015 run kept cofactors). A January 2016 FlexAID run in the same archive reached 42 of 84. No cross-docking result has been validated, and no ITC-187 or CASF run is on record. Literature comparators quoted elsewhere in this project are someone else’s published numbers, not ours.
         </p>
       </div>
     </section>
@@ -554,7 +554,7 @@ function ExploreSection() {
         <div className="teaser-grid">
           <a href="/entropy-driven/" className="teaser-card">
             <h3>Entropy-Driven Deep-Dive</h3>
-            <p>Shannon entropy, statistical mechanics, and the full ΔG = ΔH − TΔS framework — the thermodynamic story behind every docking score.</p>
+            <p>How the score is built: the contact function, the Shannon search diagnostics, and what each entropy term does and does not measure.</p>
             <span className="teaser-label">Explore Entropy-Driven</span>
           </a>
 
