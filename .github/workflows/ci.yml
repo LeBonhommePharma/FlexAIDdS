@@ -414,6 +414,9 @@ jobs:
       - name: Test TypeScript claim firewall
         working-directory: typescript
         run: npm test
+      - name: Build TypeScript viewer (vite production build)
+        working-directory: typescript
+        run: npm run build -w apps/viewer
 
   repo_hygiene:
     name: Repository hygiene (env + agent paths)
